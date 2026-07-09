@@ -170,7 +170,8 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
           portfolio = buildPerformanceCurve(statements, stmtStart, stmtEnd);
           quality = 'exact';
         } else if (hasNav && navSeries) {
-          const navFlows = navSeries.cashFlows?.length
+          const hasComponents = navPointsHaveComponents(navSeries.points);
+          const navFlows = !hasComponents && navSeries.cashFlows?.length
             ? cashFlowsToDateMap(navSeries.cashFlows)
             : null;
           const cfMap = twrrCapitalFlowsByDate(statements, navFlows);

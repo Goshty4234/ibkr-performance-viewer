@@ -327,8 +327,11 @@ export function navPointsHaveComponents(points: DailyNavPoint[]): boolean {
   return points.some((p) => p.stock != null && p.cash != null);
 }
 
-/** Estimate capital flows only when no known flow exists for that day */
-export function estimateExternalCashFlow(prev: DailyNavPoint, cur: DailyNavPoint): number {
+/**
+ * Universal rule: external cash entering/leaving the account appears in the Cash leg
+ * of daily NAV before Flex settle dates. Only used when Stock/Cash columns exist.
+ */
+export function deriveCapitalFlowFromNav(prev: DailyNavPoint, cur: DailyNavPoint): number {
   if (
     prev.stock == null ||
     cur.stock == null ||
@@ -339,30 +342,41 @@ export function estimateExternalCashFlow(prev: DailyNavPoint, cur: DailyNavPoint
     return 0;
   }
 
-  const dNav = cur.total - prev.total;
-  const relNav = Math.abs(dNav) / prev.total;
-  if (relNav < 0.02) return 0;
-
-  const dInvest =
-    (cur.stock + (cur.options ?? 0)) - (prev.stock + (prev.options ?? 0));
   const dCash = cur.cash - prev.cash;
-  const investRatio = Math.abs(dNav) > 1 ? Math.abs(dInvest) / Math.abs(dNav) : 0;
-
-  // Capital added/removed and immediately invested (deposit+trade or security transfer)
-  if (relNav > 0.15 && investRatio > 0.85) return dNav;
-
-  // Cash deposit/withdrawal — avoid false positives when trades move cash and stock together
-  const residual = dNav - dInvest;
   const threshold = Math.max(500, prev.total * 0.01);
-  if (
-    Math.abs(dCash) > threshold &&
-    Math.abs(residual) <= Math.abs(dNav) * 1.25 &&
-    Math.abs(dCash) >= Math.abs(residual) * 0.6
-  ) {
+  if (Math.abs(dCash) > threshold) {
     return dCash;
   }
 
   return 0;
+}
+
+/** @deprecated Use deriveCapitalFlowFromNav */
+export function estimateExternalCashFlow(
+  prev: DailyNavPoint,
+  cur: DailyNavPoint,
+): number {
+  return deriveCapitalFlowFromNav(prev, cur);
+}
+
+/**
+ * TWRR capital flow for one day.
+ * With Stock/Cash: cash-leg deposit/withdrawal on NAV date, else imported flows (Statement transfers, Flex).
+ * Without Stock/Cash: imported flows only — otherwise NAV brute (raw_nav warning).
+ */
+export function capitalFlowForTwrrDay(
+  prev: DailyNavPoint,
+  cur: DailyNavPoint,
+  knownCf: number | undefined,
+  hasNavComponents: boolean,
+): number {
+  if (hasNavComponents) {
+    const fromCash = deriveCapitalFlowFromNav(prev, cur);
+    if (fromCash !== 0) return fromCash;
+    if (knownCf !== undefined && knownCf !== 0) return knownCf;
+    return 0;
+  }
+  return knownCf ?? 0;
 }
 
 export type TwrrDataQuality = 'exact' | 'partial' | 'estimated' | 'raw_nav';
@@ -373,25 +387,35 @@ export function assessTwrrQuality(
   rangeEnd: string,
   cashFlowByDate: Map<string, number>,
 ): TwrrDataQuality {
-  if (!navPointsHaveComponents(points)) return 'raw_nav';
+  if (!navPointsHaveComponents(points)) {
+    return cashFlowByDate.size > 0 ? 'estimated' : 'raw_nav';
+  }
 
   const filtered = points.filter((p) => p.date >= rangeStart && p.date <= rangeEnd);
-  let known = 0;
-  let estimated = 0;
+  let hasImported = false;
+  let hasDerivedCash = false;
+  let largeUnadjusted = 0;
+
   for (let i = 1; i < filtered.length; i++) {
     const prev = filtered[i - 1];
     const cur = filtered[i];
-    if (cashFlowByDate.has(cur.date)) known++;
-    else if (estimateExternalCashFlow(prev, cur) !== 0) estimated++;
+    const knownCf = cashFlowByDate.get(cur.date);
+    const fromCash = deriveCapitalFlowFromNav(prev, cur);
+    const cf = capitalFlowForTwrrDay(prev, cur, knownCf, true);
+
+    if (fromCash !== 0) hasDerivedCash = true;
+    if (knownCf !== undefined && knownCf !== 0 && fromCash === 0) hasImported = true;
+
+    const relNav = prev.total > 0 ? Math.abs(cur.total - prev.total) / prev.total : 0;
+    if (relNav > 0.08 && cf === 0) largeUnadjusted++;
   }
 
-  if (known > 0 && estimated === 0) return 'exact';
-  if (known > 0) return 'partial';
-  if (estimated > 0) return 'estimated';
+  if (largeUnadjusted > 0) return 'partial';
+  if (hasDerivedCash || hasImported) return 'exact';
   return 'partial';
 }
 
-/** TWRR index from daily Flex NAV — deposits/withdrawals excluded when cash flows known */
+/** TWRR index from daily Flex NAV — external flows excluded (index-like) */
 export function buildTwrrCurveFromNav(
   points: DailyNavPoint[],
   rangeStart: string,
@@ -401,6 +425,7 @@ export function buildTwrrCurveFromNav(
   const filtered = points.filter((p) => p.date >= rangeStart && p.date <= rangeEnd);
   if (filtered.length < 2) return [];
 
+  const hasComponents = navPointsHaveComponents(points);
   let index = 100;
   const out: { date: string; portfolio: number }[] = [];
 
@@ -413,8 +438,7 @@ export function buildTwrrCurveFromNav(
     const cur = filtered[i];
     const prevNav = prev.total;
     const nav = cur.total;
-    const knownCf = cashFlowByDate.get(cur.date);
-    const cf = knownCf ?? estimateExternalCashFlow(prev, cur);
+    const cf = capitalFlowForTwrrDay(prev, cur, cashFlowByDate.get(cur.date), hasComponents);
     if (prevNav > 0) {
       const r = (nav - cf) / prevNav - 1;
       index *= 1 + r;
@@ -439,11 +463,11 @@ export function shouldPreferStatementCurve(
 export function twrrQualityLabel(quality: TwrrDataQuality): string {
   switch (quality) {
     case 'exact':
-      return 'TWRR (flux de capitaux connus)';
+      return 'TWRR — dépôts/retraits exclus (NAV Stock/Cash)';
     case 'partial':
-      return 'TWRR (flux partiels + estimation)';
+      return 'TWRR — flux partiels (Statement + NAV)';
     case 'estimated':
-      return 'TWRR estimé — ajoutez Cash Transactions Flex';
+      return 'TWRR estimé — réimportez Flex NAV avec Stock/Cash';
     case 'raw_nav':
       return 'NAV brute — réimportez le Flex NAV';
   }
@@ -454,9 +478,9 @@ export function twrrQualityNotice(quality: TwrrDataQuality): string | null {
     case 'raw_nav':
       return 'Réimportez votre fichier Flex NAV (avec colonnes Stock/Cash) puis Ctrl+F5. Sans ces colonnes, les dépôts faussent le rendement (~+177 %).';
     case 'estimated':
-      return 'Pour un TWRR exact sur toute la période, ajoutez une Flex Query « Cash Transactions » (CSV, 365 jours) et importez-la ici.';
+      return 'Réimportez un Flex NAV avec colonnes Stock et Cash, ou un CSV combiné NAV + Cash Transactions.';
     case 'partial':
-      return 'Les flux après votre dernier Activity Statement sont estimés. Importez Cash Transactions Flex pour les mois manquants.';
+      return 'Importez un Activity Statement récent : des mouvements de capitaux (transferts de titres) ne sont pas couverts par la NAV seule.';
     default:
       return null;
   }
