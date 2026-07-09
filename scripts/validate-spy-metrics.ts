@@ -16,7 +16,10 @@ const PV_REF = {
   volatility: 12.5,
 };
 
-async function fetchSpyPrices(): Promise<Record<string, number>> {
+async function fetchSpyPrices(): Promise<{
+  close: Record<string, number>;
+  adjclose: Record<string, number>;
+}> {
   const period1 = Math.floor(new Date(START + 'T12:00:00Z').getTime() / 1000);
   const period2 = Math.floor(new Date(END + 'T12:00:00Z').getTime() / 1000) + 86400;
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/SPY?period1=${period1}&period2=${period2}&interval=1d`;
@@ -63,7 +66,7 @@ function report(label: string, m: ReturnType<typeof computeCurveMetricsForTest>)
 }
 
 async function main() {
-  const { close, adjclose } = await fetchSpyPrices() as { close: Record<string, number>; adjclose: Record<string, number> };
+  const { close, adjclose } = await fetchSpyPrices();
 
   const closeCurve = buildCumCurve(close, START, END);
   const adjCurve = buildCumCurve(adjclose, START, END);
