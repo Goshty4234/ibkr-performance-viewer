@@ -17,6 +17,11 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: 'IBKR Performance Viewer',
   description: 'Suivez la performance TWRR de vos comptes Interactive Brokers',
+  applicationName: 'IBKR Performance',
+  icons: {
+    icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
+    apple: [{ url: '/apple-icon.svg', type: 'image/svg+xml' }],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
