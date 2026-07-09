@@ -22,6 +22,10 @@ export default function DateRangeControls({
   onPreset,
   onRangeChange,
 }: Props) {
+  const start = rangeStart ?? '';
+  const end = rangeEnd ?? '';
+  const ready = Boolean(start && end);
+
   return (
     <div className={styles.wrap}>
       <div className={styles.presets}>
@@ -40,23 +44,25 @@ export default function DateRangeControls({
           </button>
         ))}
       </div>
+      {ready && (
       <div className={styles.custom}>
         <input
           type="date"
-          value={rangeStart}
+          value={start}
           min={bounds.min}
-          max={rangeEnd}
-          onChange={(e) => onRangeChange(e.target.value, rangeEnd)}
+          max={end}
+          onChange={(e) => onRangeChange(e.target.value, end)}
         />
         <span className={styles.sep}>→</span>
         <input
           type="date"
-          value={rangeEnd}
-          min={rangeStart}
+          value={end}
+          min={start}
           max={bounds.max}
-          onChange={(e) => onRangeChange(rangeStart, e.target.value)}
+          onChange={(e) => onRangeChange(start, e.target.value)}
         />
       </div>
+      )}
     </div>
   );
 }

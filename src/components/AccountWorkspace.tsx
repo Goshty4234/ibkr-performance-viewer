@@ -756,7 +756,7 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
                     <input
                       id="start-lock"
                       type="date"
-                      value={lockDraft}
+                      value={lockDraft ?? ''}
                       min={effectiveBounds.dataMin}
                       max={effectiveBounds.max}
                       onChange={(e) => setLockDraft(e.target.value)}
