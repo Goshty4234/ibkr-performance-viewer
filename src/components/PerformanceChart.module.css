@@ -1,33 +1,53 @@
 .card {
   background: var(--surface);
+  backdrop-filter: blur(16px);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 1.25rem 1rem;
+  border-radius: var(--radius-lg);
+  padding: 1.35rem 1.25rem;
 }
 
-.title { font-size: 0.95rem; font-weight: 600; padding: 0 0.25rem; }
-.sub { font-size: 0.8rem; color: var(--text-muted); margin: 0.2rem 0 1rem; padding: 0 0.25rem; }
+.title {
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 0 0.25rem;
+}
 
-.chart { height: 360px; }
+.sub {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin: 0.25rem 0 1.25rem;
+  padding: 0 0.25rem;
+}
+
+.chart { height: 380px; }
 
 .empty {
   text-align: center;
   color: var(--text-muted);
-  padding: 3rem 1.5rem;
+  padding: 3.5rem 1.5rem;
   font-size: 0.9rem;
-  line-height: 1.6;
+  line-height: 1.7;
+}
+
+.empty small {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-faint);
 }
 
 .tooltip {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.65rem 0.85rem;
+  background: var(--surface-solid);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 0.9rem;
   font-size: 0.8rem;
+  box-shadow: var(--shadow);
 }
 
 .tooltipDate {
   color: var(--text-muted);
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.4rem;
   font-size: 0.75rem;
+  font-weight: 600;
 }

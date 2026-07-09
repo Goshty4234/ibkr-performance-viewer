@@ -16,7 +16,14 @@
     "pg": "^8.14.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-is": "^19.0.0",
     "recharts": "^2.15.1"
+  },
+  "overrides": {
+    "react-is": "$react-is",
+    "prop-types": {
+      "react-is": "$react-is"
+    }
   },
   "devDependencies": {
     "@types/node": "^22.13.10",

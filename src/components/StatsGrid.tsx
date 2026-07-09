@@ -6,11 +6,12 @@ import styles from './StatsGrid.module.css';
 interface Props {
   summary: PerformanceSummary;
   benchmark: BenchmarkSymbol;
+  performanceSub?: string;
 }
 
-export default function StatsGrid({ summary, benchmark }: Props) {
+export default function StatsGrid({ summary, benchmark, performanceSub }: Props) {
   const cards = [
-    { label: 'Rendement portefeuille', value: summary.portfolioReturn, sub: 'TWRR sur la plage' },
+    { label: 'Rendement portefeuille', value: summary.portfolioReturn, sub: performanceSub ?? 'TWRR sur la plage' },
     { label: BENCHMARK_LABELS[benchmark], value: summary.benchmarkReturn, sub: 'Rendement total' },
     { label: 'Alpha', value: summary.alpha, sub: 'vs benchmark' },
     { label: 'CAGR portefeuille', value: summary.cagr, sub: `${Math.round(summary.days)} jours` },

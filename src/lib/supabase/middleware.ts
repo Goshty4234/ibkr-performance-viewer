@@ -11,7 +11,10 @@ export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || PLACEHOLDER_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || PLACEHOLDER_KEY;
+  const key =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    PLACEHOLDER_KEY;
 
   const supabase = createServerClient(url, key, {
     cookies: {
@@ -29,14 +32,24 @@ export async function updateSession(request: NextRequest) {
   });
 
   const { data: { user } } = await supabase.auth.getUser();
+  const path = request.nextUrl.pathname;
 
-  if (!user && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth') && !request.nextUrl.pathname.startsWith('/setup') && !request.nextUrl.pathname.startsWith('/api/setup')) {
+  const isPublic =
+    path.startsWith('/login') ||
+    path.startsWith('/auth') ||
+    path.startsWith('/setup') ||
+    path.startsWith('/api/setup');
+
+  if (!user && !isPublic) {
+    if (path.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    }
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = '/login';
     return NextResponse.redirect(redirectUrl);
   }
 
-  if (user && request.nextUrl.pathname.startsWith('/login')) {
+  if (user && path.startsWith('/login')) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = '/';
     return NextResponse.redirect(redirectUrl);

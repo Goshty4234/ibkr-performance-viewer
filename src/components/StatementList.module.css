@@ -1,7 +1,8 @@
 .panel {
   background: var(--surface);
+  backdrop-filter: blur(16px);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   margin-bottom: 1.25rem;
   overflow: hidden;
 }
@@ -9,55 +10,70 @@
 .header {
   display: flex;
   justify-content: space-between;
-  padding: 0.75rem 1rem;
+  align-items: center;
+  padding: 0.9rem 1.25rem;
   border-bottom: 1px solid var(--border);
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: 0.9rem;
+  font-weight: 700;
 }
 
-.count { color: var(--text-muted); font-weight: 400; }
+.count {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.8rem;
+}
 
-.list { max-height: 220px; overflow-y: auto; }
+.list { max-height: 240px; overflow-y: auto; }
 
 .item {
   display: grid;
   grid-template-columns: 1fr auto auto;
   gap: 0.75rem;
   align-items: center;
-  padding: 0.7rem 1rem;
+  padding: 0.85rem 1.25rem;
   border-bottom: 1px solid var(--border);
   font-size: 0.8125rem;
+  transition: background var(--transition);
 }
 
+.item:hover { background: rgba(255, 255, 255, 0.02); }
 .item:last-child { border-bottom: none; }
 
-.filename { font-weight: 500; }
+.filename { font-weight: 600; }
 
 .meta {
   color: var(--text-muted);
   font-size: 0.75rem;
-  margin-top: 0.1rem;
+  margin-top: 0.15rem;
 }
 
 .twrr {
-  padding: 0.15rem 0.45rem;
-  border-radius: 6px;
+  padding: 0.25rem 0.55rem;
+  border-radius: 8px;
   background: var(--surface-2);
+  border: 1px solid var(--border);
   font-size: 0.8rem;
+  font-family: var(--mono);
+  font-weight: 600;
 }
 
 .remove {
   background: none;
   border: none;
-  color: var(--text-muted);
+  color: var(--text-faint);
   font-size: 0.75rem;
+  font-weight: 600;
   cursor: pointer;
-  padding: 0.2rem 0.4rem;
-  border-radius: 4px;
+  padding: 0.35rem 0.6rem;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition);
 }
 
-.remove:hover { color: var(--red); background: rgba(248,113,113,0.1); }
+.remove:hover {
+  color: var(--red);
+  background: rgba(255, 107, 122, 0.1);
+}
 
 @media (max-width: 640px) {
-  .item { grid-template-columns: 1fr; }
+  .item { grid-template-columns: 1fr; gap: 0.5rem; }
 }

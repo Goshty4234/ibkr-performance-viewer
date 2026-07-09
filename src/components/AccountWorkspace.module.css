@@ -1,0 +1,153 @@
+.page {
+  animation: fadeUp 0.4s ease both;
+}
+
+.breadcrumb {
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+}
+
+.breadcrumb a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.breadcrumb a:hover { color: var(--accent); }
+
+.accountHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1.25rem 1.35rem;
+  margin-bottom: 1.5rem;
+  background: rgba(77, 141, 255, 0.1);
+  border: 2px solid rgba(77, 141, 255, 0.35);
+  border-radius: var(--radius-lg);
+}
+
+.headerMain { flex: 1; min-width: 200px; }
+
+.headerActions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.renameRow {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0.25rem 0;
+}
+
+.renameInput {
+  font-size: 1.25rem;
+  font-weight: 700;
+  min-width: 200px;
+  flex: 1;
+}
+
+.youAreHere {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  margin-bottom: 0.35rem;
+}
+
+.accountHeader h1 {
+  font-size: 2.25rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #ffffff;
+}
+
+.ibkrId {
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+
+.error {
+  background: rgba(255, 107, 122, 0.1);
+  border: 1px solid rgba(255, 107, 122, 0.25);
+  color: var(--red);
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+}
+
+.notice {
+  background: rgba(45, 212, 168, 0.1);
+  border: 1px solid rgba(45, 212, 168, 0.25);
+  color: var(--green);
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+}
+
+.emptyState {
+  padding: 1rem 1.15rem;
+  margin-bottom: 1.25rem;
+  background: rgba(77, 141, 255, 0.08);
+  border: 1px solid rgba(77, 141, 255, 0.2);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.emptyState strong { color: var(--text); }
+.emptyState code {
+  font-family: var(--mono);
+  color: var(--accent);
+}
+
+.loading {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 3rem;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+  margin-bottom: 1.25rem;
+  padding: 1.15rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.ctrlFull {
+  flex: 1;
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.ctrlFull label,
+.ctrl label {
+  font-size: 0.7rem;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 700;
+}
+
+.ctrl {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 180px;
+}

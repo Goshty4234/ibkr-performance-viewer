@@ -1,43 +1,60 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useId, useState } from 'react';
 import styles from './FileUpload.module.css';
 
 interface Props {
-  onFiles: (files: FileList) => void;
+  onFiles: (files: FileList) => void | Promise<void>;
   uploading: boolean;
+  accountHint?: string;
 }
 
-export default function FileUpload({ onFiles, uploading }: Props) {
+export default function FileUpload({ onFiles, uploading, accountHint }: Props) {
+  const inputId = useId();
   const [dragging, setDragging] = useState(false);
+
+  const deliverFiles = useCallback((files: FileList | null | undefined) => {
+    if (!files?.length) return;
+    Promise.resolve(onFiles(files)).catch((err: unknown) => {
+      console.error('Import CSV:', err);
+    });
+  }, [onFiles]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setDragging(false);
-    if (e.dataTransfer.files.length) onFiles(e.dataTransfer.files);
-  }, [onFiles]);
+    deliverFiles(e.dataTransfer.files);
+  }, [deliverFiles]);
 
   return (
-    <div
+    <label
+      htmlFor={inputId}
       className={`${styles.zone} ${dragging ? styles.dragging : ''} ${uploading ? styles.uploading : ''}`}
       onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}
-      onClick={() => document.getElementById('csv-input')?.click()}
     >
       <input
-        id="csv-input"
+        id={inputId}
         type="file"
         accept=".csv"
         multiple
-        hidden
-        onChange={(e) => e.target.files && onFiles(e.target.files)}
+        className={styles.fileInput}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => {
+          deliverFiles(e.target.files);
+          e.target.value = '';
+        }}
       />
-      <div className={styles.icon}>{uploading ? '⏳' : '📊'}</div>
+      <div className={styles.iconWrap}>{uploading ? '⏳' : '📊'}</div>
       <div className={styles.title}>
-        {uploading ? 'Import en cours…' : <>Glissez vos <strong>Activity Statements IBKR</strong></>}
+        {uploading ? 'Import en cours…' : <>Glissez vos CSV IBKR <strong>(Statement ou Flex NAV)</strong></>}
       </div>
-      <div className={styles.hint}>CSV · Plusieurs fichiers · Sauvegardé dans Supabase</div>
-    </div>
+      <div className={styles.hint}>
+        CSV · Plusieurs fichiers · Sauvegardé dans Supabase
+        {accountHint && accountHint !== 'Tous les comptes' && ` · Compte : ${accountHint}`}
+      </div>
+    </label>
   );
 }

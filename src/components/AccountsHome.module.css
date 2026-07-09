@@ -1,0 +1,233 @@
+.page {
+  animation: fadeUp 0.4s ease both;
+  color: #f4f7fb;
+}
+
+.hero {
+  margin-bottom: 1.5rem;
+}
+
+.hero h1 {
+  font-size: 1.85rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #f4f7fb;
+}
+
+.sub {
+  color: #8b9cb3;
+  font-size: 0.95rem;
+  margin-top: 0.4rem;
+  line-height: 1.55;
+}
+
+.sub strong { color: #f4f7fb; }
+
+.stats {
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  color: #5c6d85;
+}
+
+.createBtn {
+  margin-bottom: 1.25rem;
+}
+
+.error {
+  background: rgba(255, 107, 122, 0.12);
+  border: 1px solid rgba(255, 107, 122, 0.3);
+  color: #ff6b7a;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.createCard {
+  padding: 1.35rem;
+  margin-bottom: 1.5rem;
+  color: #f4f7fb;
+}
+
+.createCard h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  color: #f4f7fb;
+}
+
+.createFields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.createFields label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #8b9cb3;
+}
+
+@media (max-width: 640px) {
+  .createFields { grid-template-columns: 1fr; }
+}
+
+.loading, .empty {
+  text-align: center;
+  color: #8b9cb3;
+  padding: 2rem;
+  font-size: 0.95rem;
+}
+
+.empty p { line-height: 1.6; }
+.empty strong { color: #f4f7fb; }
+
+/* ── Liste des comptes ── */
+.list {
+  padding: 0;
+  overflow: hidden;
+}
+
+.listHeader {
+  display: grid;
+  grid-template-columns: 2fr 1fr 0.7fr 1.6fr;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  background: #151d2e;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #5c6d85;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 0.7fr 1.6fr;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  transition: background 0.15s;
+}
+
+.row:last-child { border-bottom: none; }
+.row:hover { background: rgba(255, 255, 255, 0.03); }
+
+.rowClickable {
+  cursor: pointer;
+}
+
+.rowClickable:hover {
+  background: rgba(77, 141, 255, 0.08);
+}
+
+.rowClickable:focus-visible {
+  outline: 2px solid rgba(77, 141, 255, 0.55);
+  outline-offset: -2px;
+}
+
+.rowEditing {
+  cursor: default;
+}
+
+.accountName {
+  display: block;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  line-height: 1.2;
+}
+
+.idCol {
+  font-family: var(--mono), ui-monospace, monospace;
+  font-size: 0.85rem;
+  color: #8b9cb3;
+}
+
+.optional {
+  font-weight: 500;
+  font-size: 0.75rem;
+  color: #5c6d85;
+}
+
+.dataCol {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: #8b9cb3;
+}
+
+.openHint {
+  color: #4d8dff;
+  font-size: 1.1rem;
+  font-weight: 700;
+  opacity: 0.7;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.rowClickable:hover .openHint {
+  opacity: 1;
+  transform: translateX(2px);
+}
+
+.noData {
+  color: #ffb020;
+  font-weight: 600;
+}
+
+.actionsCol {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.renameRow {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.renameInput {
+  flex: 1;
+  min-width: 140px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.renameBtn {
+  min-width: 76px;
+}
+
+.deleteBtn {
+  min-width: 80px;
+}
+
+@media (max-width: 720px) {
+  .listHeader { display: none; }
+
+  .row {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+    padding: 1.25rem;
+  }
+
+  .accountName { font-size: 1.5rem; }
+
+  .actionsCol {
+    margin-top: 0.5rem;
+  }
+
+  .deleteBtn, .renameBtn {
+    flex: 1;
+  }
+}

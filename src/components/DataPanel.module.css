@@ -1,0 +1,114 @@
+.panel {
+  padding: 0;
+  margin-bottom: 1.25rem;
+  overflow: hidden;
+}
+
+.header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.header h2 {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.sub {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+.bulkDelete {
+  padding: 1rem 1.25rem;
+  background: rgba(255, 107, 122, 0.04);
+  border-bottom: 1px solid var(--border);
+}
+
+.bulkLabel {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  margin-bottom: 0.5rem;
+}
+
+.bulkRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.bulkRow input { width: auto; min-width: 130px; flex: 1; }
+
+.bulkRow span { color: var(--text-faint); }
+
+.bulkHint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.5rem;
+}
+
+.list { max-height: 280px; overflow-y: auto; }
+
+.item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8125rem;
+}
+
+.item:hover { background: rgba(255, 255, 255, 0.02); }
+.item:last-child { border-bottom: none; }
+
+.filename { font-weight: 600; }
+
+.meta {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  margin-top: 0.15rem;
+}
+
+.twrr {
+  padding: 0.25rem 0.55rem;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+
+.badgeNav {
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.remove {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.35rem 0.6rem;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  transition: all var(--transition);
+}
+
+.remove:hover {
+  color: var(--red);
+  background: rgba(255, 107, 122, 0.1);
+}
+
+@media (max-width: 640px) {
+  .item { grid-template-columns: 1fr; }
+}

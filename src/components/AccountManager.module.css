@@ -1,0 +1,192 @@
+.panel {
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.header h2 {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.sub {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+.sectionLabel {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-faint);
+  margin-bottom: 0.65rem;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.accountCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  padding: 1rem;
+  border-radius: var(--radius);
+  border: 2px solid var(--border);
+  background: var(--surface-2);
+  cursor: pointer;
+  text-align: left;
+  transition: all var(--transition);
+  font-family: inherit;
+  width: 100%;
+}
+
+.accountCard:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+}
+
+.accountCardSelected {
+  border-color: var(--accent);
+  background: rgba(77, 141, 255, 0.1);
+  box-shadow: 0 0 0 3px rgba(77, 141, 255, 0.15);
+}
+
+.selectedBadge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  margin-bottom: 0.15rem;
+}
+
+.cardName {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.cardId {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: var(--mono);
+}
+
+.cardStatus {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 0.35rem;
+}
+
+.accountCardSelected .cardStatus {
+  color: var(--orange);
+}
+
+.error {
+  font-size: 0.85rem;
+  color: var(--red);
+  margin-bottom: 0.75rem;
+}
+
+.success {
+  font-size: 0.85rem;
+  color: var(--green);
+  background: rgba(45, 212, 168, 0.1);
+  border: 1px solid rgba(45, 212, 168, 0.25);
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-sm);
+  margin-bottom: 0.75rem;
+  line-height: 1.5;
+}
+
+.noData { color: var(--orange); }
+
+.createForm {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 640px) {
+  .createForm { grid-template-columns: 1fr; }
+  .cards { grid-template-columns: 1fr; }
+}
+
+.manage {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.manage summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 0.5rem 0;
+  user-select: none;
+}
+
+.manage summary:hover { color: var(--text); }
+
+.list {
+  border-top: 1px solid var(--border);
+  padding-top: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.item:last-child { border-bottom: none; }
+
+.itemName { font-weight: 600; font-size: 0.9rem; }
+
+.itemMeta {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.1rem;
+}
+
+.itemActions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.editRow {
+  display: flex;
+  gap: 0.4rem;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.editRow input { flex: 1; min-width: 140px; }
+
+.empty {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+  padding: 0.5rem 0 1rem;
+}
+
+.empty strong { color: var(--text); }

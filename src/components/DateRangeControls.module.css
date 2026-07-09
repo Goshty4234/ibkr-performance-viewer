@@ -1,0 +1,53 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.preset {
+  padding: 0.4rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: inherit;
+}
+
+.preset:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.presetActive {
+  background: rgba(77, 141, 255, 0.15);
+  border-color: rgba(77, 141, 255, 0.4);
+  color: var(--accent);
+}
+
+.custom {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.custom input {
+  flex: 1;
+  min-width: 130px;
+}
+
+.sep {
+  color: var(--text-faint);
+  font-size: 0.85rem;
+}

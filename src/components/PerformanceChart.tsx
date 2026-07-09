@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import {
   CartesianGrid,
   Line,
@@ -21,6 +22,7 @@ interface Props {
   benchmark: BenchmarkSymbol;
   loading: boolean;
   hasStatements: boolean;
+  noDataInRange?: boolean;
 }
 
 function TooltipContent({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number; dataKey: string; color: string }>; label?: string }) {
@@ -39,11 +41,16 @@ function TooltipContent({ active, payload, label }: { active?: boolean; payload?
   );
 }
 
-export default function PerformanceChart({ data, benchmark, loading, hasStatements }: Props) {
+export default function PerformanceChart({ data, benchmark, loading, hasStatements, noDataInRange }: Props) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
+  const showChart = mounted && !loading && hasStatements && !noDataInRange && data.length > 0;
+
   return (
     <div className={styles.card}>
       <div className={styles.title}>Performance relative (0% au début de la plage)</div>
-      <div className={styles.sub}>TWRR chaîné · Les flux de capitaux n&apos;affectent pas la courbe</div>
+      <div className={styles.sub}>TWRR chaîné · Forme journalière dérivée du CSV (trades, dividendes, frais)</div>
 
       {loading && <p className={styles.empty}>Chargement du benchmark…</p>}
 
@@ -54,33 +61,40 @@ export default function PerformanceChart({ data, benchmark, loading, hasStatemen
         </p>
       )}
 
-      {!loading && hasStatements && data.length === 0 && (
+      {!loading && hasStatements && noDataInRange && (
+        <p className={styles.empty}>
+          Aucune donnée pour la plage sélectionnée.<br />
+          <small>Essayez une autre période ou importez un CSV couvrant ces dates.</small>
+        </p>
+      )}
+
+      {!loading && hasStatements && !noDataInRange && data.length === 0 && (
         <p className={styles.empty}>Aucune donnée pour cette plage de dates.</p>
       )}
 
-      {!loading && data.length > 0 && (
+      {showChart && (
         <div className={styles.chart}>
           <ResponsiveContainer width="100%" height={360}>
-            <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#243040" vertical={false} />
+            <LineChart key={benchmark} data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
               <XAxis
                 dataKey="date"
                 tickFormatter={(v) => format(new Date(v + 'T12:00:00'), 'MMM yy', { locale: fr })}
-                stroke="#7d8fa8"
+                stroke="#5c6d85"
                 fontSize={11}
                 tickLine={false}
               />
               <YAxis
                 tickFormatter={(v) => `${v}%`}
-                stroke="#7d8fa8"
+                stroke="#5c6d85"
                 fontSize={11}
                 tickLine={false}
                 axisLine={false}
                 width={48}
               />
               <Tooltip content={<TooltipContent />} />
-              <Line type="monotone" dataKey="portfolio" name="Portefeuille" stroke="#3d8bfd" strokeWidth={2.5} dot={data.length <= 24} activeDot={{ r: 4 }} />
-              <Line type="monotone" dataKey="benchmark" name={BENCHMARK_LABELS[benchmark]} stroke="#fb923c" strokeWidth={2} dot={false} strokeDasharray="6 3" />
+              <Line type="monotone" dataKey="portfolio" name="Portefeuille" stroke="#4d8dff" strokeWidth={2.5} dot={data.length <= 24} activeDot={{ r: 5, strokeWidth: 0 }} />
+              <Line type="monotone" dataKey="benchmark" name={BENCHMARK_LABELS[benchmark]} stroke="#ffb020" strokeWidth={2} dot={false} strokeDasharray="6 4" />
             </LineChart>
           </ResponsiveContainer>
         </div>

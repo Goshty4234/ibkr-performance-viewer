@@ -1,0 +1,37 @@
+.banner {
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.banner p { margin: 0; }
+.banner p + p, .banner ul + p { margin-top: 0.5rem; }
+
+.info {
+  background: rgba(77, 141, 255, 0.08);
+  border: 1px solid rgba(77, 141, 255, 0.2);
+  color: var(--text-muted);
+}
+
+.warn {
+  background: rgba(255, 176, 32, 0.08);
+  border: 1px solid rgba(255, 176, 32, 0.25);
+  color: #e8c46a;
+}
+
+.error {
+  background: rgba(255, 107, 122, 0.1);
+  border: 1px solid rgba(255, 107, 122, 0.25);
+  color: var(--red);
+}
+
+.gaps {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.gaps li { margin-top: 0.25rem; }
+
+.stale strong { color: var(--text); }

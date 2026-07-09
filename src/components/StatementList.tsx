@@ -1,6 +1,6 @@
 import type { DbStatement } from '@/lib/types';
 import { fmtPct } from '@/lib/performance';
-import { formatDateLabel } from './Dashboard';
+import { formatDateLabel } from '@/lib/dates';
 import styles from './StatementList.module.css';
 
 interface Props {
