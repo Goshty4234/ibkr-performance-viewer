@@ -20,6 +20,7 @@ loadLocalEnvOverrides();
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  devIndicators: false,
   logging: {
     incomingRequests: { ignore: [/\/login/] },
   },

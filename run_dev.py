@@ -15,6 +15,16 @@ ENV_FILE = PROJECT_DIR / ".env.local"
 LOCAL_PORT = 3000
 
 
+def clean_next_cache() -> None:
+    """Supprime .next — evite chunks/manifest corrompus (Windows, build + dev melanges)."""
+    next_dir = PROJECT_DIR / ".next"
+    if not next_dir.is_dir():
+        return
+    print(" Nettoyage du cache .next (evite erreurs SegmentViewNode / 611.js)...")
+    shutil.rmtree(next_dir, ignore_errors=True)
+    time.sleep(0.5)
+
+
 def stop_local_servers() -> None:
     """Arrete les vieux serveurs Next.js de ce projet (Windows)."""
     if sys.platform != "win32":
@@ -65,6 +75,7 @@ def main() -> int:
     print()
 
     stop_local_servers()
+    clean_next_cache()
 
     try:
         result = subprocess.run(
