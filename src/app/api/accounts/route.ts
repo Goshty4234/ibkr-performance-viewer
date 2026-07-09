@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
-import { dbToAccount, isPendingIbkrId, PENDING_IBKR_PREFIX } from '@/lib/account-mapper';
+import { ensureAnalysisStartLockColumn } from '@/lib/db-migrate';
+import { dbToAccount, PENDING_IBKR_PREFIX } from '@/lib/account-mapper';
+import { maskAccountForClient } from '@/lib/privacy';
 import { randomUUID } from 'crypto';
 import { NextResponse } from 'next/server';
 
@@ -41,7 +43,7 @@ export async function GET() {
 
   return NextResponse.json(
     (data ?? []).map((row) => {
-      const acc = dbToAccount(row);
+      const acc = maskAccountForClient(dbToAccount(row));
       acc.statementCount = countMap.get(acc.id) ?? 0;
       return acc;
     }),
@@ -54,14 +56,13 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
 
   const body = await request.json();
-  const ibkrInput = (body.ibkrAccountId as string | undefined)?.trim();
   const displayName = (body.displayName as string)?.trim();
 
   if (!displayName) {
     return NextResponse.json({ error: 'Nom du compte requis' }, { status: 400 });
   }
 
-  const ibkrAccountId = ibkrInput || `${PENDING_IBKR_PREFIX}${randomUUID()}`;
+  const ibkrAccountId = `${PENDING_IBKR_PREFIX}${randomUUID()}`;
 
   const { data, error } = await supabase
     .from('accounts')
@@ -78,7 +79,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json(dbToAccount(data));
+  return NextResponse.json(maskAccountForClient(dbToAccount(data)));
 }
 
 export async function PATCH(request: Request) {
@@ -90,16 +91,14 @@ export async function PATCH(request: Request) {
   const id = body.id as string;
   if (!id) return NextResponse.json({ error: 'ID requis' }, { status: 400 });
 
-  const updates: Record<string, string> = { updated_at: new Date().toISOString() };
+  const updates: Record<string, string | null> = { updated_at: new Date().toISOString() };
   if (body.displayName) updates.display_name = body.displayName.trim();
   if (body.notes !== undefined) updates.notes = body.notes;
 
-  if (body.ibkrAccountId !== undefined) {
-    const ibkrAccountId = (body.ibkrAccountId as string).trim();
-    if (!ibkrAccountId) {
-      return NextResponse.json({ error: 'ID IBKR invalide' }, { status: 400 });
-    }
-    updates.ibkr_account_id = ibkrAccountId;
+  if (body.analysisStartLock !== undefined) {
+    await ensureAnalysisStartLockColumn();
+    const raw = body.analysisStartLock as string | null;
+    updates.analysis_start_lock = raw && String(raw).trim() ? String(raw).trim().slice(0, 10) : null;
   }
 
   const { data, error } = await supabase
@@ -111,7 +110,7 @@ export async function PATCH(request: Request) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(dbToAccount(data));
+  return NextResponse.json(maskAccountForClient(dbToAccount(data)));
 }
 
 export async function DELETE(request: Request) {
@@ -140,6 +139,12 @@ export async function DELETE(request: Request) {
 
   await supabase
     .from('nav_series')
+    .delete()
+    .eq('user_id', user.id)
+    .eq('portfolio_account_id', id);
+
+  await supabase
+    .from('twr_series')
     .delete()
     .eq('user_id', user.id)
     .eq('portfolio_account_id', id);

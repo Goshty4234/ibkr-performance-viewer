@@ -14,6 +14,7 @@ export default function StatsGrid({ summary, benchmark, performanceSub }: Props)
     { label: 'Rendement portefeuille', value: summary.portfolioReturn, sub: performanceSub ?? 'TWRR sur la plage' },
     { label: BENCHMARK_LABELS[benchmark], value: summary.benchmarkReturn, sub: 'Rendement total' },
     { label: 'Alpha', value: summary.alpha, sub: 'vs benchmark' },
+    { label: 'Max drawdown', value: summary.maxDrawdown, sub: 'Pire baisse depuis un pic' },
     { label: 'CAGR portefeuille', value: summary.cagr, sub: `${Math.round(summary.days)} jours` },
   ];
 

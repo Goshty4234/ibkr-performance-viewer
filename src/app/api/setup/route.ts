@@ -41,6 +41,13 @@ export async function GET(request: NextRequest) {
             AND table_name = 'statements'
             AND column_name = 'portfolio_account_id'
         ) AS has_portfolio_account_id,
+        EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'statements'
+            AND column_name = 'twr_daily'
+        ) AS has_twr_daily,
+        to_regclass('public.twr_series') AS twr_series_tbl,
         to_regclass('public.nav_series') AS nav_series_tbl`,
     );
     const hasAccounts = Boolean(check.rows[0]?.accounts_tbl);
@@ -48,13 +55,15 @@ export async function GET(request: NextRequest) {
     const hasDailyEvents = Boolean(check.rows[0]?.has_daily_events);
     const hasPortfolioAccountId = Boolean(check.rows[0]?.has_portfolio_account_id);
     const hasNavSeries = Boolean(check.rows[0]?.nav_series_tbl);
+    const hasTwrDaily = Boolean(check.rows[0]?.has_twr_daily);
+    const hasTwrSeries = Boolean(check.rows[0]?.twr_series_tbl);
 
     const sql = readFileSync(
       join(process.cwd(), 'supabase', 'schema.sql'),
       'utf8',
     );
 
-    if (!hasAccounts || !hasStatements || !hasDailyEvents || !hasPortfolioAccountId || !hasNavSeries) {
+    if (!hasAccounts || !hasStatements || !hasDailyEvents || !hasPortfolioAccountId || !hasNavSeries || !hasTwrDaily || !hasTwrSeries) {
       await client.query(sql);
       return NextResponse.json({
         ok: true,
@@ -66,7 +75,11 @@ export async function GET(request: NextRequest) {
               ? 'Migration daily_events appliquée ✓'
               : !hasPortfolioAccountId
                 ? 'Migration portfolio_account_id appliquée ✓'
-                : 'Migration nav_series appliquée ✓',
+                : !hasNavSeries
+                  ? 'Migration nav_series appliquée ✓'
+                  : !hasTwrDaily
+                    ? 'Migration twr_daily appliquée ✓'
+                    : 'Migration twr_series appliquée ✓',
       });
     }
 

@@ -1,4 +1,4 @@
-import type { BenchmarkSymbol, DailyEvent, DailyNavPoint, DbStatement, PerformancePoint, PerformanceSummary } from './types';
+import type { BenchmarkSymbol, DailyEvent, DailyNavPoint, DailyTwrPoint, DbStatement, DrawdownPoint, PerformancePoint, PerformanceSummary } from './types';
 import { groupStatementsByContinuity, mergeStatements } from './statements';
 import { getDataBounds } from './timeline';
 
@@ -277,21 +277,49 @@ export function alignBenchmark(
 
 export function computeSummary(pts: PerformancePoint[], start: string, end: string): PerformanceSummary {
   if (pts.length < 2) {
-    return { portfolioReturn: 0, benchmarkReturn: 0, alpha: 0, cagr: 0, benchmarkCagr: 0, days: 0 };
+    return {
+      portfolioReturn: 0,
+      benchmarkReturn: 0,
+      alpha: 0,
+      cagr: 0,
+      benchmarkCagr: 0,
+      maxDrawdown: 0,
+      days: 0,
+    };
   }
   const last = pts[pts.length - 1];
   const days = Math.max(1, (new Date(end).getTime() - new Date(start).getTime()) / 864e5);
   const years = days / 365.25;
   const pf = 1 + last.portfolio / 100;
   const bf = 1 + last.benchmark / 100;
+  const dd = computeDrawdownSeries(pts);
   return {
     portfolioReturn: last.portfolio,
     benchmarkReturn: last.benchmark,
     alpha: last.portfolio - last.benchmark,
     cagr: years > 0 ? (Math.pow(pf, 1 / years) - 1) * 100 : 0,
     benchmarkCagr: years > 0 ? (Math.pow(bf, 1 / years) - 1) * 100 : 0,
+    maxDrawdown: getMaxDrawdown(dd),
     days,
   };
+}
+
+/** Drawdown % depuis le pic (valeurs ≤ 0). */
+export function computeDrawdownSeries(
+  points: { date: string; portfolio: number }[],
+): DrawdownPoint[] {
+  let peak = -Infinity;
+  return points.map((p) => {
+    const level = 100 + p.portfolio;
+    if (level > peak) peak = level;
+    const drawdown = peak > 0 ? (level / peak - 1) * 100 : 0;
+    return { date: p.date, drawdown };
+  });
+}
+
+export function getMaxDrawdown(series: DrawdownPoint[]): number {
+  if (!series.length) return 0;
+  return Math.min(...series.map((p) => p.drawdown));
 }
 
 export function getTimelineBounds(statements: DbStatement[]): { min: string; max: string } | null {
@@ -486,6 +514,54 @@ export function twrrQualityNotice(quality: TwrrDataQuality): string | null {
   }
 }
 
+export function getIbkrTwrDailyPoints(statements: DbStatement[]): DailyTwrPoint[] {
+  const map = new Map<string, DailyTwrPoint>();
+  for (const s of [...statements].sort((a, b) => a.periodStart.localeCompare(b.periodStart))) {
+    for (const p of s.twrDaily ?? []) {
+      map.set(p.date, p);
+    }
+  }
+  return [...map.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export function hasIbkrTwrDaily(statements: DbStatement[]): boolean {
+  return getIbkrTwrDailyPoints(statements).length >= 2;
+}
+
+/** Chain official IBKR daily TWR — deposits/withdrawals already excluded by IBKR */
+export function buildCurveFromIbkrTwrDaily(
+  points: DailyTwrPoint[],
+  rangeStart: string,
+  rangeEnd: string,
+): { date: string; portfolio: number }[] {
+  const filtered = points.filter((p) => p.date >= rangeStart && p.date <= rangeEnd);
+  if (!filtered.length) return [];
+
+  let idx = 100;
+  return filtered.map((p) => {
+    idx *= 1 + p.returnPct / 100;
+    return { date: p.date, portfolio: idx - 100 };
+  });
+}
+
+/** Merge TWR journalier : twr_series (prioritaire) + statements.twr_daily */
+export function resolveIbkrTwrDailyPoints(
+  twrSeriesPoints: DailyTwrPoint[] | null | undefined,
+  statements: DbStatement[],
+): DailyTwrPoint[] {
+  if (twrSeriesPoints && twrSeriesPoints.length >= 2) {
+    return [...twrSeriesPoints].sort((a, b) => a.date.localeCompare(b.date));
+  }
+  return getIbkrTwrDailyPoints(statements);
+}
+
+export function hasResolvedIbkrTwrDaily(
+  twrSeriesPoints: DailyTwrPoint[] | null | undefined,
+  statements: DbStatement[],
+): boolean {
+  return resolveIbkrTwrDailyPoints(twrSeriesPoints, statements).length >= 2;
+}
+
 export function getNavTimelineBounds(points: DailyNavPoint[]): { min: string; max: string } | null {
   if (!points.length) return null;
   const sorted = [...points].sort((a, b) => a.date.localeCompare(b.date));
@@ -534,4 +610,9 @@ export async function fetchBenchmark(
 
 export function fmtPct(v: number, digits = 2): string {
   return `${v >= 0 ? '+' : ''}${v.toFixed(digits)}%`;
+}
+
+/** Valeur absolue en % (volatilité, ulcer index…) — sans signe +. */
+export function fmtAbsPct(v: number, digits = 2): string {
+  return `${v.toFixed(digits)}%`;
 }

@@ -4,6 +4,38 @@
   overflow: hidden;
 }
 
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 1rem 1.25rem;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.toggle:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.toggleSub {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-top: 0.2rem;
+}
+
+.chevron {
+  color: var(--text-muted);
+  font-size: 1rem;
+  margin-left: 1rem;
+}
+
 .header {
   padding: 1rem 1.25rem;
   border-bottom: 1px solid var(--border);

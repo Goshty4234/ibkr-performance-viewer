@@ -1,0 +1,61 @@
+.card {
+  background: var(--surface);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.35rem 1.25rem;
+  margin-top: 1rem;
+}
+
+.title {
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 0 0.25rem;
+}
+
+.sub {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin: 0.25rem 0 1rem;
+  padding: 0 0.25rem;
+}
+
+.wrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.table th,
+.table td {
+  padding: 0.65rem 0.75rem;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.table th:first-child,
+.table td:first-child {
+  text-align: left;
+  font-weight: 600;
+}
+
+.table th {
+  font-size: 0.68rem;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.rowLabel {
+  color: var(--text);
+}

@@ -5,13 +5,21 @@ import { parseIbkrCsv } from '@/lib/ibkr';
 import { dbToAccount } from '@/lib/account-mapper';
 import { dbToStatement } from '@/lib/db-mapper';
 import {
-  alignBenchmark,
-  buildPerformanceCurve,
+  benchmarkSeriesId,
+  buildSeriesDefs,
+  primarySeriesId,
+  toggleSeriesVisibility,
+  type MultiSeriesChartPoint,
+} from '@/lib/chart-series';
+import { buildComparisonChartData } from '@/lib/comparison-chart';
+import { getGlobalAnalysisLock } from '@/lib/analysis-lock';
+import {
   computeSummary,
-  fetchBenchmark,
   getTimelineBounds,
   mergeStatements,
 } from '@/lib/performance';
+import { fetchAccountCurveBundle } from '@/lib/portfolio-curve';
+import type { ChartBrushSelection } from '@/lib/chart-range';
 import { analyzeTimeline } from '@/lib/timeline';
 import type {
   BenchmarkSymbol,
@@ -20,12 +28,17 @@ import type {
   PerformancePoint,
   PortfolioAccount,
 } from '@/lib/types';
-import { BENCHMARK_LABELS } from '@/lib/types';
 import AccountManager from './AccountManager';
 import DataPanel from './DataPanel';
 import DateRangeControls from './DateRangeControls';
 import StatsGrid from './StatsGrid';
 import PerformanceChart from './PerformanceChart';
+import ChartRangeBanner from './ChartRangeBanner';
+import ComparisonControls from './ComparisonControls';
+import DrawdownChart from './DrawdownChart';
+import PeriodPerformanceTable from './PeriodPerformanceTable';
+import RiskMetricsTable from './RiskMetricsTable';
+import YearlyReturnsChart from './YearlyReturnsChart';
 import TimelineStatus from './TimelineStatus';
 import FileUpload from './FileUpload';
 import styles from './Dashboard.module.css';
@@ -37,12 +50,15 @@ export default function Dashboard() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [benchmark, setBenchmark] = useState<BenchmarkSymbol>('SPY');
+  const [comparisonBenchmarks, setComparisonBenchmarks] = useState<BenchmarkSymbol[]>(['SPY']);
+  const [comparisonAccountIds, setComparisonAccountIds] = useState<string[]>([]);
+  const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
+  const [chartBrush, setChartBrush] = useState<ChartBrushSelection | null>(null);
   const [accountFilter, setAccountFilter] = useState<string>('all');
   const [rangeStart, setRangeStart] = useState('');
   const [rangeEnd, setRangeEnd] = useState('');
   const [activePreset, setActivePreset] = useState<DatePreset | null>('MAX');
-  const [chartData, setChartData] = useState<PerformancePoint[]>([]);
+  const [multiChartData, setMultiChartData] = useState<MultiSeriesChartPoint[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
 
   const loadAll = useCallback(async () => {
@@ -73,12 +89,12 @@ export default function Dashboard() {
 
   const filtered = useMemo(() => {
     if (accountFilter === 'all') return statements;
-    return statements.filter((s) => s.accountId === accountFilter);
+    return statements.filter((s) => s.portfolioAccountId === accountFilter);
   }, [statements, accountFilter]);
 
   const rawFiltered = useMemo(() => {
     if (accountFilter === 'all') return statements;
-    return statements.filter((s) => s.accountId === accountFilter);
+    return statements.filter((s) => s.portfolioAccountId === accountFilter);
   }, [statements, accountFilter]);
 
   const bounds = useMemo(() => getTimelineBounds(filtered), [filtered]);
@@ -86,8 +102,8 @@ export default function Dashboard() {
 
   const accountLabel = useMemo(() => {
     if (accountFilter === 'all') return 'Tous les comptes';
-    const acc = accounts.find((a) => a.ibkrAccountId === accountFilter);
-    return acc?.displayName ?? accountFilter;
+    const acc = accounts.find((a) => a.id === accountFilter);
+    return acc?.displayName ?? 'Compte';
   }, [accountFilter, accounts]);
 
   const timelineHealth = useMemo(() => {
@@ -105,7 +121,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!bounds || !rangeStart || !rangeEnd || !filtered.length) {
-      setChartData([]);
+      setMultiChartData([]);
       return;
     }
     let cancelled = false;
@@ -115,15 +131,47 @@ export default function Dashboard() {
       try {
         const health = analyzeTimeline(merged, rangeStart, rangeEnd);
         if (!health.rangeCoverage?.hasAnyData) {
-          setChartData([]);
+          setMultiChartData([]);
           return;
         }
         const effStart = health.rangeCoverage.availableStart ?? rangeStart;
         const effEnd = health.rangeCoverage.availableEnd ?? rangeEnd;
-        const portfolio = buildPerformanceCurve(filtered, effStart, effEnd);
-        if (!portfolio.length) { setChartData([]); return; }
-        const prices = await fetchBenchmark(benchmark, effStart, effEnd);
-        if (!cancelled) setChartData(alignBenchmark(portfolio, prices));
+        const globalLock = getGlobalAnalysisLock();
+        const accountLocksById = new Map(
+          accounts.map((a) => [a.id, a.analysisStartLock ?? null] as const),
+        );
+        const rangeStartLocked = globalLock && globalLock > effStart ? globalLock : effStart;
+
+        let primaryBundle;
+        let primaryAccountId = '';
+        if (accountFilter !== 'all') {
+          const acc = accounts.find((a) => a.id === accountFilter);
+          primaryAccountId = acc?.id ?? '';
+          primaryBundle = acc
+            ? await fetchAccountCurveBundle(acc.id)
+            : { statements: filtered, navSeries: null, twrSeries: null };
+        } else {
+          primaryBundle = { statements: filtered, navSeries: null, twrSeries: null };
+          primaryAccountId = '__all__';
+        }
+
+        const chart = await buildComparisonChartData({
+          primaryAccountId,
+          primaryBundle,
+          comparisonAccountIds,
+          comparisonBenchmarks,
+          rangeStart: effStart,
+          rangeEnd: effEnd,
+          accountLocksById,
+          globalLock,
+        });
+
+        if (!chart.length) {
+          setMultiChartData([]);
+          return;
+        }
+
+        if (!cancelled) setMultiChartData(chart);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Erreur');
       } finally {
@@ -132,14 +180,86 @@ export default function Dashboard() {
     }
     load();
     return () => { cancelled = true; };
-  }, [filtered, merged, benchmark, rangeStart, rangeEnd, bounds]);
+  }, [
+    filtered,
+    merged,
+    accounts,
+    accountFilter,
+    comparisonBenchmarks,
+    comparisonAccountIds,
+    rangeStart,
+    rangeEnd,
+    bounds,
+  ]);
+
+  useEffect(() => {
+    setChartBrush(null);
+  }, [rangeStart, rangeEnd, comparisonBenchmarks, comparisonAccountIds, accountFilter]);
+
+  const activePortfolioId = useMemo(() => {
+    if (accountFilter === 'all') return null;
+    return accountFilter;
+  }, [accountFilter]);
+
+  const otherAccounts = useMemo(() => {
+    if (!activePortfolioId) return accounts;
+    return accounts.filter((a) => a.id !== activePortfolioId);
+  }, [accounts, activePortfolioId]);
+
+  const accountLabels = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of accounts) {
+      map.set(a.id, a.displayName);
+    }
+    return map;
+  }, [accounts]);
+
+  const chartSeries = useMemo(
+    () => buildSeriesDefs(accountLabel, comparisonAccountIds, accountLabels, comparisonBenchmarks),
+    [accountLabel, comparisonAccountIds, accountLabels, comparisonBenchmarks],
+  );
+
+  useEffect(() => {
+    const valid = new Set(chartSeries.map((s) => s.id));
+    setHiddenSeries((prev) => {
+      const next = new Set([...prev].filter((id) => valid.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [chartSeries]);
+
+  const handleToggleSeries = useCallback((seriesId: string) => {
+    setHiddenSeries((prev) => toggleSeriesVisibility(prev, seriesId));
+  }, []);
+
+  const summaryBenchmark = comparisonBenchmarks[0] ?? 'SPY';
+
+  const legacyChartData = useMemo((): PerformancePoint[] => {
+    if (!multiChartData.length) return [];
+    const benchId = comparisonBenchmarks[0]
+      ? benchmarkSeriesId(comparisonBenchmarks[0])
+      : null;
+    return multiChartData.map((p) => ({
+      date: p.date,
+      portfolio: (p[primarySeriesId()] as number) ?? 0,
+      benchmark: benchId ? ((p[benchId] as number) ?? 0) : 0,
+    }));
+  }, [multiChartData, comparisonBenchmarks]);
 
   const summary = useMemo(() => {
-    if (!chartData.length || !rangeStart || !rangeEnd) return null;
-    const effStart = timelineHealth?.rangeCoverage?.availableStart ?? rangeStart;
-    const effEnd = timelineHealth?.rangeCoverage?.availableEnd ?? rangeEnd;
-    return computeSummary(chartData, effStart, effEnd);
-  }, [chartData, rangeStart, rangeEnd, timelineHealth]);
+    if (!legacyChartData.length) return null;
+    const chartStart = legacyChartData[0].date;
+    const chartEnd = legacyChartData[legacyChartData.length - 1].date;
+    return computeSummary(legacyChartData, chartStart, chartEnd);
+  }, [legacyChartData]);
+
+  const metricsRange = useMemo(() => {
+    if (chartBrush) return { start: chartBrush.startDate, end: chartBrush.endDate };
+    if (!rangeStart || !rangeEnd) return null;
+    return {
+      start: timelineHealth?.rangeCoverage?.availableStart ?? rangeStart,
+      end: timelineHealth?.rangeCoverage?.availableEnd ?? rangeEnd,
+    };
+  }, [chartBrush, rangeStart, rangeEnd, timelineHealth]);
 
   async function handleFiles(files: FileList) {
     setUploading(true);
@@ -188,7 +308,7 @@ export default function Dashboard() {
 
   async function handleDeleteRange(accId: string, start: string, end: string) {
     const res = await fetch(
-      `/api/statements?accountId=${encodeURIComponent(accId)}&rangeStart=${start}&rangeEnd=${end}`,
+      `/api/statements?portfolioAccountId=${encodeURIComponent(accId)}&rangeStart=${start}&rangeEnd=${end}`,
       { method: 'DELETE' },
     );
     if (!res.ok) {
@@ -224,10 +344,10 @@ export default function Dashboard() {
         onRefresh={loadAll}
         onAccountCreated={(acc) => {
           setAccounts((prev) => {
-            const rest = prev.filter((a) => a.ibkrAccountId !== acc.ibkrAccountId);
+            const rest = prev.filter((a) => a.id !== acc.id);
             return [...rest, { ...acc, statementCount: 0 }];
           });
-          setAccountFilter(acc.ibkrAccountId);
+          setAccountFilter(acc.id);
           setNotice(`Compte « ${acc.displayName} » sélectionné — glissez un CSV dans la zone ci-dessous.`);
         }}
       />
@@ -246,7 +366,7 @@ export default function Dashboard() {
 
       {!loading && filtered.length === 0 && statements.length > 0 && accountFilter !== 'all' && (
         <div className={styles.emptyState}>
-          <strong>Aucune donnée pour ce compte.</strong> Importez un CSV dont l&apos;ID IBKR correspond à « {accountLabel} ».
+          <strong>Aucune donnée pour ce compte.</strong> Importez un CSV IBKR pour ce compte workspace.
         </div>
       )}
 
@@ -284,28 +404,98 @@ export default function Dashboard() {
                   onRangeChange={handleRangeChange}
                 />
               </div>
-              <div className={styles.ctrl}>
-                <label>Benchmark</label>
-                <select value={benchmark} onChange={(e) => setBenchmark(e.target.value as BenchmarkSymbol)}>
-                  {(Object.keys(BENCHMARK_LABELS) as BenchmarkSymbol[]).map((k) => (
-                    <option key={k} value={k}>{BENCHMARK_LABELS[k]}</option>
-                  ))}
-                </select>
+              <div className={styles.ctrlFull}>
+                <label>Comparaisons</label>
+                <ComparisonControls
+                  benchmarks={comparisonBenchmarks}
+                  onBenchmarksChange={setComparisonBenchmarks}
+                  otherAccounts={otherAccounts}
+                  selectedAccountIds={comparisonAccountIds}
+                  onAccountIdsChange={setComparisonAccountIds}
+                />
               </div>
             </div>
           )}
 
           {timelineHealth && <TimelineStatus health={timelineHealth} />}
 
-          {summary && <StatsGrid summary={summary} benchmark={benchmark} />}
+          {summary && <StatsGrid summary={summary} benchmark={summaryBenchmark} />}
 
+          <ChartRangeBanner
+            selectedStart={rangeStart}
+            selectedEnd={rangeEnd}
+            data={multiChartData}
+            loading={chartLoading}
+          />
+
+          <div className={styles.chartStack}>
           <PerformanceChart
-            data={chartData}
-            benchmark={benchmark}
+            series={chartSeries}
+            data={multiChartData}
+            hidden={hiddenSeries}
+            onToggleSeries={handleToggleSeries}
+            brush={chartBrush}
+            onBrushChange={setChartBrush}
             loading={chartLoading}
             hasStatements={filtered.length > 0}
             noDataInRange={timelineHealth?.rangeCoverage?.hasAnyData === false}
+            stacked
           />
+
+          <DrawdownChart
+            series={chartSeries}
+            data={multiChartData}
+            hidden={hiddenSeries}
+            loading={chartLoading}
+            stacked
+            show={
+              filtered.length > 0 &&
+              timelineHealth?.rangeCoverage?.hasAnyData !== false &&
+              multiChartData.length > 0
+            }
+          />
+          </div>
+
+          {metricsRange && (
+            <RiskMetricsTable
+              series={chartSeries}
+              data={multiChartData}
+              hidden={hiddenSeries}
+              brush={chartBrush}
+              loading={chartLoading}
+              show={
+                filtered.length > 0 &&
+                timelineHealth?.rangeCoverage?.hasAnyData !== false &&
+                multiChartData.length > 0
+              }
+            />
+          )}
+
+          {multiChartData.length > 0 && (
+            <>
+              <PeriodPerformanceTable
+                title="Performance annuelle"
+                subtitle="Rendement de chaque année · cumul = multiple et % total depuis le début de la plage"
+                data={multiChartData}
+                series={chartSeries}
+                hidden={hiddenSeries}
+                mode="yearly"
+              />
+              <PeriodPerformanceTable
+                title="Performance mensuelle"
+                subtitle="Rendement de chaque mois · cumul depuis le début de la plage affichée"
+                data={multiChartData}
+                series={chartSeries}
+                hidden={hiddenSeries}
+                mode="monthly"
+              />
+              <YearlyReturnsChart
+                data={multiChartData}
+                series={chartSeries}
+                hidden={hiddenSeries}
+              />
+            </>
+          )}
         </>
       )}
     </div>

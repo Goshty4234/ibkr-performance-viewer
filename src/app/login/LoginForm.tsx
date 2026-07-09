@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import styles from './login.module.css';
@@ -10,9 +10,33 @@ export default function LoginForm() {
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
   const [message, setMessage] = useState('');
   const [isError, setIsError] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (!cancelled) setCheckingSession(false);
+    }, 2500);
+
+    createClient()
+      .auth.getSession()
+      .then(({ data }) => {
+        if (!cancelled && data.session) router.replace('/');
+      })
+      .finally(() => {
+        if (!cancelled) {
+          clearTimeout(timer);
+          setCheckingSession(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [router]);
 
   function formatAuthError(msg: string): string {
     const lower = msg.toLowerCase();
@@ -63,6 +87,9 @@ export default function LoginForm() {
 
   return (
     <div className={styles.root}>
+      {checkingSession ? (
+        <p className={styles.cardSub}>Vérification de la session…</p>
+      ) : (
       <div className={styles.wrap}>
         <div className={styles.brand}>
           <div className={styles.logo} aria-hidden>📈</div>
@@ -142,6 +169,7 @@ export default function LoginForm() {
           <span className={styles.feature}><span className={styles.featureDot} /> Données cloud</span>
         </div>
       </div>
+      )}
     </div>
   );
 }

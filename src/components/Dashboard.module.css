@@ -142,6 +142,10 @@
 
 .viewAllBtn:hover { color: var(--text); }
 
+.chartStack {
+  margin-top: 0;
+}
+
 @media (max-width: 640px) {
   .controls { flex-direction: column; align-items: stretch; }
   .ctrl { min-width: 0; }

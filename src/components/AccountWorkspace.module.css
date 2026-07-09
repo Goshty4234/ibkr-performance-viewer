@@ -151,3 +151,47 @@
   gap: 0.4rem;
   min-width: 180px;
 }
+
+.startLock {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.startLock label {
+  font-size: 0.7rem;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 700;
+}
+
+.startLockRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.startLockRow input[type='date'] {
+  flex: 1;
+  min-width: 140px;
+}
+
+.startLockHint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.startLockHint strong {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.chartStack {
+  margin-top: 0;
+}

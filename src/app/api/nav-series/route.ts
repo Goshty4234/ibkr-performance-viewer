@@ -1,6 +1,14 @@
 import { cashFlowsToDateMap } from '@/lib/ibkr-flex-cash';
 import { createClient } from '@/lib/supabase/server';
 import { dbToNavSeries, mergeNavPoints } from '@/lib/nav-mapper';
+import {
+  sanitizeCashFlows,
+  sanitizeImportLabel,
+  sanitizeNavForClient,
+  hashIbkrAccountId,
+} from '@/lib/privacy';
+import { verifyCsvAccountForPortfolio } from '@/lib/verify-csv-account';
+import { isPendingIbkrId } from '@/lib/account-mapper';
 import type { CashFlow, DailyNavPoint } from '@/lib/types';
 import { NextResponse } from 'next/server';
 
@@ -32,7 +40,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json(data ? dbToNavSeries(data) : null);
+  return NextResponse.json(data ? sanitizeNavForClient(dbToNavSeries(data)) : null);
 }
 
 function mergeCashFlows(existing: CashFlow[], incoming: CashFlow[]): CashFlow[] {
@@ -58,7 +66,7 @@ export async function POST(request: Request) {
   const incoming = body.points as DailyNavPoint[] | undefined;
   const incomingFlows = body.cashFlows as CashFlow[] | undefined;
 
-  if (!portfolioAccountId || !accountId) {
+  if (!portfolioAccountId) {
     return NextResponse.json({ error: 'Compte requis' }, { status: 400 });
   }
   if (!incoming?.length && !incomingFlows?.length) {
@@ -67,13 +75,32 @@ export async function POST(request: Request) {
 
   const { data: portfolioAccount } = await supabase
     .from('accounts')
-    .select('id')
+    .select('id, ibkr_account_id')
     .eq('id', portfolioAccountId)
     .eq('user_id', userId)
     .maybeSingle();
 
   if (!portfolioAccount) {
     return NextResponse.json({ error: 'Compte introuvable' }, { status: 404 });
+  }
+
+  if (accountId) {
+    const verify = await verifyCsvAccountForPortfolio(
+      supabase,
+      userId,
+      portfolioAccountId,
+      accountId,
+    );
+    if (!verify.ok) {
+      return NextResponse.json({ error: verify.error }, { status: verify.status });
+    }
+  } else if (incomingFlows?.length) {
+    if (isPendingIbkrId(portfolioAccount.ibkr_account_id as string)) {
+      return NextResponse.json(
+        { error: 'Importez d\'abord un Flex NAV ou Activity Statement pour lier le compte.' },
+        { status: 400 },
+      );
+    }
   }
 
   const { data: existing } = await supabase
@@ -88,7 +115,7 @@ export async function POST(request: Request) {
     : (existing?.points as DailyNavPoint[]) ?? [];
   const mergedFlows = incomingFlows?.length
     ? mergeCashFlows(existing ? (existing.cash_flows as CashFlow[]) ?? [] : [], incomingFlows)
-    : (existing?.cash_flows as CashFlow[]) ?? [];
+    : sanitizeCashFlows((existing?.cash_flows as CashFlow[]) ?? []);
 
   if (!merged.length && !existing) {
     return NextResponse.json({ error: 'Importez d\'abord un Flex NAV' }, { status: 400 });
@@ -102,12 +129,14 @@ export async function POST(request: Request) {
   const row = {
     user_id: userId,
     portfolio_account_id: portfolioAccountId,
-    account_id: accountId,
-    account_alias: body.accountAlias ?? existing?.account_alias ?? '',
+    account_id: accountId
+      ? hashIbkrAccountId(accountId, userId)
+      : ((existing?.account_id as string) ?? (portfolioAccount.ibkr_account_id as string)),
+    account_alias: '',
     base_currency: body.baseCurrency ?? existing?.base_currency ?? 'CAD',
     period_start: periodStart,
     period_end: periodEnd,
-    filename: body.filename ?? existing?.filename ?? 'flex-nav.csv',
+    filename: sanitizeImportLabel('nav', periodStart, periodEnd),
     points: merged,
     cash_flows: mergedFlows,
     imported_at: now,
@@ -139,7 +168,7 @@ export async function POST(request: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({
-    series: dbToNavSeries(data),
+    series: sanitizeNavForClient(dbToNavSeries(data)),
     meta: {
       action: existing ? 'updated' : 'created',
       days: merged.length,

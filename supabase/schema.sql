@@ -8,6 +8,7 @@ create table if not exists public.accounts (
   ibkr_account_id text not null,
   display_name text not null,
   notes text not null default '',
+  analysis_start_lock date,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -98,6 +99,7 @@ create index if not exists statements_period_idx on public.statements(user_id, p
 
 -- Migration for existing databases
 alter table public.statements add column if not exists daily_events jsonb not null default '[]'::jsonb;
+alter table public.statements add column if not exists twr_daily jsonb not null default '[]'::jsonb;
 alter table public.statements add column if not exists portfolio_account_id uuid references public.accounts(id) on delete cascade;
 
 create index if not exists statements_portfolio_account_idx on public.statements(user_id, portfolio_account_id);
@@ -157,3 +159,44 @@ create unique index if not exists nav_series_portfolio_idx
 create index if not exists nav_series_user_id_idx on public.nav_series(user_id);
 
 alter table public.nav_series add column if not exists cash_flows jsonb not null default '[]'::jsonb;
+
+-- Daily TWR from IBKR Performance Report (Time Period Benchmark Comparison)
+create table if not exists public.twr_series (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  portfolio_account_id uuid not null references public.accounts(id) on delete cascade,
+  account_id text not null,
+  account_alias text default '',
+  base_currency text not null default 'CAD',
+  period_start date not null,
+  period_end date not null,
+  twrr double precision not null default 0,
+  filename text not null,
+  points jsonb not null default '[]'::jsonb,
+  imported_at timestamptz not null default now()
+);
+
+alter table public.twr_series enable row level security;
+
+drop policy if exists "Users can view own twr_series" on public.twr_series;
+create policy "Users can view own twr_series"
+  on public.twr_series for select using (auth.uid() = user_id);
+
+drop policy if exists "Users can insert own twr_series" on public.twr_series;
+create policy "Users can insert own twr_series"
+  on public.twr_series for insert with check (auth.uid() = user_id);
+
+drop policy if exists "Users can update own twr_series" on public.twr_series;
+create policy "Users can update own twr_series"
+  on public.twr_series for update using (auth.uid() = user_id);
+
+drop policy if exists "Users can delete own twr_series" on public.twr_series;
+create policy "Users can delete own twr_series"
+  on public.twr_series for delete using (auth.uid() = user_id);
+
+create unique index if not exists twr_series_portfolio_idx
+  on public.twr_series (user_id, portfolio_account_id);
+
+create index if not exists twr_series_user_id_idx on public.twr_series(user_id);
+
+alter table public.accounts add column if not exists analysis_start_lock date;

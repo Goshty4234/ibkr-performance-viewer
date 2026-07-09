@@ -20,6 +20,9 @@ loadLocalEnvOverrides();
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  logging: {
+    incomingRequests: { ignore: [/\/login/] },
+  },
   webpack: (config) => {
     config.resolve.alias = {
       ...config.resolve.alias,

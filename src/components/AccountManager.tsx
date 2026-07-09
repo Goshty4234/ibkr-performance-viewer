@@ -1,13 +1,14 @@
 'use client';
 
 import { useState } from 'react';
+import { formatAccountLinkLabel } from '@/lib/account-mapper';
 import type { PortfolioAccount } from '@/lib/types';
 import styles from './AccountManager.module.css';
 
 interface Props {
   accounts: PortfolioAccount[];
   selectedId: string;
-  onSelect: (ibkrAccountId: string) => void;
+  onSelect: (portfolioAccountId: string) => void;
   onRefresh: () => void;
   onAccountCreated?: (account: PortfolioAccount) => void;
 }
@@ -16,7 +17,6 @@ export default function AccountManager({ accounts, selectedId, onSelect, onRefre
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [showCreate, setShowCreate] = useState(false);
-  const [newId, setNewId] = useState('');
   const [newName, setNewName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -56,13 +56,13 @@ export default function AccountManager({ accounts, selectedId, onSelect, onRefre
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!newId.trim() || !newName.trim()) return;
+    if (!newName.trim()) return;
     setLoading(true);
     setError('');
     const res = await fetch('/api/accounts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ibkrAccountId: newId.trim(), displayName: newName.trim() }),
+      body: JSON.stringify({ displayName: newName.trim() }),
     });
     setLoading(false);
     if (!res.ok) {
@@ -72,10 +72,9 @@ export default function AccountManager({ accounts, selectedId, onSelect, onRefre
     }
     const created = await res.json() as PortfolioAccount;
     setShowCreate(false);
-    setNewId('');
     setNewName('');
     setSuccess(`Compte « ${created.displayName} » créé et sélectionné ↓`);
-    onSelect(created.ibkrAccountId);
+    onSelect(created.id);
     onAccountCreated?.({ ...created, statementCount: 0 });
     onRefresh();
   }
@@ -100,12 +99,6 @@ export default function AccountManager({ accounts, selectedId, onSelect, onRefre
       {showCreate && (
         <form className={styles.createForm} onSubmit={handleCreate}>
           <input
-            placeholder="ID IBKR (ex. U98765432)"
-            value={newId}
-            onChange={(e) => setNewId(e.target.value)}
-            required
-          />
-          <input
             placeholder="Nom du compte (ex. Stratégie growth)"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
@@ -122,18 +115,18 @@ export default function AccountManager({ accounts, selectedId, onSelect, onRefre
       {accounts.length > 0 ? (
         <div className={styles.cards}>
           {accounts.map((a) => {
-            const isSelected = selectedId === a.ibkrAccountId;
+            const isSelected = selectedId === a.id;
             const hasData = (a.statementCount ?? 0) > 0;
             return (
               <button
                 key={a.id}
                 type="button"
                 className={`${styles.accountCard} ${isSelected ? styles.accountCardSelected : ''}`}
-                onClick={() => onSelect(a.ibkrAccountId)}
+                onClick={() => onSelect(a.id)}
               >
                 {isSelected && <span className={styles.selectedBadge}>✓ Sélectionné</span>}
                 <span className={styles.cardName}>{a.displayName}</span>
-                <span className={styles.cardId}>{a.ibkrAccountId}</span>
+                <span className={styles.cardId}>{formatAccountLinkLabel(a.ibkrAccountId)}</span>
                 <span className={styles.cardStatus}>
                   {hasData
                     ? `${a.statementCount} période${a.statementCount !== 1 ? 's' : ''} importée${a.statementCount !== 1 ? 's' : ''}`
@@ -174,7 +167,7 @@ export default function AccountManager({ accounts, selectedId, onSelect, onRefre
                   <div className={styles.itemInfo}>
                     <span className={styles.itemName}>{a.displayName}</span>
                     <span className={styles.itemMeta}>
-                      {a.ibkrAccountId}
+                      {formatAccountLinkLabel(a.ibkrAccountId)}
                       {` · ${a.statementCount ?? 0} import${(a.statementCount ?? 0) !== 1 ? 's' : ''}`}
                       {(a.statementCount ?? 0) === 0 && (
                         <span className={styles.noData}> — en attente de CSV</span>

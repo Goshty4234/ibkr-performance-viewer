@@ -4,44 +4,67 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { parseIbkrCsv } from '@/lib/ibkr';
+import {
+  isIbkrPerformanceReportCsv,
+  parseIbkrPerformanceReportCsv,
+} from '@/lib/ibkr-performance-report';
 import { isFlexNavCsv, parseFlexNavCsv } from '@/lib/ibkr-flex-nav';
 import { isFlexCombinedCsv, parseFlexCombinedCsv } from '@/lib/ibkr-flex-combined';
 import { isFlexCashCsv, parseFlexCashCsv, cashFlowsToDateMap } from '@/lib/ibkr-flex-cash';
 import { dbToNavSeries } from '@/lib/nav-mapper';
+import { dbToTwrSeries, getTwrTimelineBounds } from '@/lib/twr-mapper';
 import { dbToStatement } from '@/lib/db-mapper';
-import { dbToAccount, formatIbkrIdDisplay, isPendingIbkrId } from '@/lib/account-mapper';
+import { dbToAccount, formatAccountLinkLabel, isPendingIbkrId } from '@/lib/account-mapper';
+import { formatStatementPeriod } from '@/lib/privacy';
 import {
-  alignBenchmark,
+  benchmarkSeriesId,
+  buildSeriesDefs,
+  primarySeriesId,
+  toggleSeriesVisibility,
+  type MultiSeriesChartPoint,
+} from '@/lib/chart-series';
+import { buildComparisonChartData } from '@/lib/comparison-chart';
+import {
+  getGlobalAnalysisLock,
+  mergeAnalysisLocks,
+  setGlobalAnalysisLock,
+} from '@/lib/analysis-lock';
+import {
   assessTwrrQuality,
-  buildPerformanceCurve,
-  buildTwrrCurveFromNav,
   computeSummary,
-  fetchBenchmark,
   getNavTimelineBounds,
   getTimelineBounds,
   mergeStatements,
   mergeTimelineBounds,
   navPointsHaveComponents,
+  resolveIbkrTwrDailyPoints,
   shouldPreferStatementCurve,
   twrrCapitalFlowsByDate,
   twrrQualityLabel,
   twrrQualityNotice,
   type TwrrDataQuality,
 } from '@/lib/performance';
-import { analyzeTimeline } from '@/lib/timeline';
+import type { ChartBrushSelection } from '@/lib/chart-range';
+import { analyzeTimeline, clampDateRange, effectiveTimelineBounds } from '@/lib/timeline';
 import type {
   BenchmarkSymbol,
   DatePreset,
   DbStatement,
   DbNavSeries,
+  DbTwrSeries,
   PerformancePoint,
   PortfolioAccount,
 } from '@/lib/types';
-import { BENCHMARK_LABELS } from '@/lib/types';
 import DataPanel from './DataPanel';
 import DateRangeControls from './DateRangeControls';
 import StatsGrid from './StatsGrid';
 import PerformanceChart from './PerformanceChart';
+import ChartRangeBanner from './ChartRangeBanner';
+import ComparisonControls from './ComparisonControls';
+import DrawdownChart from './DrawdownChart';
+import PeriodPerformanceTable from './PeriodPerformanceTable';
+import RiskMetricsTable from './RiskMetricsTable';
+import YearlyReturnsChart from './YearlyReturnsChart';
 import TimelineStatus from './TimelineStatus';
 import FileUpload from './FileUpload';
 import styles from './AccountWorkspace.module.css';
@@ -55,19 +78,27 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
   const [account, setAccount] = useState(initialAccount);
   const [statements, setStatements] = useState<DbStatement[]>([]);
   const [navSeries, setNavSeries] = useState<DbNavSeries | null>(null);
+  const [twrSeries, setTwrSeries] = useState<DbTwrSeries | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [benchmark, setBenchmark] = useState<BenchmarkSymbol>('SPY');
+  const [comparisonBenchmarks, setComparisonBenchmarks] = useState<BenchmarkSymbol[]>(['SPY']);
+  const [comparisonAccountIds, setComparisonAccountIds] = useState<string[]>([]);
+  const [allAccounts, setAllAccounts] = useState<PortfolioAccount[]>([]);
+  const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
+  const [chartBrush, setChartBrush] = useState<ChartBrushSelection | null>(null);
+  const [globalLock, setGlobalLockState] = useState<string | null>(null);
   const [rangeStart, setRangeStart] = useState('');
   const [rangeEnd, setRangeEnd] = useState('');
   const [activePreset, setActivePreset] = useState<DatePreset | null>('MAX');
-  const [chartData, setChartData] = useState<PerformancePoint[]>([]);
+  const [multiChartData, setMultiChartData] = useState<MultiSeriesChartPoint[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
   const [twrrQuality, setTwrrQuality] = useState<TwrrDataQuality | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [editName, setEditName] = useState(initialAccount.displayName);
+  const [lockDraft, setLockDraft] = useState(initialAccount.analysisStartLock ?? '');
+  const [savingLock, setSavingLock] = useState(false);
 
   const loadNavSeries = useCallback(async () => {
     const res = await fetch(
@@ -79,6 +110,18 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
     }
     const data = await res.json();
     setNavSeries(data ? dbToNavSeries(data) : null);
+  }, [account.id]);
+
+  const loadTwrSeries = useCallback(async () => {
+    const res = await fetch(
+      `/api/twr-series?portfolioAccountId=${encodeURIComponent(account.id)}`,
+    );
+    if (!res.ok) {
+      setTwrSeries(null);
+      return;
+    }
+    const data = await res.json();
+    setTwrSeries(data ? dbToTwrSeries(data) : null);
   }, [account.id]);
 
   const loadStatements = useCallback(async () => {
@@ -94,22 +137,73 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
     setStatements(data.map(dbToStatement));
   }, [account.id]);
 
+  const reloadAccount = useCallback(async () => {
+    const res = await fetch('/api/accounts');
+    if (!res.ok) return;
+    const data = await res.json();
+    const accounts = data.map(dbToAccount) as PortfolioAccount[];
+    const me = accounts.find((a) => a.id === account.id);
+    if (me) setAccount(me);
+    setAllAccounts(accounts);
+  }, [account.id]);
+
   const reloadData = useCallback(async () => {
     setLoading(true);
-    await Promise.all([loadStatements(), loadNavSeries()]);
+    await Promise.all([loadStatements(), loadNavSeries(), loadTwrSeries(), reloadAccount()]);
     setLoading(false);
-  }, [loadStatements, loadNavSeries]);
+  }, [loadStatements, loadNavSeries, loadTwrSeries, reloadAccount]);
 
   useEffect(() => { reloadData(); }, [reloadData]);
+
+  useEffect(() => {
+    fetch('/api/accounts')
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = await res.json();
+        setAllAccounts(data.map(dbToAccount));
+      })
+      .catch(() => {});
+  }, []);
 
   const merged = useMemo(() => mergeStatements(statements), [statements]);
   const bounds = useMemo(
     () => mergeTimelineBounds(
-      getTimelineBounds(statements),
-      navSeries ? getNavTimelineBounds(navSeries.points) : null,
+      mergeTimelineBounds(
+        getTimelineBounds(statements),
+        navSeries ? getNavTimelineBounds(navSeries.points) : null,
+      ),
+      twrSeries ? getTwrTimelineBounds(twrSeries.points) : null,
     ),
-    [statements, navSeries],
+    [statements, navSeries, twrSeries],
   );
+
+  useEffect(() => { setGlobalLockState(getGlobalAnalysisLock()); }, []);
+
+  const effectiveLock = useMemo(
+    () => mergeAnalysisLocks(account.analysisStartLock, globalLock),
+    [account.analysisStartLock, globalLock],
+  );
+
+  const effectiveBounds = useMemo(
+    () => (bounds ? effectiveTimelineBounds(bounds, effectiveLock) : null),
+    [bounds, effectiveLock],
+  );
+
+  const accountLocksById = useMemo(() => {
+    const m = new Map<string, string | null>();
+    for (const a of allAccounts) {
+      m.set(a.id, a.analysisStartLock ?? null);
+    }
+    return m;
+  }, [allAccounts]);
+
+  const handleRangeChange = useCallback((start: string, end: string) => {
+    if (!effectiveBounds) return;
+    const clamped = clampDateRange(start, end, effectiveBounds);
+    setRangeStart(clamped.start);
+    setRangeEnd(clamped.end);
+    setActivePreset(null);
+  }, [effectiveBounds]);
 
   const timelineHealth = useMemo(() => {
     if (!rangeStart || !rangeEnd) return null;
@@ -128,29 +222,48 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
   }, [merged, statements, navSeries, rangeStart, rangeEnd]);
 
   const hasChartData = useMemo(
-    () => (navSeries?.points.length ?? 0) >= 2 || statements.length > 0,
-    [navSeries, statements],
+    () =>
+      (twrSeries?.points.length ?? 0) >= 2 ||
+      (navSeries?.points.length ?? 0) >= 2 ||
+      statements.length > 0,
+    [twrSeries, navSeries, statements],
+  );
+
+  const ibkrTwrPoints = useMemo(
+    () => resolveIbkrTwrDailyPoints(twrSeries?.points, statements),
+    [twrSeries, statements],
   );
 
   useEffect(() => {
-    if (!bounds) return;
-    if (!rangeStart || !rangeEnd) {
-      setRangeStart(bounds.min);
-      setRangeEnd(bounds.max);
-      setActivePreset('MAX');
-    }
-  }, [bounds, rangeStart, rangeEnd]);
+    const merged = mergeAnalysisLocks(account.analysisStartLock, globalLock);
+    setLockDraft(merged ?? account.analysisStartLock ?? '');
+  }, [account.analysisStartLock, globalLock]);
 
   useEffect(() => {
-    if (!bounds || !rangeStart || !rangeEnd) {
-      setChartData([]);
+    if (!effectiveBounds) return;
+    if (!rangeStart || !rangeEnd) {
+      setRangeStart(effectiveBounds.min);
+      setRangeEnd(effectiveBounds.max);
+      setActivePreset('MAX');
+      return;
+    }
+    const clamped = clampDateRange(rangeStart, rangeEnd, effectiveBounds);
+    if (clamped.start !== rangeStart || clamped.end !== rangeEnd) {
+      setRangeStart(clamped.start);
+      setRangeEnd(clamped.end);
+    }
+  }, [effectiveBounds, rangeStart, rangeEnd]);
+
+  useEffect(() => {
+    if (!effectiveBounds || !rangeStart || !rangeEnd) {
+      setMultiChartData([]);
       setTwrrQuality(null);
       return;
     }
     const hasNav = (navSeries?.points.length ?? 0) >= 2;
     const hasStmts = statements.length > 0;
     if (!hasNav && !hasStmts) {
-      setChartData([]);
+      setMultiChartData([]);
       setTwrrQuality(null);
       return;
     }
@@ -160,14 +273,12 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
       try {
         const effStart = rangeStart;
         const effEnd = rangeEnd;
-        let portfolio: { date: string; portfolio: number }[];
         let quality: TwrrDataQuality | null = null;
 
-        if (shouldPreferStatementCurve(statements, rangeStart, rangeEnd)) {
-          const health = analyzeTimeline(merged, rangeStart, rangeEnd);
-          const stmtStart = health.rangeCoverage?.availableStart ?? rangeStart;
-          const stmtEnd = health.rangeCoverage?.availableEnd ?? rangeEnd;
-          portfolio = buildPerformanceCurve(statements, stmtStart, stmtEnd);
+        const ibkrTwr = ibkrTwrPoints;
+        if (ibkrTwr.length >= 2) {
+          quality = 'exact';
+        } else if (shouldPreferStatementCurve(statements, rangeStart, rangeEnd)) {
           quality = 'exact';
         } else if (hasNav && navSeries) {
           const hasComponents = navPointsHaveComponents(navSeries.points);
@@ -175,34 +286,29 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
             ? cashFlowsToDateMap(navSeries.cashFlows)
             : null;
           const cfMap = twrrCapitalFlowsByDate(statements, navFlows);
-          portfolio = buildTwrrCurveFromNav(
-            navSeries.points,
-            effStart,
-            effEnd,
-            cfMap,
-          );
           quality = assessTwrrQuality(navSeries.points, effStart, effEnd, cfMap);
-        } else {
-          const health = analyzeTimeline(merged, rangeStart, rangeEnd);
-          if (!health.rangeCoverage?.hasAnyData) {
-            setChartData([]);
-            setTwrrQuality(null);
-            return;
-          }
-          const stmtStart = health.rangeCoverage.availableStart ?? rangeStart;
-          const stmtEnd = health.rangeCoverage.availableEnd ?? rangeEnd;
-          portfolio = buildPerformanceCurve(statements, stmtStart, stmtEnd);
+        } else if (hasStmts) {
           quality = 'exact';
         }
 
+        const portfolio = await buildComparisonChartData({
+          primaryAccountId: account.id,
+          primaryBundle: { statements, navSeries, twrSeries },
+          comparisonAccountIds,
+          comparisonBenchmarks,
+          rangeStart: effStart,
+          rangeEnd: effEnd,
+          accountLocksById,
+          globalLock,
+        });
+
         if (!portfolio.length) {
-          setChartData([]);
+          setMultiChartData([]);
           setTwrrQuality(null);
           return;
         }
         if (!cancelled) setTwrrQuality(quality);
-        const prices = await fetchBenchmark(benchmark, effStart, effEnd);
-        if (!cancelled) setChartData(alignBenchmark(portfolio, prices));
+        if (!cancelled) setMultiChartData(portfolio);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Erreur');
       } finally {
@@ -211,14 +317,148 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
     }
     load();
     return () => { cancelled = true; };
-  }, [statements, merged, navSeries, benchmark, rangeStart, rangeEnd, bounds]);
+  }, [
+    statements,
+    navSeries,
+    twrSeries,
+    ibkrTwrPoints,
+    comparisonBenchmarks,
+    comparisonAccountIds,
+    rangeStart,
+    rangeEnd,
+    effectiveBounds,
+    accountLocksById,
+    globalLock,
+  ]);
+
+  useEffect(() => {
+    setChartBrush(null);
+  }, [rangeStart, rangeEnd, comparisonBenchmarks, comparisonAccountIds, account.id]);
+
+  async function handleSaveStartLock() {
+    const value = lockDraft.trim() || null;
+    setSavingLock(true);
+    setError(null);
+    const res = await fetch('/api/accounts', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: account.id, analysisStartLock: value }),
+    });
+    setSavingLock(false);
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      setError((j as { error?: string }).error || 'Erreur enregistrement du verrou');
+      return;
+    }
+    const updated = dbToAccount(await res.json());
+    setAccount(updated);
+    setGlobalAnalysisLock(value);
+    setGlobalLockState(value);
+    setLockDraft(updated.analysisStartLock ?? value ?? '');
+    if (effectiveBounds) {
+      const next = effectiveTimelineBounds(bounds!, mergeAnalysisLocks(updated.analysisStartLock, value));
+      const clamped = clampDateRange(rangeStart || next.min, rangeEnd || next.max, next);
+      setRangeStart(clamped.start);
+      setRangeEnd(clamped.end);
+    }
+  }
+
+  async function handleClearStartLock() {
+    setLockDraft('');
+    setSavingLock(true);
+    const res = await fetch('/api/accounts', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: account.id, analysisStartLock: null }),
+    });
+    setSavingLock(false);
+    if (!res.ok) return;
+    const updated = dbToAccount(await res.json());
+    setAccount(updated);
+    setGlobalAnalysisLock(null);
+    setGlobalLockState(null);
+  }
+
+  const chartSubtitle = useMemo(() => {
+    if (ibkrTwrPoints.length >= 2) {
+      const src = (twrSeries?.points.length ?? 0) >= 2 ? 'twr_series' : 'statement';
+      return `TWR quotidien officiel IBKR · ${ibkrTwrPoints.length} jours${src === 'twr_series' ? '' : ' (cache)'}`;
+    }
+    if (twrrQuality === 'exact') {
+      return 'TWRR chaîné · Activity Statement (forme journalière estimée)';
+    }
+    if ((navSeries?.points.length ?? 0) >= 2) {
+      return 'TWRR calculé depuis la NAV Flex';
+    }
+    return 'TWRR chaîné · courbe lissée (peu de détail journalier)';
+  }, [statements, navSeries, twrrQuality, ibkrTwrPoints, twrSeries]);
+
+  const needsPerformanceReport = statements.length > 0 && ibkrTwrPoints.length < 2;
+
+  const primaryLabel = account.displayName;
+
+  const otherAccounts = useMemo(
+    () => allAccounts.filter((a) => a.id !== account.id),
+    [allAccounts, account.id],
+  );
+
+  const accountLabels = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of allAccounts) {
+      map.set(a.id, a.displayName);
+    }
+    return map;
+  }, [allAccounts]);
+
+  const chartSeries = useMemo(
+    () => buildSeriesDefs(primaryLabel, comparisonAccountIds, accountLabels, comparisonBenchmarks),
+    [primaryLabel, comparisonAccountIds, accountLabels, comparisonBenchmarks],
+  );
+
+  useEffect(() => {
+    const valid = new Set(chartSeries.map((s) => s.id));
+    setHiddenSeries((prev) => {
+      const next = new Set([...prev].filter((id) => valid.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [chartSeries]);
+
+  const handleToggleSeries = useCallback((seriesId: string) => {
+    setHiddenSeries((prev) => toggleSeriesVisibility(prev, seriesId));
+  }, []);
+
+  const summaryBenchmark = comparisonBenchmarks[0] ?? 'SPY';
+
+  const legacyChartData = useMemo((): PerformancePoint[] => {
+    if (!multiChartData.length) return [];
+    const benchId = comparisonBenchmarks[0]
+      ? benchmarkSeriesId(comparisonBenchmarks[0])
+      : null;
+    return multiChartData.map((p) => ({
+      date: p.date,
+      portfolio: (p[primarySeriesId()] as number) ?? 0,
+      benchmark: benchId ? ((p[benchId] as number) ?? 0) : 0,
+    }));
+  }, [multiChartData, comparisonBenchmarks]);
 
   const summary = useMemo(() => {
-    if (!chartData.length || !rangeStart || !rangeEnd) return null;
-    const effStart = timelineHealth?.rangeCoverage?.availableStart ?? rangeStart;
-    const effEnd = timelineHealth?.rangeCoverage?.availableEnd ?? rangeEnd;
-    return computeSummary(chartData, effStart, effEnd);
-  }, [chartData, rangeStart, rangeEnd, timelineHealth]);
+    if (!legacyChartData.length) return null;
+    const chartStart = legacyChartData[0].date;
+    const chartEnd = legacyChartData[legacyChartData.length - 1].date;
+    return computeSummary(legacyChartData, chartStart, chartEnd);
+  }, [legacyChartData]);
+
+  const metricsRange = useMemo(() => {
+    if (chartBrush) {
+      return { start: chartBrush.startDate, end: chartBrush.endDate, fromBrush: true as const };
+    }
+    if (!rangeStart || !rangeEnd) return null;
+    return {
+      start: timelineHealth?.rangeCoverage?.availableStart ?? rangeStart,
+      end: timelineHealth?.rangeCoverage?.availableEnd ?? rangeEnd,
+      fromBrush: false as const,
+    };
+  }, [chartBrush, rangeStart, rangeEnd, timelineHealth]);
 
   async function handleFiles(files: FileList) {
     setUploading(true);
@@ -226,38 +466,62 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
     setNotice(null);
     const errs: string[] = [];
     const notes: string[] = [];
-    let currentIbkrId = account.ibkrAccountId;
 
     try {
     for (const file of Array.from(files)) {
       if (!file.name.endsWith('.csv')) continue;
       try {
         const text = await file.text();
+        const perfReport = isIbkrPerformanceReportCsv(text);
+
+        if (perfReport) {
+          const parsed = parseIbkrPerformanceReportCsv(text, file.name);
+
+          const res = await fetch('/api/statements', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...parsed, portfolioAccountId: account.id }),
+          });
+          const j = await res.json().catch(() => ({} as Record<string, unknown>));
+          if (!res.ok) throw new Error((j.error as string) || 'Erreur sauvegarde');
+
+          const twrRes = await fetch('/api/twr-series', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              portfolioAccountId: account.id,
+              accountId: parsed.accountId,
+              baseCurrency: parsed.baseCurrency,
+              periodStart: parsed.periodStart,
+              periodEnd: parsed.periodEnd,
+              twrr: parsed.twrr,
+              points: parsed.twrDaily,
+            }),
+          });
+          const twrJson = await twrRes.json().catch(() => ({} as Record<string, unknown>));
+          if (!twrRes.ok) {
+            throw new Error((twrJson.error as string) || 'Erreur sauvegarde TWR journalier');
+          }
+          if (twrJson.series) {
+            setTwrSeries(dbToTwrSeries(twrJson.series as Record<string, unknown>));
+          }
+
+          const warn = (j.meta as { warning?: string; twrDailyStored?: boolean })?.warning;
+          const twrStored = (j.meta as { twrDailyStored?: boolean })?.twrDailyStored !== false;
+          notes.push(
+            `Rapport performance : ${parsed.twrDaily?.length ?? 0} jours TWR` +
+            ` (${(parsed.twrr * 100).toFixed(1)} % sur la période)`,
+          );
+          if (!twrStored && warn) notes.push(warn);
+          continue;
+        }
+
         const flexCombined = isFlexCombinedCsv(text);
         const flexNav = !flexCombined && isFlexNavCsv(text);
         const flexCash = !flexCombined && !flexNav && isFlexCashCsv(text);
 
         if (flexCombined) {
           const { nav, cashFlows } = parseFlexCombinedCsv(text, file.name);
-
-          if (isPendingIbkrId(currentIbkrId)) {
-            const linkRes = await fetch('/api/accounts', {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: account.id, ibkrAccountId: nav.accountId }),
-            });
-            const linkJson = await linkRes.json();
-            if (!linkRes.ok) throw new Error(linkJson.error || 'Impossible de lier l\'ID IBKR');
-            const updated = dbToAccount(linkJson);
-            setAccount(updated);
-            setEditName(updated.displayName);
-            currentIbkrId = updated.ibkrAccountId;
-            notes.push(`ID IBKR détecté : ${currentIbkrId}`);
-          } else if (nav.accountId !== currentIbkrId) {
-            throw new Error(
-              `Ce fichier est pour le compte ${nav.accountId}, pas ${currentIbkrId}`,
-            );
-          }
 
           const res = await fetch('/api/nav-series', {
             method: 'POST',
@@ -273,8 +537,8 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
           if (j.series) setNavSeries(dbToNavSeries(j.series as Record<string, unknown>));
           const warn = (j.meta as { warning?: string })?.warning;
           notes.push(
-            `${file.name} : ${nav.points.length} jours NAV` +
-            (cashFlows.length ? `, ${cashFlows.length} flux capitaux` : ' (pas de dépôts/retraits dans Cash Transactions)'),
+            `Flex NAV : ${nav.points.length} jours` +
+            (cashFlows.length ? `, ${cashFlows.length} flux capitaux` : ''),
           );
           if (warn) notes.push(warn);
           continue;
@@ -282,49 +546,23 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
 
         if (flexCash) {
           const flows = parseFlexCashCsv(text, file.name);
-          if (isPendingIbkrId(currentIbkrId)) {
-            throw new Error('Importez d\'abord un Flex NAV ou Activity Statement pour lier le compte.');
-          }
           const res = await fetch('/api/nav-series', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               portfolioAccountId: account.id,
-              accountId: currentIbkrId,
               cashFlows: flows,
-              filename: file.name,
             }),
           });
           const j = await res.json();
           if (!res.ok) throw new Error(j.error || 'Erreur sauvegarde flux');
           if (j.series) setNavSeries(dbToNavSeries(j.series));
-          notes.push(`${file.name} : ${flows.length} flux de capitaux importés`);
+          notes.push(`${flows.length} flux de capitaux importés`);
           continue;
         }
 
         if (flexNav) {
           const parsed = parseFlexNavCsv(text, file.name);
-
-          if (isPendingIbkrId(currentIbkrId)) {
-            const linkRes = await fetch('/api/accounts', {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: account.id, ibkrAccountId: parsed.accountId }),
-            });
-            const linkJson = await linkRes.json();
-            if (!linkRes.ok) {
-              throw new Error(linkJson.error || 'Impossible de lier l\'ID IBKR');
-            }
-            const updated = dbToAccount(linkJson);
-            setAccount(updated);
-            setEditName(updated.displayName);
-            currentIbkrId = updated.ibkrAccountId;
-            notes.push(`ID IBKR détecté : ${currentIbkrId}`);
-          } else if (parsed.accountId !== currentIbkrId) {
-            throw new Error(
-              `Ce fichier est pour le compte ${parsed.accountId}, pas ${currentIbkrId}`,
-            );
-          }
 
           const res = await fetch('/api/nav-series', {
             method: 'POST',
@@ -334,34 +572,12 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
           const j = await res.json();
           if (!res.ok) throw new Error(j.error || 'Erreur sauvegarde NAV');
           if (j.series) setNavSeries(dbToNavSeries(j.series));
-          notes.push(
-            `${file.name} : ${j.meta?.days ?? parsed.points.length} jours NAV importés`,
-          );
+          notes.push(`${j.meta?.days ?? parsed.points.length} jours NAV importés`);
           continue;
         }
 
         const parsed = parseIbkrCsv(text, file.name);
 
-        if (isPendingIbkrId(currentIbkrId)) {
-          const linkRes = await fetch('/api/accounts', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: account.id, ibkrAccountId: parsed.accountId }),
-          });
-          const linkJson = await linkRes.json();
-          if (!linkRes.ok) {
-            throw new Error(linkJson.error || 'Impossible de lier l\'ID IBKR');
-          }
-          const updated = dbToAccount(linkJson);
-          setAccount(updated);
-          setEditName(updated.displayName);
-          currentIbkrId = updated.ibkrAccountId;
-          notes.push(`ID IBKR détecté : ${currentIbkrId}`);
-        } else if (parsed.accountId !== currentIbkrId) {
-          throw new Error(
-            `Ce CSV est pour le compte ${parsed.accountId}, pas ${currentIbkrId}`,
-          );
-        }
         const res = await fetch('/api/statements', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -372,7 +588,7 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
         if (j.meta?.replaced > 0) {
           notes.push(`${j.meta.replaced} période(s) en chevauchement remplacée(s)`);
         } else if (j.meta?.action === 'created') {
-          notes.push(`${file.name} ajouté`);
+          notes.push(`Activity Statement ${formatStatementPeriod(parsed)} importé`);
         }
       } catch (e) {
         errs.push(`${file.name}: ${e instanceof Error ? e.message : 'erreur'}`);
@@ -481,7 +697,7 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
           ) : (
             <h1>{account.displayName}</h1>
           )}
-          <p className={styles.ibkrId}>{formatIbkrIdDisplay(account.ibkrAccountId)}</p>
+          <p className={styles.ibkrId}>{formatAccountLinkLabel(account.ibkrAccountId)}</p>
         </div>
         <div className={styles.headerActions}>
           {!renaming && (
@@ -506,10 +722,17 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
 
       {!loading && statements.length === 0 && !navSeries && (
         <div className={styles.emptyState}>
-          <strong>Première étape :</strong> glissez un Activity Statement IBKR (.csv) ou un export Flex NAV quotidien.
+          <strong>Première étape :</strong> glissez votre rapport performance IBKR (CSV TWR quotidien)
+          ou un Activity Statement / Flex NAV.
           {isPendingIbkrId(account.ibkrAccountId) && (
-            <> L&apos;ID IBKR sera lu automatiquement depuis le fichier.</>
+            <> Le compte sera lié automatiquement au premier import.</>
           )}
+        </div>
+      )}
+
+      {ibkrTwrPoints.length >= 2 && (
+        <div className={styles.notice}>
+          Courbe TWR officielle IBKR — dépôts, retraits et transferts déjà exclus.
         </div>
       )}
 
@@ -518,6 +741,14 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
           {navPointsHaveComponents(navSeries.points)
             ? 'Courbe TWRR depuis Flex NAV — les dépôts/retraits sont exclus quand détectables.'
             : 'Réimportez votre Flex NAV : les colonnes Stock/Cash manquent, le rendement affiché sera faux.'}
+        </div>
+      )}
+
+      {needsPerformanceReport && (
+        <div className={styles.error}>
+          Courbe lissée (ligne droite) : il manque le TWR journalier IBKR.
+          Réimportez <strong>Nicolas_Cool_U16150944_December_02_2024_July_08_2026.csv</strong>
+          (Rapport Performance IBKR, pas l&apos;Activity Statement).
         </div>
       )}
 
@@ -541,26 +772,67 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
             onDeleteRange={handleDeleteRange}
           />
 
-          {bounds && (
+          {effectiveBounds && (
             <div className={styles.controls}>
               <div className={styles.ctrlFull}>
                 <label>Période d&apos;analyse</label>
                 <DateRangeControls
-                  bounds={bounds}
+                  bounds={effectiveBounds}
                   rangeStart={rangeStart}
                   rangeEnd={rangeEnd}
                   activePreset={activePreset}
                   onPreset={setActivePreset}
-                  onRangeChange={(s, e) => { setRangeStart(s); setRangeEnd(e); setActivePreset(null); }}
+                  onRangeChange={handleRangeChange}
                 />
+                <div className={styles.startLock}>
+                  <label htmlFor="start-lock">Début verrouillé (ignore l&apos;historique avant)</label>
+                  <div className={styles.startLockRow}>
+                    <input
+                      id="start-lock"
+                      type="date"
+                      value={lockDraft}
+                      min={effectiveBounds.dataMin}
+                      max={effectiveBounds.max}
+                      onChange={(e) => setLockDraft(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={savingLock || !lockDraft}
+                      onClick={handleSaveStartLock}
+                    >
+                      {savingLock ? '…' : 'Verrouiller'}
+                    </button>
+                    {account.analysisStartLock && (
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={savingLock}
+                        onClick={handleClearStartLock}
+                      >
+                        Retirer
+                      </button>
+                    )}
+                  </div>
+                  {effectiveBounds.locked && (
+                    <p className={styles.startLockHint}>
+                      Analyse depuis le <strong>{account.analysisStartLock}</strong>
+                      {effectiveBounds.dataMin < effectiveBounds.min && (
+                        <> — données CSV disponibles dès {effectiveBounds.dataMin}</>
+                      )}
+                    </p>
+                  )}
+                </div>
               </div>
-              <div className={styles.ctrl}>
-                <label>Benchmark</label>
-                <select value={benchmark} onChange={(e) => setBenchmark(e.target.value as BenchmarkSymbol)}>
-                  {(Object.keys(BENCHMARK_LABELS) as BenchmarkSymbol[]).map((k) => (
-                    <option key={k} value={k}>{BENCHMARK_LABELS[k]}</option>
-                  ))}
-                </select>
+              <div className={styles.ctrlFull}>
+                <label>Comparaisons</label>
+                <ComparisonControls
+                  benchmarks={comparisonBenchmarks}
+                  onBenchmarksChange={setComparisonBenchmarks}
+                  otherAccounts={otherAccounts}
+                  selectedAccountIds={comparisonAccountIds}
+                  onAccountIdsChange={setComparisonAccountIds}
+                />
               </div>
             </div>
           )}
@@ -570,20 +842,97 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
           {summary && (
             <StatsGrid
               summary={summary}
-              benchmark={benchmark}
-              performanceSub={twrrQuality ? twrrQualityLabel(twrrQuality) : undefined}
+              benchmark={summaryBenchmark}
+              performanceSub={
+                ibkrTwrPoints.length >= 2
+                  ? 'TWR quotidien IBKR (officiel)'
+                  : twrrQuality
+                    ? twrrQualityLabel(twrrQuality)
+                    : undefined
+              }
             />
           )}
 
+          <ChartRangeBanner
+            selectedStart={rangeStart}
+            selectedEnd={rangeEnd}
+            data={multiChartData}
+            loading={chartLoading}
+          />
+
+          <div className={styles.chartStack}>
           <PerformanceChart
-            data={chartData}
-            benchmark={benchmark}
+            series={chartSeries}
+            data={multiChartData}
+            hidden={hiddenSeries}
+            onToggleSeries={handleToggleSeries}
+            brush={chartBrush}
+            onBrushChange={setChartBrush}
             loading={chartLoading}
             hasStatements={statements.length > 0 || (navSeries?.points.length ?? 0) > 0}
             noDataInRange={
               !hasChartData || timelineHealth?.rangeCoverage?.hasAnyData === false
             }
+            subtitle={chartSubtitle}
+            stacked
           />
+
+          <DrawdownChart
+            series={chartSeries}
+            data={multiChartData}
+            hidden={hiddenSeries}
+            loading={chartLoading}
+            stacked
+            show={
+              (statements.length > 0 || (navSeries?.points.length ?? 0) > 0) &&
+              hasChartData &&
+              timelineHealth?.rangeCoverage?.hasAnyData !== false &&
+              multiChartData.length > 0
+            }
+          />
+          </div>
+
+          {metricsRange && (
+            <RiskMetricsTable
+              series={chartSeries}
+              data={multiChartData}
+              hidden={hiddenSeries}
+              brush={chartBrush}
+              loading={chartLoading}
+              show={
+                (statements.length > 0 || (navSeries?.points.length ?? 0) > 0) &&
+                hasChartData &&
+                timelineHealth?.rangeCoverage?.hasAnyData !== false &&
+                multiChartData.length > 0
+              }
+            />
+          )}
+
+          {multiChartData.length > 0 && (
+            <>
+              <PeriodPerformanceTable
+                title="Performance annuelle"
+                subtitle="Rendement de chaque année · cumul = multiple et % total depuis le début de la plage"
+                data={multiChartData}
+                series={chartSeries}
+                hidden={hiddenSeries}
+                mode="yearly"
+              />
+              <PeriodPerformanceTable
+                title="Performance mensuelle"
+                subtitle="Rendement de chaque mois · cumul depuis le début de la plage affichée"
+                data={multiChartData}
+                series={chartSeries}
+                hidden={hiddenSeries}
+                mode="monthly"
+              />
+              <YearlyReturnsChart
+                data={multiChartData}
+                series={chartSeries}
+                hidden={hiddenSeries}
+              />
+            </>
+          )}
         </>
       )}
     </div>

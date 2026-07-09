@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { dbToAccount, formatIbkrIdDisplay } from '@/lib/account-mapper';
+import { dbToAccount, formatAccountLinkLabel } from '@/lib/account-mapper';
 import type { PortfolioAccount } from '@/lib/types';
 import styles from './AccountsHome.module.css';
 
@@ -13,7 +13,6 @@ export default function AccountsHome() {
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [newId, setNewId] = useState('');
   const [newName, setNewName] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -60,7 +59,6 @@ export default function AccountsHome() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         displayName: newName.trim(),
-        ...(newId.trim() ? { ibkrAccountId: newId.trim() } : {}),
       }),
     });
     const j = await res.json();
@@ -174,14 +172,6 @@ export default function AccountsHome() {
                 autoFocus
               />
             </label>
-            <label>
-              ID IBKR <span className={styles.optional}>(optionnel)</span>
-              <input
-                value={newId}
-                onChange={(e) => setNewId(e.target.value)}
-                placeholder="Laisser vide → détecté au 1er CSV"
-              />
-            </label>
           </div>
           <button type="submit" className="btn btn-primary" disabled={creating}>
             {creating ? 'Création…' : 'Créer et ouvrir →'}
@@ -199,7 +189,7 @@ export default function AccountsHome() {
         <div className={`card ${styles.list}`}>
           <div className={styles.listHeader}>
             <span>Nom du compte</span>
-            <span>ID IBKR</span>
+            <span>Statut</span>
             <span>Données</span>
             <span>Actions</span>
           </div>
@@ -244,7 +234,7 @@ export default function AccountsHome() {
                   <span className={styles.accountName}>{a.displayName || 'Sans nom'}</span>
                 )}
               </div>
-              <div className={styles.idCol}>{formatIbkrIdDisplay(a.ibkrAccountId)}</div>
+              <div className={styles.idCol}>{formatAccountLinkLabel(a.ibkrAccountId)}</div>
               <div className={styles.dataCol}>
                 {(a.statementCount ?? 0) > 0
                   ? `${a.statementCount} CSV`

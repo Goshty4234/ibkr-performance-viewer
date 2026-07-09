@@ -1,0 +1,48 @@
+.card {
+  background: var(--surface);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.35rem 1.25rem;
+  margin-top: 1rem;
+}
+
+.stackBottom {
+  margin-top: 0;
+  border-top: none;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  padding-top: 0.75rem;
+}
+
+.title {
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 0 0.25rem;
+}
+
+.sub {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin: 0.25rem 0 1rem;
+  padding: 0 0.25rem;
+}
+
+.chart {
+  height: 220px;
+}
+
+.tooltip {
+  background: var(--surface-solid);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 0.9rem;
+  font-size: 0.8rem;
+  box-shadow: var(--shadow);
+}
+
+.tooltipDate {
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}

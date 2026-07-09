@@ -4,6 +4,8 @@ export interface PortfolioAccount {
   ibkrAccountId: string;
   displayName: string;
   notes: string;
+  /** Date plancher pour l'analyse — l'historique avant est ignoré */
+  analysisStartLock?: string | null;
   created_at: string;
   updated_at: string;
   statementCount?: number;
@@ -22,6 +24,11 @@ export interface DailyEvent {
   category: 'trade' | 'dividend' | 'interest' | 'fee' | 'tax' | 'corporate' | 'other';
 }
 
+export interface DailyTwrPoint {
+  date: string;
+  returnPct: number;
+}
+
 export interface ParsedStatement {
   accountId: string;
   accountAlias: string;
@@ -34,6 +41,8 @@ export interface ParsedStatement {
   filename: string;
   cashFlows: CashFlow[];
   dailyEvents: DailyEvent[];
+  /** IBKR performance report — official daily TWR % */
+  twrDaily?: DailyTwrPoint[];
 }
 
 export interface DbStatement extends ParsedStatement {
@@ -56,7 +65,13 @@ export interface PerformanceSummary {
   alpha: number;
   cagr: number;
   benchmarkCagr: number;
+  maxDrawdown: number;
   days: number;
+}
+
+export interface DrawdownPoint {
+  date: string;
+  drawdown: number;
 }
 
 export type BenchmarkSymbol = 'SPY' | 'QQQ' | 'XIU';
@@ -67,11 +82,12 @@ export const BENCHMARK_LABELS: Record<BenchmarkSymbol, string> = {
   XIU: 'S&P/TSX 60 (XIU)',
 };
 
-export type DatePreset = '1W' | '1M' | '3M' | '6M' | '1Y' | 'YTD' | 'MAX';
+export type DatePreset = '1W' | '1M' | 'MTD' | '3M' | '6M' | '1Y' | 'YTD' | 'MAX';
 
 export const DATE_PRESET_LABELS: Record<DatePreset, string> = {
   '1W': '1 sem.',
   '1M': '1 mois',
+  MTD: 'MTD',
   '3M': '3 mois',
   '6M': '6 mois',
   '1Y': '1 an',
@@ -133,4 +149,19 @@ export interface DbNavSeries extends ParsedNavSeries {
   portfolioAccountId: string;
   imported_at: string;
   cashFlows?: CashFlow[];
+}
+
+export interface DbTwrSeries {
+  id: string;
+  user_id: string;
+  portfolioAccountId: string;
+  accountId: string;
+  accountAlias: string;
+  baseCurrency: string;
+  periodStart: string;
+  periodEnd: string;
+  twrr: number;
+  filename: string;
+  points: DailyTwrPoint[];
+  imported_at: string;
 }

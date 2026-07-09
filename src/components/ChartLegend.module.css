@@ -1,0 +1,52 @@
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-top: 1rem;
+  padding: 0 0.25rem;
+}
+
+.item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  user-select: none;
+  transition: opacity var(--transition), border-color var(--transition);
+}
+
+.item:hover {
+  border-color: var(--border-strong);
+}
+
+.itemOff {
+  opacity: 0.4;
+}
+
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.swatchDashed {
+  background: transparent !important;
+  border: 2px solid;
+  border-radius: 1px;
+  height: 0;
+  width: 16px;
+  margin-top: 1px;
+}
+
+.hint {
+  font-size: 0.75rem;
+  color: var(--text-faint);
+  margin-top: 0.5rem;
+  padding: 0 0.25rem;
+}

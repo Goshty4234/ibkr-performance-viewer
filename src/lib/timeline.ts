@@ -1,6 +1,7 @@
 import {
   addDays,
   format,
+  startOfMonth,
   startOfYear,
   subDays,
   subMonths,
@@ -44,6 +45,40 @@ export function getDataBounds(statements: DbStatement[]): { min: string; max: st
   return { min: merged[0].periodStart, max: merged[merged.length - 1].periodEnd };
 }
 
+export type EffectiveBounds = {
+  min: string;
+  max: string;
+  dataMin: string;
+  locked: boolean;
+};
+
+/** Applique le verrou de début d'analyse (stratégie / couper l'historique). */
+export function effectiveTimelineBounds(
+  bounds: { min: string; max: string },
+  startLock?: string | null,
+): EffectiveBounds {
+  const lock = startLock?.trim();
+  if (!lock || lock <= bounds.min) {
+    return { min: bounds.min, max: bounds.max, dataMin: bounds.min, locked: false };
+  }
+  if (lock > bounds.max) {
+    return { min: bounds.max, max: bounds.max, dataMin: bounds.min, locked: true };
+  }
+  return { min: lock, max: bounds.max, dataMin: bounds.min, locked: true };
+}
+
+export function clampDateRange(
+  start: string,
+  end: string,
+  bounds: { min: string; max: string },
+): { start: string; end: string } {
+  let s = start < bounds.min ? bounds.min : start;
+  let e = end > bounds.max ? bounds.max : end;
+  if (s > e) s = bounds.min;
+  if (e < s) e = bounds.max;
+  return { start: s, end: e };
+}
+
 export function applyDatePreset(
   preset: DatePreset,
   bounds: { min: string; max: string },
@@ -60,6 +95,9 @@ export function applyDatePreset(
       break;
     case '1M':
       startDate = subMonths(endDate, 1);
+      break;
+    case 'MTD':
+      startDate = startOfMonth(today);
       break;
     case '3M':
       startDate = subMonths(endDate, 3);

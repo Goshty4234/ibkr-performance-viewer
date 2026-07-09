@@ -1,6 +1,12 @@
 import { createClient } from '@/lib/supabase/server';
+import { ensureTwrDailyColumn } from '@/lib/db-migrate';
 import { dbToStatement } from '@/lib/db-mapper';
+import {
+  sanitizeStatementForClient,
+  sanitizeStatementForStorage,
+} from '@/lib/privacy';
 import { findStatementsToReplaceOnImport } from '@/lib/statements';
+import { verifyCsvAccountForPortfolio } from '@/lib/verify-csv-account';
 import type { DbStatement } from '@/lib/types';
 import { NextResponse } from 'next/server';
 
@@ -11,7 +17,6 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const portfolioAccountId = searchParams.get('portfolioAccountId');
-  const accountId = searchParams.get('accountId');
 
   let query = supabase
     .from('statements')
@@ -21,13 +26,13 @@ export async function GET(request: Request) {
 
   if (portfolioAccountId) {
     query = query.eq('portfolio_account_id', portfolioAccountId);
-  } else if (accountId) {
-    query = query.eq('account_id', accountId);
   }
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  return NextResponse.json(
+    (data ?? []).map((row) => sanitizeStatementForClient(dbToStatement(row))),
+  );
 }
 
 export async function POST(request: Request) {
@@ -41,20 +46,25 @@ export async function POST(request: Request) {
   const periodStart = body.periodStart as string;
   const periodEnd = body.periodEnd as string;
 
+  if (Array.isArray(body.twrDaily) && body.twrDaily.length > 0) {
+    await ensureTwrDailyColumn();
+  }
+
   if (!portfolioAccountId) {
     return NextResponse.json({ error: 'Compte workspace requis' }, { status: 400 });
   }
 
-  const { data: portfolioAccount } = await supabase
-    .from('accounts')
-    .select('id')
-    .eq('id', portfolioAccountId)
-    .eq('user_id', user.id)
-    .maybeSingle();
-
-  if (!portfolioAccount) {
-    return NextResponse.json({ error: 'Compte introuvable' }, { status: 404 });
+  const verify = await verifyCsvAccountForPortfolio(
+    supabase,
+    user.id,
+    portfolioAccountId,
+    accountId,
+  );
+  if (!verify.ok) {
+    return NextResponse.json({ error: verify.error }, { status: verify.status });
   }
+
+  const sanitized = sanitizeStatementForStorage(body, user.id);
 
   const { data: existingRows } = await supabase
     .from('statements')
@@ -89,63 +99,82 @@ export async function POST(request: Request) {
       s.periodEnd === periodEnd,
   );
 
-  const { data, error } = await supabase
-    .from('statements')
-    .insert({
-      user_id: user.id,
-      portfolio_account_id: portfolioAccountId,
-      account_id: accountId,
-      account_alias: body.accountAlias,
-      base_currency: body.baseCurrency,
-      period_start: periodStart,
-      period_end: periodEnd,
-      starting_nav: body.startingNav,
-      ending_nav: body.endingNav,
-      twrr: body.twrr,
-      filename: body.filename,
-      cash_flows: body.cashFlows,
-      daily_events: body.dailyEvents ?? [],
-      imported_at: new Date().toISOString(),
-    })
-    .select()
-    .single();
+  const row = {
+    user_id: user.id,
+    portfolio_account_id: portfolioAccountId,
+    account_id: sanitized.accountId,
+    account_alias: sanitized.accountAlias,
+    base_currency: body.baseCurrency,
+    period_start: periodStart,
+    period_end: periodEnd,
+    starting_nav: body.startingNav,
+    ending_nav: body.endingNav,
+    twrr: body.twrr,
+    filename: sanitized.filename,
+    cash_flows: sanitized.cashFlows,
+    daily_events: body.dailyEvents ?? [],
+    twr_daily: body.twrDaily ?? [],
+    imported_at: new Date().toISOString(),
+  };
+
+  const rowWithoutTwrDaily = { ...row };
+  delete (rowWithoutTwrDaily as { twr_daily?: unknown }).twr_daily;
+
+  let twrDailyStored = true;
+  let { data, error } = await supabase.from('statements').insert(row).select().single();
+  if (error && /twr_daily/i.test(error.message)) {
+    twrDailyStored = false;
+    ({ data, error } = await supabase.from('statements').insert(rowWithoutTwrDaily).select().single());
+  }
 
   if (error) {
     if (error.code === '23505') {
-      const { data: updated, error: upErr } = await supabase
+      let { data: updated, error: upErr } = await supabase
         .from('statements')
-        .update({
-          account_id: accountId,
-          account_alias: body.accountAlias,
-          base_currency: body.baseCurrency,
-          starting_nav: body.startingNav,
-          ending_nav: body.endingNav,
-          twrr: body.twrr,
-          filename: body.filename,
-          cash_flows: body.cashFlows,
-          daily_events: body.dailyEvents ?? [],
-          imported_at: new Date().toISOString(),
-        })
+        .update(row)
         .eq('user_id', user.id)
         .eq('portfolio_account_id', portfolioAccountId)
         .eq('period_start', periodStart)
         .eq('period_end', periodEnd)
         .select()
         .single();
+      if (upErr && /twr_daily/i.test(upErr.message)) {
+        twrDailyStored = false;
+        ({ data: updated, error: upErr } = await supabase
+          .from('statements')
+          .update(rowWithoutTwrDaily)
+          .eq('user_id', user.id)
+          .eq('portfolio_account_id', portfolioAccountId)
+          .eq('period_start', periodStart)
+          .eq('period_end', periodEnd)
+          .select()
+          .single());
+      }
       if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
       return NextResponse.json({
-        statement: updated,
-        meta: { replaced, action: 'updated' },
+        statement: sanitizeStatementForClient(dbToStatement(updated!)),
+        meta: {
+          replaced,
+          action: 'updated',
+          twrDailyStored,
+          ...(twrDailyStored
+            ? {}
+            : { warning: 'Colonne twr_daily absente — lancez /api/setup?secret=...' }),
+        },
       });
     }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   return NextResponse.json({
-    statement: data,
+    statement: sanitizeStatementForClient(dbToStatement(data!)),
     meta: {
       replaced,
       action: replaced > 0 ? 'replaced_overlap' : isExactUpdate ? 'updated' : 'created',
+      twrDailyStored,
+      ...(twrDailyStored
+        ? {}
+        : { warning: 'Colonne twr_daily absente — lancez /api/setup?secret=...' }),
     },
   });
 }
@@ -158,25 +187,15 @@ export async function DELETE(request: Request) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
   const portfolioAccountId = searchParams.get('portfolioAccountId');
-  const accountId = searchParams.get('accountId');
   const rangeStart = searchParams.get('rangeStart');
   const rangeEnd = searchParams.get('rangeEnd');
 
-  const scopeId = portfolioAccountId ?? accountId;
-
-  if (scopeId && rangeStart && rangeEnd) {
-    let query = supabase
+  if (portfolioAccountId && rangeStart && rangeEnd) {
+    const { data: rows } = await supabase
       .from('statements')
       .select('id, period_start, period_end')
-      .eq('user_id', user.id);
-
-    if (portfolioAccountId) {
-      query = query.eq('portfolio_account_id', portfolioAccountId);
-    } else {
-      query = query.eq('account_id', accountId!);
-    }
-
-    const { data: rows } = await query;
+      .eq('user_id', user.id)
+      .eq('portfolio_account_id', portfolioAccountId);
 
     const toDelete = (rows ?? []).filter(
       (r) => r.period_start <= rangeEnd && r.period_end >= rangeStart,

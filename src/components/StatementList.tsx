@@ -1,6 +1,7 @@
 import type { DbStatement } from '@/lib/types';
 import { fmtPct } from '@/lib/performance';
 import { formatDateLabel } from '@/lib/dates';
+import { formatStatementPeriod } from '@/lib/privacy';
 import styles from './StatementList.module.css';
 
 interface Props {
@@ -21,10 +22,9 @@ export default function StatementList({ statements, onDelete }: Props) {
         {statements.map((s) => (
           <div key={s.id} className={styles.item}>
             <div>
-              <div className={styles.filename}>{s.filename}</div>
+              <div className={styles.filename}>{formatStatementPeriod(s)}</div>
               <div className={styles.meta}>
                 {formatDateLabel(s.periodStart)} → {formatDateLabel(s.periodEnd)}
-                {s.accountAlias && ` · ${s.accountAlias}`}
               </div>
             </div>
             <span className={`${styles.twrr} mono ${s.twrr >= 0 ? 'positive' : 'negative'}`}>

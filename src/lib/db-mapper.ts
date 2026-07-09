@@ -1,4 +1,4 @@
-import type { CashFlow, DailyEvent, DbStatement } from './types';
+import type { CashFlow, DailyEvent, DailyTwrPoint, DbStatement } from './types';
 
 export function dbToStatement(row: Record<string, unknown>): DbStatement {
   return {
@@ -16,6 +16,7 @@ export function dbToStatement(row: Record<string, unknown>): DbStatement {
     filename: row.filename as string,
     cashFlows: (row.cash_flows as CashFlow[]) ?? [],
     dailyEvents: (row.daily_events as DailyEvent[]) ?? [],
+    twrDaily: (row.twr_daily as DailyTwrPoint[]) ?? [],
     imported_at: row.imported_at as string,
   };
 }
@@ -34,5 +35,6 @@ export function statementToDb(stmt: Omit<DbStatement, 'id' | 'user_id' | 'import
     filename: stmt.filename,
     cash_flows: stmt.cashFlows,
     daily_events: stmt.dailyEvents ?? [],
+    twr_daily: stmt.twrDaily ?? [],
   };
 }

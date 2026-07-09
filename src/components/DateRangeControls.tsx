@@ -12,7 +12,7 @@ interface Props {
   onRangeChange: (start: string, end: string) => void;
 }
 
-const PRESETS: DatePreset[] = ['1W', '1M', '3M', '6M', '1Y', 'YTD', 'MAX'];
+const PRESETS: DatePreset[] = ['1W', '1M', 'MTD', '3M', '6M', '1Y', 'YTD', 'MAX'];
 
 export default function DateRangeControls({
   bounds,

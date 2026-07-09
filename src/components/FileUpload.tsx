@@ -49,7 +49,7 @@ export default function FileUpload({ onFiles, uploading, accountHint }: Props) {
       />
       <div className={styles.iconWrap}>{uploading ? '⏳' : '📊'}</div>
       <div className={styles.title}>
-        {uploading ? 'Import en cours…' : <>Glissez vos CSV IBKR <strong>(Statement ou Flex NAV)</strong></>}
+        {uploading ? 'Import en cours…' : <>Glissez votre CSV IBKR <strong>(rapport TWR ou Statement)</strong></>}
       </div>
       <div className={styles.hint}>
         CSV · Plusieurs fichiers · Sauvegardé dans Supabase
