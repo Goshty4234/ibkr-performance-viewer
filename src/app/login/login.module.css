@@ -220,6 +220,41 @@
   cursor: not-allowed;
 }
 
+.forgotLink {
+  align-self: flex-end;
+  margin-top: -0.35rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #6ba0ff;
+  font-size: 0.82rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.forgotLink:hover {
+  color: #8bb8ff;
+}
+
+.backLink {
+  width: 100%;
+  padding: 0.65rem;
+  border: none;
+  background: transparent;
+  color: #8b9cb3;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.backLink:hover {
+  color: #f4f7fb;
+}
+
 .features {
   display: flex;
   justify-content: center;

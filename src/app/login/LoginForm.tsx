@@ -5,15 +5,20 @@ import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import styles from './login.module.css';
 
+type FormMode = 'login' | 'signup' | 'forgot';
+
 export default function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [mode, setMode] = useState<FormMode>('login');
   const [loading, setLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
   const [message, setMessage] = useState('');
   const [isError, setIsError] = useState(false);
   const router = useRouter();
+
+  const isSignUp = mode === 'signup';
+  const isForgot = mode === 'forgot';
 
   useEffect(() => {
     let cancelled = false;
@@ -59,6 +64,23 @@ export default function LoginForm() {
     setIsError(false);
     const supabase = createClient();
 
+    if (isForgot) {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/callback?next=/auth/reset-password`,
+      });
+      setLoading(false);
+      if (error) {
+        setIsError(true);
+        setMessage(formatAuthError(error.message));
+      } else {
+        setIsError(false);
+        setMessage(
+          'Si un compte existe pour ce courriel, un lien de réinitialisation vient d’être envoyé. Vérifiez votre boîte (et les indésirables).',
+        );
+      }
+      return;
+    }
+
     if (isSignUp) {
       const { error } = await supabase.auth.signUp({
         email,
@@ -98,31 +120,39 @@ export default function LoginForm() {
         </div>
 
         <div className={styles.card}>
-          <p className={styles.cardTitle}>{isSignUp ? 'Créer un compte' : 'Connexion'}</p>
+          <p className={styles.cardTitle}>
+            {isForgot ? 'Mot de passe oublié' : isSignUp ? 'Créer un compte' : 'Connexion'}
+          </p>
           <p className={styles.cardSub}>
-            {isSignUp ? 'Accédez à votre espace investisseur' : 'Entrez vos identifiants pour continuer'}
+            {isForgot
+              ? 'Entrez votre courriel — nous vous enverrons un lien de réinitialisation'
+              : isSignUp
+                ? 'Accédez à votre espace investisseur'
+                : 'Entrez vos identifiants pour continuer'}
           </p>
 
+          {!isForgot && (
           <div className={styles.tabs} role="tablist">
             <button
               type="button"
               role="tab"
-              aria-selected={!isSignUp}
-              className={`${styles.tab} ${!isSignUp ? styles.tabActive : ''}`}
-              onClick={() => { setIsSignUp(false); setMessage(''); }}
+              aria-selected={mode === 'login'}
+              className={`${styles.tab} ${mode === 'login' ? styles.tabActive : ''}`}
+              onClick={() => { setMode('login'); setMessage(''); }}
             >
               Connexion
             </button>
             <button
               type="button"
               role="tab"
-              aria-selected={isSignUp}
-              className={`${styles.tab} ${isSignUp ? styles.tabActive : ''}`}
-              onClick={() => { setIsSignUp(true); setMessage(''); }}
+              aria-selected={mode === 'signup'}
+              className={`${styles.tab} ${mode === 'signup' ? styles.tabActive : ''}`}
+              onClick={() => { setMode('signup'); setMessage(''); }}
             >
               Inscription
             </button>
           </div>
+          )}
 
           <form onSubmit={handleSubmit} className={styles.form}>
             <div className={styles.field}>
@@ -137,6 +167,7 @@ export default function LoginForm() {
                 placeholder="vous@exemple.com"
               />
             </div>
+            {!isForgot && (
             <div className={styles.field}>
               <label htmlFor="password">Mot de passe</label>
               <input
@@ -150,6 +181,17 @@ export default function LoginForm() {
                 placeholder="6 caractères minimum"
               />
             </div>
+            )}
+
+            {mode === 'login' && (
+              <button
+                type="button"
+                className={styles.forgotLink}
+                onClick={() => { setMode('forgot'); setMessage(''); setIsError(false); }}
+              >
+                Mot de passe oublié ?
+              </button>
+            )}
 
             {message && (
               <p className={`${styles.message} ${isError ? styles.messageError : styles.messageInfo}`}>
@@ -158,8 +200,24 @@ export default function LoginForm() {
             )}
 
             <button type="submit" className={styles.submit} disabled={loading}>
-              {loading ? 'Chargement…' : isSignUp ? 'Créer mon compte' : 'Se connecter'}
+              {loading
+                ? 'Chargement…'
+                : isForgot
+                  ? 'Envoyer le lien'
+                  : isSignUp
+                    ? 'Créer mon compte'
+                    : 'Se connecter'}
             </button>
+
+            {isForgot && (
+              <button
+                type="button"
+                className={styles.backLink}
+                onClick={() => { setMode('login'); setMessage(''); setIsError(false); }}
+              >
+                ← Retour à la connexion
+              </button>
+            )}
           </form>
         </div>
 
