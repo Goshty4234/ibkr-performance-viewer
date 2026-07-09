@@ -1,0 +1,33 @@
+# personal data — never commit IBKR statements
+*.csv
+U16150944_*.csv
+
+# dependencies
+node_modules
+.pnp
+.pnp.js
+
+# build
+.next
+out
+dist
+build
+
+# env
+.env
+.env.local
+.env.*.local
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# misc
+.DS_Store
+*.pem
+.vercel
+
+# old prototypes (root only — not src/app)
+/standalone/
+/app/

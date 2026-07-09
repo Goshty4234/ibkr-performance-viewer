@@ -1,0 +1,33 @@
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.25rem 1rem;
+}
+
+.title { font-size: 0.95rem; font-weight: 600; padding: 0 0.25rem; }
+.sub { font-size: 0.8rem; color: var(--text-muted); margin: 0.2rem 0 1rem; padding: 0 0.25rem; }
+
+.chart { height: 360px; }
+
+.empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 3rem 1.5rem;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.tooltip {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.8rem;
+}
+
+.tooltipDate {
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+  font-size: 0.75rem;
+}

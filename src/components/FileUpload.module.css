@@ -1,0 +1,31 @@
+.zone {
+  border: 2px dashed var(--border);
+  border-radius: 16px;
+  padding: 1.75rem;
+  text-align: center;
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  margin-bottom: 1.25rem;
+}
+
+.zone:hover, .zone.dragging {
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+
+.zone.uploading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.icon { font-size: 2rem; margin-bottom: 0.4rem; }
+
+.title { font-size: 0.95rem; }
+.title strong { color: var(--accent); }
+
+.hint {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin-top: 0.4rem;
+}
