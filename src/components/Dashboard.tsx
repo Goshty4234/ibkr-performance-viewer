@@ -12,7 +12,6 @@ import {
   type MultiSeriesChartPoint,
 } from '@/lib/chart-series';
 import { buildComparisonChartData } from '@/lib/comparison-chart';
-import { getGlobalAnalysisLock } from '@/lib/analysis-lock';
 import {
   computeSummary,
   getTimelineBounds,
@@ -136,11 +135,9 @@ export default function Dashboard() {
         }
         const effStart = health.rangeCoverage.availableStart ?? rangeStart;
         const effEnd = health.rangeCoverage.availableEnd ?? rangeEnd;
-        const globalLock = getGlobalAnalysisLock();
         const accountLocksById = new Map(
           accounts.map((a) => [a.id, a.analysisStartLock ?? null] as const),
         );
-        const rangeStartLocked = globalLock && globalLock > effStart ? globalLock : effStart;
 
         let primaryBundle;
         let primaryAccountId = '';
@@ -163,7 +160,6 @@ export default function Dashboard() {
           rangeStart: effStart,
           rangeEnd: effEnd,
           accountLocksById,
-          globalLock,
         });
 
         if (!chart.length) {

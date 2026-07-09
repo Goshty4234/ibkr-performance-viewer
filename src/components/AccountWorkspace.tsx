@@ -25,11 +25,6 @@ import {
 } from '@/lib/chart-series';
 import { buildComparisonChartData } from '@/lib/comparison-chart';
 import {
-  getGlobalAnalysisLock,
-  mergeAnalysisLocks,
-  setGlobalAnalysisLock,
-} from '@/lib/analysis-lock';
-import {
   assessTwrrQuality,
   computeSummary,
   getNavTimelineBounds,
@@ -88,7 +83,6 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
   const [allAccounts, setAllAccounts] = useState<PortfolioAccount[]>([]);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
   const [chartBrush, setChartBrush] = useState<ChartBrushSelection | null>(null);
-  const [globalLock, setGlobalLockState] = useState<string | null>(null);
   const [rangeStart, setRangeStart] = useState('');
   const [rangeEnd, setRangeEnd] = useState('');
   const [activePreset, setActivePreset] = useState<DatePreset | null>('MAX');
@@ -177,12 +171,7 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
     [statements, navSeries, twrSeries],
   );
 
-  useEffect(() => { setGlobalLockState(getGlobalAnalysisLock()); }, []);
-
-  const effectiveLock = useMemo(
-    () => mergeAnalysisLocks(account.analysisStartLock, globalLock),
-    [account.analysisStartLock, globalLock],
-  );
+  const effectiveLock = account.analysisStartLock ?? null;
 
   const effectiveBounds = useMemo(
     () => (bounds ? effectiveTimelineBounds(bounds, effectiveLock) : null),
@@ -235,9 +224,8 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
   );
 
   useEffect(() => {
-    const merged = mergeAnalysisLocks(account.analysisStartLock, globalLock);
-    setLockDraft(merged ?? account.analysisStartLock ?? '');
-  }, [account.analysisStartLock, globalLock]);
+    setLockDraft(account.analysisStartLock ?? '');
+  }, [account.analysisStartLock]);
 
   useEffect(() => {
     if (!effectiveBounds) return;
@@ -299,7 +287,6 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
           rangeStart: effStart,
           rangeEnd: effEnd,
           accountLocksById,
-          globalLock,
         });
 
         if (!portfolio.length) {
@@ -328,7 +315,6 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
     rangeEnd,
     effectiveBounds,
     accountLocksById,
-    globalLock,
   ]);
 
   useEffect(() => {
@@ -352,11 +338,9 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
     }
     const updated = dbToAccount(await res.json());
     setAccount(updated);
-    setGlobalAnalysisLock(value);
-    setGlobalLockState(value);
     setLockDraft(updated.analysisStartLock ?? value ?? '');
     if (effectiveBounds) {
-      const next = effectiveTimelineBounds(bounds!, mergeAnalysisLocks(updated.analysisStartLock, value));
+      const next = effectiveTimelineBounds(bounds!, updated.analysisStartLock);
       const clamped = clampDateRange(rangeStart || next.min, rangeEnd || next.max, next);
       setRangeStart(clamped.start);
       setRangeEnd(clamped.end);
@@ -375,8 +359,6 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
     if (!res.ok) return;
     const updated = dbToAccount(await res.json());
     setAccount(updated);
-    setGlobalAnalysisLock(null);
-    setGlobalLockState(null);
   }
 
   const chartSubtitle = useMemo(() => {

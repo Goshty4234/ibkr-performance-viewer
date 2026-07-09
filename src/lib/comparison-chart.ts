@@ -30,9 +30,8 @@ export interface ComparisonChartBuildInput {
   comparisonBenchmarks: BenchmarkSymbol[];
   rangeStart: string;
   rangeEnd: string;
-  /** Verrou par portfolioAccountId (analysisStartLock). */
+  /** Verrou par portfolioAccountId (analysisStartLock, Supabase). */
   accountLocksById?: Map<string, string | null>;
-  globalLock?: string | null;
 }
 
 function buildSeriesRaw(
@@ -41,12 +40,10 @@ function buildSeriesRaw(
   rangeStart: string,
   rangeEnd: string,
   accountLocksById: Map<string, string | null>,
-  globalLock: string | null,
 ): CurvePoint[] {
   const floor = effectiveSeriesStart(
     rangeStart,
     accountLocksById.get(accountId) ?? null,
-    globalLock,
   );
   return buildAccountPortfolioCurve(bundle, floor, rangeEnd);
 }
@@ -62,7 +59,6 @@ export async function buildComparisonChartData(
     rangeStart,
     rangeEnd,
     accountLocksById = new Map(),
-    globalLock = null,
   } = input;
 
   const primaryRaw = buildSeriesRaw(
@@ -71,7 +67,6 @@ export async function buildComparisonChartData(
     rangeStart,
     rangeEnd,
     accountLocksById,
-    globalLock,
   );
   if (primaryRaw.length < 2) return [];
 
@@ -84,7 +79,6 @@ export async function buildComparisonChartData(
       rangeStart,
       rangeEnd,
       accountLocksById,
-      globalLock,
     );
     if (raw.length) {
       comparisonCurves.push({ id: accountSeriesId(accId), curve: raw });
