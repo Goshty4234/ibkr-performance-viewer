@@ -26,7 +26,6 @@ import FileUpload from './FileUpload';
 import styles from './Dashboard.module.css';
 
 export default function Dashboard() {
-  const supabase = createClient();
   const [statements, setStatements] = useState<DbStatement[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -130,7 +129,7 @@ export default function Dashboard() {
   }
 
   async function handleSignOut() {
-    await supabase.auth.signOut();
+    await createClient().auth.signOut();
     window.location.href = '/login';
   }
 
