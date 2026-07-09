@@ -12,7 +12,7 @@ import { isFlexNavCsv, parseFlexNavCsv } from '@/lib/ibkr-flex-nav';
 import { isFlexCombinedCsv, parseFlexCombinedCsv } from '@/lib/ibkr-flex-combined';
 import { isFlexCashCsv, parseFlexCashCsv, cashFlowsToDateMap } from '@/lib/ibkr-flex-cash';
 import { dbToNavSeries } from '@/lib/nav-mapper';
-import { dbToTwrSeries, getTwrTimelineBounds } from '@/lib/twr-mapper';
+import { dbToTwrSeries } from '@/lib/twr-mapper';
 import { dbToStatement } from '@/lib/db-mapper';
 import { dbToAccount, formatAccountLinkLabel, isPendingIbkrId } from '@/lib/account-mapper';
 import { formatStatementPeriod } from '@/lib/privacy';
@@ -27,10 +27,8 @@ import { buildComparisonChartData } from '@/lib/comparison-chart';
 import {
   assessTwrrQuality,
   computeSummary,
-  getNavTimelineBounds,
-  getTimelineBounds,
+  getAccountTimelineBounds,
   mergeStatements,
-  mergeTimelineBounds,
   navPointsHaveComponents,
   resolveIbkrTwrDailyPoints,
   shouldPreferStatementCurve,
@@ -160,16 +158,11 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
   }, []);
 
   const merged = useMemo(() => mergeStatements(statements), [statements]);
-  const bounds = useMemo(
-    () => mergeTimelineBounds(
-      mergeTimelineBounds(
-        getTimelineBounds(statements),
-        navSeries ? getNavTimelineBounds(navSeries.points) : null,
-      ),
-      twrSeries ? getTwrTimelineBounds(twrSeries.points) : null,
-    ),
+  const dataBounds = useMemo(
+    () => getAccountTimelineBounds(statements, navSeries?.points, twrSeries?.points),
     [statements, navSeries, twrSeries],
   );
+  const bounds = dataBounds;
 
   const effectiveLock = account.analysisStartLock ?? null;
 
@@ -196,31 +189,21 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
 
   const timelineHealth = useMemo(() => {
     if (!rangeStart || !rangeEnd) return null;
-    const navBounds = navSeries?.points.length
-      ? getNavTimelineBounds(navSeries.points)
-      : null;
-    const stmtBounds = getTimelineBounds(statements);
-    const combined = mergeTimelineBounds(stmtBounds, navBounds);
-    if (combined && navSeries?.points.length && !statements.length) {
-      return analyzeTimeline([], rangeStart, rangeEnd, combined);
-    }
-    if (combined && navSeries?.points.length && statements.length) {
-      return analyzeTimeline(merged, rangeStart, rangeEnd, combined);
-    }
-    return analyzeTimeline(merged, rangeStart, rangeEnd);
-  }, [merged, statements, navSeries, rangeStart, rangeEnd]);
-
-  const hasChartData = useMemo(
-    () =>
-      (twrSeries?.points.length ?? 0) >= 2 ||
-      (navSeries?.points.length ?? 0) >= 2 ||
-      statements.length > 0,
-    [twrSeries, navSeries, statements],
-  );
+    return analyzeTimeline(merged, rangeStart, rangeEnd, dataBounds);
+  }, [merged, rangeStart, rangeEnd, dataBounds]);
 
   const ibkrTwrPoints = useMemo(
     () => resolveIbkrTwrDailyPoints(twrSeries?.points, statements),
     [twrSeries, statements],
+  );
+
+  const hasChartData = useMemo(
+    () =>
+      ibkrTwrPoints.length >= 2 ||
+      (twrSeries?.points.length ?? 0) >= 2 ||
+      (navSeries?.points.length ?? 0) >= 2 ||
+      statements.length > 0,
+    [twrSeries, navSeries, statements, ibkrTwrPoints],
   );
 
   useEffect(() => {
@@ -250,7 +233,8 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
     }
     const hasNav = (navSeries?.points.length ?? 0) >= 2;
     const hasStmts = statements.length > 0;
-    if (!hasNav && !hasStmts) {
+    const hasTwr = ibkrTwrPoints.length >= 2;
+    if (!hasNav && !hasStmts && !hasTwr) {
       setMultiChartData([]);
       setTwrrQuality(null);
       return;
@@ -853,7 +837,8 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
             loading={chartLoading}
             hasStatements={statements.length > 0 || (navSeries?.points.length ?? 0) > 0}
             noDataInRange={
-              !hasChartData || timelineHealth?.rangeCoverage?.hasAnyData === false
+              multiChartData.length === 0 &&
+              (timelineHealth?.rangeCoverage?.hasAnyData === false)
             }
             subtitle={chartSubtitle}
             stacked

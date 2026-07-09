@@ -54,11 +54,11 @@ export function buildAccountPortfolioCurve(
   const merged = mergeStatements(statements);
   const hasNav = (navSeries?.points.length ?? 0) >= 2;
   const hasStmts = statements.length > 0;
-  if (!hasNav && !hasStmts) return [];
+  const ibkrTwr = resolveIbkrTwrDailyPoints(twrSeries?.points, statements);
+  if (!hasNav && !hasStmts && ibkrTwr.length < 2) return [];
 
   let raw: { date: string; portfolio: number }[];
 
-  const ibkrTwr = resolveIbkrTwrDailyPoints(twrSeries?.points, statements);
   if (ibkrTwr.length >= 2) {
     raw = buildCurveFromIbkrTwrDaily(ibkrTwr, rangeStart, rangeEnd);
   } else if (shouldPreferStatementCurve(statements, rangeStart, rangeEnd)) {

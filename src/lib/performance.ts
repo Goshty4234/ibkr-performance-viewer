@@ -1,5 +1,6 @@
 import type { BenchmarkSymbol, DailyEvent, DailyNavPoint, DailyTwrPoint, DbStatement, DrawdownPoint, PerformancePoint, PerformanceSummary } from './types';
 import { groupStatementsByContinuity, mergeStatements } from './statements';
+import { getTwrTimelineBounds } from './twr-mapper';
 import { getDataBounds } from './timeline';
 
 function eachDay(start: string, end: string): string[] {
@@ -578,6 +579,21 @@ export function mergeTimelineBounds(
     min: a.min < b.min ? a.min : b.min,
     max: a.max > b.max ? a.max : b.max,
   };
+}
+
+/** Bornes min/max en fusionnant statements, NAV et TWR journalier. */
+export function getAccountTimelineBounds(
+  statements: DbStatement[],
+  navPoints?: DailyNavPoint[] | null,
+  twrPoints?: DailyTwrPoint[] | null,
+): { min: string; max: string } | null {
+  return mergeTimelineBounds(
+    mergeTimelineBounds(
+      getTimelineBounds(statements),
+      navPoints?.length ? getNavTimelineBounds(navPoints) : null,
+    ),
+    twrPoints?.length ? getTwrTimelineBounds(twrPoints) : null,
+  );
 }
 
 export function getUniqueAccounts(

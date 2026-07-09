@@ -62,7 +62,8 @@ export function effectiveTimelineBounds(
     return { min: bounds.min, max: bounds.max, dataMin: bounds.min, locked: false };
   }
   if (lock > bounds.max) {
-    return { min: bounds.max, max: bounds.max, dataMin: bounds.min, locked: true };
+    // Verrou après la fin des données — ignoré (ex. compte conservé après purge)
+    return { min: bounds.min, max: bounds.max, dataMin: bounds.min, locked: false };
   }
   return { min: lock, max: bounds.max, dataMin: bounds.min, locked: true };
 }
