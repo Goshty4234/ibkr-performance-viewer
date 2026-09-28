@@ -21,10 +21,18 @@ loadLocalEnvOverrides();
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   devIndicators: false,
-  // The dev server grew past 6 GB and exhausted the Windows commit limit.
+  // The webpack dev server grew past 6-13 GB: `npm run dev` uses Turbopack, and run_dev.py
+  // restarts the server if it still crosses its memory ceiling. These webpack options only
+  // matter for `npm run dev:webpack` and production builds.
   // staleTimes: reuse already-visited pages from the client router cache instead of a server
   // round-trip (auth + RSC) on every section switch; page data is fetched client-side anyway.
-  experimental: { webpackMemoryOptimizations: true, staleTimes: { dynamic: 300, static: 600 } },
+  experimental: {
+    webpackMemoryOptimizations: true,
+    staleTimes: { dynamic: 300, static: 600 },
+    // Antivirus HTTPS scanning re-signs Google Fonts with a Windows-only root. Accepted by
+    // Next's config schema but missing from its TypeScript types.
+    ...({ turbopackUseSystemTlsCerts: true } as object),
+  },
   // Keep compiled routes: disposing them made every section switch recompile for 6-7 s.
   onDemandEntries: { maxInactiveAge: 60 * 60_000, pagesBufferLength: 10 },
   logging: {

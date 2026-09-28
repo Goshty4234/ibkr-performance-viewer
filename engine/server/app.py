@@ -38,7 +38,7 @@ from pydantic import BaseModel, Field  # noqa: E402
 from backtest_engine import __version__  # noqa: E402
 from backtest_engine.certs import ensure_system_ca_bundle  # noqa: E402
 
-from .auth import current_user  # noqa: E402
+from .auth import current_user, is_guest  # noqa: E402
 from .jobs import JobManager  # noqa: E402
 from .settings import load_settings  # noqa: E402
 
@@ -356,6 +356,8 @@ def tickers_resolve(body: TickersBody, user: str = Depends(current_user)) -> dic
 def cache_clear(request: Request, user: str = Depends(current_user)) -> dict:
     from backtest_engine.data_api import clear_caches
 
+    if is_guest(user):
+        raise HTTPException(403, "Mode invité : réservé aux comptes.")
     if _manager(request).stats().get("running"):
         raise HTTPException(409, "Des backtests sont en cours : réessaie quand ils sont terminés.")
     _search_cache.clear()

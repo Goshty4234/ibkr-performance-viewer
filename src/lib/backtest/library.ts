@@ -1,3 +1,4 @@
+import { isGuest } from '@/lib/guest';
 import { createClient } from '@/lib/supabase/client';
 import type { PortfolioConfig } from '@/lib/engine/types';
 
@@ -14,6 +15,7 @@ export interface SavedPortfolio {
 const COLUMNS = 'id,name,folder,config,created_at,updated_at';
 
 export async function listSaved(): Promise<SavedPortfolio[]> {
+  if (isGuest()) return [];
   const supabase = createClient();
   const { data, error } = await supabase
     .from('backtest_portfolios')
@@ -26,6 +28,7 @@ export async function listSaved(): Promise<SavedPortfolio[]> {
 
 /** Saves configs; an existing row with the same name + folder is overwritten. */
 export async function savePortfolios(configs: PortfolioConfig[], folder: string): Promise<number> {
+  if (isGuest()) throw new Error('Mode invité : crée un compte pour enregistrer dans ta bibliothèque.');
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Connecte-toi pour enregistrer dans ta bibliothèque.');

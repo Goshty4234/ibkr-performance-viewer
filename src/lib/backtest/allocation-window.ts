@@ -3,16 +3,24 @@ import type { PortfolioConfig, RunOptions } from '@/lib/engine/types';
 /**
  * Allocations only needs today's target, the current drift and the last year of returns.
  * Every rebalance recomputes the weights from the price windows alone, so once one rebalance
- * has happened with complete windows the simulated path is the same as with 30 years of history
- * (checked against full runs: identical weights, timer and 1W–1Y returns). Start early enough
- * for that to hold one year back, plus a safety margin. Configurations whose state carries over
- * indefinitely keep the full history.
+ * has happened with complete windows the simulated path is the same as with 30 years of history.
+ * Start early enough for that to hold one year back, plus a safety margin.
+ *
+ * Checked against full runs (identical target, held weights, timer and daily returns over the
+ * last year): momentum, SMA filter, EMA filter (5 windows of warm-up), MA-cross rebalancing,
+ * weekly/biweekly/monthly/quarterly. Today's target was also identical for the configurations
+ * below, but their held weights and recent returns depend on where the simulation started
+ * (Never / Buy & Hold drift from day one, threshold rebalancing, fusion, SP500TOP20), so they
+ * keep the full history — they are cheap to simulate anyway.
  */
 
 const PERIOD_DAYS: Record<string, number> = { Weekly: 7, Biweekly: 14, Monthly: 31, Quarterly: 92, Semiannually: 183, Annually: 366 };
 const DAY_MS = 86_400_000;
 const RETURNS_DAYS = 365;
 const MARGIN_DAYS = 31;
+/** An EMA keeps (1 - 2/(n+1))^k of its seed after k days: 5 windows leave < 0.01 %. */
+const EMA_WARMUP_WINDOWS = 5;
+// Mirrors the engine's is_special_dynamic_ticker list (ZROX is listed there but has no data).
 const DYNAMIC_TICKERS = new Set(['SP500TOP20', 'ZROX']);
 
 export interface AllocationWindow {
@@ -30,15 +38,16 @@ function settleDays(p: PortfolioConfig): number | string {
   if (isFusion(p)) return 'Fusion : sa courbe sans ajouts dépend de tout l’historique';
   const period = PERIOD_DAYS[p.rebalancing_frequency];
   if (!period) return `rebalancement « ${p.rebalancing_frequency} » (l’état dérive depuis le début)`;
-  if (p.use_targeted_rebalancing) return 'rebalancement ciblé par seuils (dépend de tout le parcours)';
-  if (p.ma_cross_rebalance) return 'rebalancement sur croisement de moyenne mobile';
-  if (p.use_sma_filter && (p.ma_type ?? 'SMA') !== 'SMA') return `filtre ${p.ma_type} (moyenne à mémoire infinie)`;
-  if (p.stocks.some((s) => DYNAMIC_TICKERS.has(s.ticker.toUpperCase()))) return 'ticker dynamique (SP500TOP20 / ZROX)';
+  if (p.use_targeted_rebalancing) return 'rebalancement ciblé par seuils : les poids détenus dépendent de tout le parcours';
+  if (p.stocks.some((s) => DYNAMIC_TICKERS.has(s.ticker.toUpperCase()))) return 'SP500TOP20 : sa composition interne dépend de tout le parcours';
   let window = 0;
   if (p.use_momentum) for (const w of p.momentum_windows ?? []) window = Math.max(window, Number(w.lookback) || 0);
   if (p.calc_beta) window = Math.max(window, p.beta_window_days ?? 365);
   if (p.calc_volatility) window = Math.max(window, p.vol_window_days ?? 365);
-  if (p.use_sma_filter) window = Math.max(window, Math.ceil((p.sma_window ?? 200) * (p.ma_multiplier ?? 1.48)));
+  if (p.use_sma_filter || p.ma_cross_rebalance) {
+    const ma = Math.ceil((p.sma_window ?? 200) * (p.ma_multiplier ?? 1.48));
+    window = Math.max(window, (p.ma_type ?? 'SMA') === 'EMA' ? ma * EMA_WARMUP_WINDOWS : ma);
+  }
   return window + period;
 }
 

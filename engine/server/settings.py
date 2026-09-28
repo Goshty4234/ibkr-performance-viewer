@@ -7,6 +7,8 @@ variables change:
     ENGINE_AUTH             none | supabase                  (default: none locally, supabase in cloud)
     SUPABASE_URL            https://<project>.supabase.co    (required when ENGINE_AUTH=supabase)
     SUPABASE_ANON_KEY       public anon key                  (required when ENGINE_AUTH=supabase)
+    ENGINE_ALLOW_GUESTS     1 to accept requests without a session (site guest mode), identified by IP (default: 0)
+    ENGINE_GUEST_MAX_QUEUE  active jobs per guest IP         (default: 2)
     ENGINE_ALLOWED_ORIGINS  comma list of origins, or "*"
     ENGINE_ORIGIN_REGEX     regex of allowed origins         (default: localhost + *.vercel.app)
     ENGINE_WORKERS          pooled worker processes          (default: CPU count - 1 locally, CPU count in cloud; capped by free RAM and 12)
@@ -78,6 +80,8 @@ class Settings:
     max_jobs: int = 4
     worker_idle_s: int = 600
     max_queue: int = 20
+    allow_guests: bool = False
+    guest_max_queue: int = 2
     result_ttl_s: int = 12 * 3600
     home: Path = field(default_factory=engine_home)
 
@@ -102,6 +106,8 @@ def load_settings() -> Settings:
         max_jobs=_int("ENGINE_MAX_JOBS", 2 if mode == "cloud" else 4),
         worker_idle_s=_int("ENGINE_WORKER_IDLE_S", 600),
         max_queue=_int("ENGINE_MAX_QUEUE", 20),
+        allow_guests=os.environ.get("ENGINE_ALLOW_GUESTS", "0").strip().lower() in ("1", "true", "yes"),
+        guest_max_queue=_int("ENGINE_GUEST_MAX_QUEUE", 2),
         result_ttl_s=_int("ENGINE_RESULT_TTL_H", 12) * 3600,
     )
     if s.auth == "supabase" and not (s.supabase_url and s.supabase_anon_key):

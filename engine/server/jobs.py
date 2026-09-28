@@ -21,10 +21,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .settings import Settings
+from .auth import is_guest
+from .settings import Settings, _available_ram_gb
 from .worker import worker_main
 
 FINISHED = ("done", "error", "cancelled")
+MIN_FREE_RAM_GB = 1.0
 
 
 @dataclass
@@ -146,7 +148,7 @@ class JobManager:
     def submit(self, user: str, portfolios: Any, options: dict, label: str) -> Job:
         with self.lock:
             active = sum(1 for j in self.jobs.values() if j.user == user and j.status not in FINISHED)
-            if active >= self.settings.max_queue:
+            if active >= (self.settings.guest_max_queue if is_guest(user) else self.settings.max_queue):
                 raise OverflowError(f"Too many active jobs ({active}); wait for some to finish.")
             job_id = uuid.uuid4().hex
             job_dir = self.settings.jobs_dir / job_id
@@ -207,6 +209,12 @@ class JobManager:
     def _spawn(self) -> Worker | None:
         if self.stopping.is_set() or len(self.workers) >= self.settings.workers:
             return None
+        # The pool size is fixed at start-up; if the machine has since filled its memory, extra
+        # tasks wait for a running worker instead of pushing Windows into swap or an OOM kill.
+        if self.workers:
+            free = _available_ram_gb()
+            if free is not None and free < MIN_FREE_RAM_GB:
+                return None
         parent, child = self.ctx.Pipe()
         p = self.ctx.Process(target=worker_main, args=(child, self.events, str(self.settings.home)), daemon=True)
         p.start()

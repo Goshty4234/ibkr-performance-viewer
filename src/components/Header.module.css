@@ -221,6 +221,35 @@
   gap: 0.25rem;
 }
 
+.guestBadge {
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(245, 185, 66, 0.35);
+  background: rgba(245, 185, 66, 0.1);
+  color: #f5b942;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.guestCta {
+  padding: 0.42rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: linear-gradient(135deg, var(--accent) 0%, #3b6fd9 100%);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.guestCta:hover { filter: brightness(1.1); }
+
+@media (max-width: 640px) {
+  .guestBadge { display: none; }
+}
+
 @media (min-width: 640px) {
   .mobileNav { display: none; }
 }

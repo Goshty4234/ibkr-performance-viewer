@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { enterGuest, leaveGuest } from '@/lib/guest';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import styles from './login.module.css';
@@ -101,10 +102,16 @@ export default function LoginForm() {
         setIsError(true);
         setMessage(formatAuthError(error.message));
       } else {
-        router.push('/');
-        router.refresh();
+        // Full reload: modules that picked guest storage at load time start again signed in.
+        leaveGuest();
+        window.location.assign('/');
       }
     }
+  }
+
+  function continueAsGuest() {
+    enterGuest();
+    window.location.assign('/');
   }
 
   return (
@@ -219,6 +226,18 @@ export default function LoginForm() {
               </button>
             )}
           </form>
+
+          {!isForgot && (
+            <div className={styles.guest}>
+              <span className={styles.guestOr}>ou</span>
+              <button type="button" className={styles.guestBtn} onClick={continueAsGuest}>
+                Essayer le backtester sans compte →
+              </button>
+              <p className={styles.guestNote}>
+                Accès au backtester uniquement. Rien n’est enregistré : l’historique et l’espace de travail disparaissent en fermant l’onglet.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className={styles.features}>

@@ -1,3 +1,4 @@
+import { isGuest } from '@/lib/guest';
 import { createClient } from '@/lib/supabase/client';
 import type { PortfolioConfig, PortfolioDetail, ResultSummary, RunOptions } from '@/lib/engine/types';
 import { bundleResult, type LoadedResult, toBundle } from './result-data';
@@ -108,6 +109,7 @@ export async function saveRun(args: {
   summaryText: string;
   detailText: (index: number) => Promise<string>;
 }): Promise<string | null> {
+  if (isGuest()) return null;
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
@@ -161,6 +163,7 @@ export async function saveRun(args: {
 const LIST_COLUMNS = 'id,label,engine,engine_version,duration_s,simulation_start,simulation_end,summary,warnings,result_path,result_size,created_at,kind,request_key,engine_code';
 
 export async function listRuns(limit = 100): Promise<BacktestRunRow[]> {
+  if (isGuest()) return [];
   const supabase = createClient();
   const { data, error } = await supabase
     .from('backtest_runs')
@@ -174,7 +177,7 @@ export async function listRuns(limit = 100): Promise<BacktestRunRow[]> {
 
 /** Saved runs holding at least one portfolio with one of these config keys, newest first. */
 export async function findRunsByConfigKeys(keys: string[], limit = 60): Promise<BacktestRunRow[]> {
-  if (!keys.length) return [];
+  if (!keys.length || isGuest()) return [];
   const { data, error } = await createClient()
     .from('backtest_runs')
     .select(`${LIST_COLUMNS},pinned`)
@@ -192,7 +195,7 @@ const CLEANUP_STAMP = 'backtester-history-cleanup';
 /** Deletes unprotected runs older than RETENTION_DAYS (at most once a day per browser). */
 export async function cleanupOldRuns(): Promise<number> {
   const today = new Date().toISOString().slice(0, 10);
-  if (typeof window === 'undefined' || localStorage.getItem(CLEANUP_STAMP) === today) return 0;
+  if (typeof window === 'undefined' || isGuest() || localStorage.getItem(CLEANUP_STAMP) === today) return 0;
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return 0;
@@ -211,6 +214,7 @@ export async function cleanupOldRuns(): Promise<number> {
 
 /** Saved runs made from exactly this request, newest first (only those with a stored result). */
 export async function findRunsByKey(requestKey: string, limit = 5): Promise<BacktestRunRow[]> {
+  if (isGuest()) return [];
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
@@ -261,6 +265,7 @@ export async function loadRun(id: string): Promise<{ row: BacktestRunRow; result
 }
 
 export async function latestRun(kind: RunKind): Promise<BacktestRunRow | null> {
+  if (isGuest()) return null;
   const { data, error } = await createClient()
     .from('backtest_runs')
     .select(`${LIST_COLUMNS},pinned`)

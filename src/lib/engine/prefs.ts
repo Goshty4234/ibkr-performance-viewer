@@ -1,3 +1,4 @@
+import { isGuest } from '@/lib/guest';
 import { createClient } from '@/lib/supabase/client';
 
 /**
@@ -55,6 +56,7 @@ export function saveLocalPrefs(prefs: EnginePrefs): void {
 
 /** Account-level copy so every device knows the current cloud URL. */
 export async function loadRemotePrefs(): Promise<Partial<EnginePrefs> | null> {
+  if (isGuest()) return null;
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
@@ -72,6 +74,7 @@ export async function loadRemotePrefs(): Promise<Partial<EnginePrefs> | null> {
 }
 
 export async function saveRemotePrefs(prefs: EnginePrefs): Promise<void> {
+  if (isGuest()) return;
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return;

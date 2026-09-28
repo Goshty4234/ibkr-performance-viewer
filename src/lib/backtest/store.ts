@@ -1,7 +1,8 @@
 'use client';
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import { clientStorage } from '@/lib/guest';
 import { EngineClient, type EngineKind, type ResolvedEngine } from '@/lib/engine/client';
 import { useEngineStore } from '@/lib/engine/store';
 import type { EngineJob, PortfolioConfig, ResultSummary, RunOptions, StockConfig } from '@/lib/engine/types';
@@ -852,6 +853,7 @@ export const useBacktestStore = create<BacktestState>()(
     },
     {
       name: 'backtester-v1',
+      storage: createJSONStorage(clientStorage),
       version: 2,
       partialize: (s) => ({ portfolios: s.portfolios, selectedId: s.selectedId, options: s.options, runs: s.runs, view: s.view }),
       migrate: (persisted, version) => {

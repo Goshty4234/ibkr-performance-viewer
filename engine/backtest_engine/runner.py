@@ -27,6 +27,18 @@ from .metrics import compute_final_stats
 from .serialize import allocations_to_columns, clean_number, date_key, rounded, series_to_columns, to_jsonable
 from .st_shim import StopRun, st
 
+_legacy_ma_crossings = L.precompute_ma_crossings
+
+
+def _ma_crossings_frames_only(reindexed_data: dict, *args: Any, **kwargs: Any):
+    """Legacy scans every loaded entry, including the "special_dynamic_ticker" string that
+    stands for SP500TOP20, and crashed any MA-cross portfolio run next to it."""
+    frames = {t: df for t, df in reindexed_data.items() if isinstance(df, pd.DataFrame)}
+    return _legacy_ma_crossings(frames, *args, **kwargs)
+
+
+L.precompute_ma_crossings = _ma_crossings_frames_only
+
 _TOTAL_TOL = 1.0
 _ALLOC_TOL = 1.0
 _METRICS_CELL_BUDGET = 200_000
@@ -132,6 +144,27 @@ def _collect_tickers(configs: list[dict]) -> list[str]:
 _LOCAL_SERIES = {"ZEROX", "GOLD_COMPLETE", "ZROZ_COMPLETE", "TLT_COMPLETE", "BTC_COMPLETE", "IEF_COMPLETE",
                  "KMLM_COMPLETE", "DBMF_COMPLETE", "TBILL_COMPLETE", "SPYSIM_COMPLETE", "GOLDSIM_COMPLETE"}
 _YF_CHUNK = 80
+# yfinance still sends one chart request per ticker inside a chunk: space the chunks out.
+_CHUNK_PAUSE_S = 1.5
+
+
+@contextlib.contextmanager
+def _no_single_fallback_when_limited(retry: Any):
+    """The legacy batch retries every ticker missing from a chunk one by one. When the chunk
+    was refused for rate limiting that would send 80 more requests to a server already saying
+    no, so those single requests are skipped (the tickers are simply retried on the next run)."""
+    inner = L.get_ticker_with_cache
+
+    def guarded(*args: Any, **kwargs: Any):
+        if retry.rate_limited:
+            raise RuntimeError("Yahoo rate limit: single-ticker fallback skipped")
+        return inner(*args, **kwargs)
+
+    L.get_ticker_with_cache = guarded
+    try:
+        yield
+    finally:
+        L.get_ticker_with_cache = inner
 
 
 def _derive_leveraged(t: str, base_df: Any, cache: Any) -> pd.DataFrame:
@@ -192,7 +225,7 @@ def _fetch_prices(tickers: list[str], ctx: RunContext, lock: Any) -> dict:
             if fetched_meanwhile:
                 batch.update(L.get_multiple_tickers_batch(fetched_meanwhile, period="max", auto_adjust=False))
             if todo:
-                with Y.rate_limit_retry(waiting) as retry:
+                with Y.rate_limit_retry(waiting) as retry, _no_single_fallback_when_limited(retry):
                     got = L.get_multiple_tickers_batch(todo, period="max", auto_adjust=False)
                 batch.update(got)
                 found = [t for t in todo if isinstance(got.get(t), pd.DataFrame) and not got[t].empty]
@@ -202,8 +235,10 @@ def _fetch_prices(tickers: list[str], ctx: RunContext, lock: Any) -> dict:
                     for t in todo:
                         if t not in found:
                             cache.set(Y.missing_key(t), True, expire=Y.MISSING_TTL)
-        if lock is not None and i + _YF_CHUNK < len(network):
-            lock.yield_to_waiters()
+        if i + _YF_CHUNK < len(network):
+            if lock is not None:
+                lock.yield_to_waiters()
+            time.sleep(_CHUNK_PAUSE_S)
 
     for t in derived:
         base, _, _ = L.parse_ticker_parameters(t)

@@ -1,9 +1,9 @@
 export const dynamic = 'force-dynamic';
 
 import AppShell from '@/components/AppShell';
-import { requireUser } from '@/lib/supabase/current-user';
+import { userOrGuest } from '@/lib/supabase/current-user';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const { user } = await requireUser();
-  return <AppShell email={user.email}>{children}</AppShell>;
+  const { user, guest } = await userOrGuest();
+  return <AppShell email={user?.email} guest={guest}>{children}</AppShell>;
 }

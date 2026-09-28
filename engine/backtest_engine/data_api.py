@@ -30,6 +30,25 @@ def _legacy():
     return L
 
 
+def _batched_pe(L: Any, tickers: list[str]) -> dict[str, dict] | None:
+    """PE of the underlying Yahoo symbol (leverage suffix stripped, alias resolved), fetched a
+    few hundred symbols per request. None when Yahoo refuses, so the caller can fall back."""
+    resolved: dict[str, str] = {}
+    for t in tickers:
+        try:
+            base, _ = L.parse_leverage_ticker(t)
+            resolved[t] = L.resolve_ticker_alias(base)
+        except Exception:
+            resolved[t] = t
+    try:
+        rows = Y.quotes(list(set(resolved.values())), ["trailingPE"])
+    except Exception:
+        return None
+    if not rows:
+        return None
+    return {t: {"trailingPE": (rows.get(r) or {}).get("trailingPE")} for t, r in resolved.items()}
+
+
 def pe_ratios(tickers: list[str]) -> dict[str, float | None]:
     wanted = [t for t in dict.fromkeys(t.strip() for t in tickers if t and t.strip()) if t != "CASH"]
     out: dict[str, float | None] = {}
@@ -44,7 +63,9 @@ def pe_ratios(tickers: list[str]) -> dict[str, float | None]:
             out[t] = hit
     if missing:
         with _lock, contextlib.redirect_stdout(io.StringIO()):
-            info = L.get_multiple_tickers_info_batch(missing) or {}
+            info = _batched_pe(L, missing)
+            if info is None:
+                info = L.get_multiple_tickers_info_batch(missing) or {}
         for t in missing:
             pe = (info.get(t) or {}).get("trailingPE")
             try:

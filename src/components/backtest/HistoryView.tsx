@@ -5,6 +5,7 @@ import { deleteRun, getRunRow, listRuns, loadRun, renameRun, RETENTION_DAYS, set
 import { savePortfolios } from '@/lib/backtest/library';
 import { normalizeImported } from '@/lib/backtest/portfolio';
 import { useBacktestStore } from '@/lib/backtest/store';
+import { isGuest } from '@/lib/guest';
 import HistorySetup from './HistorySetup';
 import styles from './Results.module.css';
 import bt from './Backtester.module.css';
@@ -220,7 +221,12 @@ export default function HistoryView() {
       {error && <div className={bt.errorBox}>{error}</div>}
       {notice && <div className={bt.noticeBox} onClick={() => setNotice('')}>{notice}</div>}
 
-      {rows === null ? (
+      {isGuest() ? (
+        <div className={`card ${bt.empty}`}>
+          <h2>Historique indisponible en mode invité</h2>
+          <p>Les runs ne sont pas sauvegardés sans compte. Crée un compte pour conserver ton historique et le retrouver sur tous tes appareils.</p>
+        </div>
+      ) : rows === null ? (
         <div className={`card ${bt.empty}`}>Chargement…</div>
       ) : filtered.length === 0 ? (
         <div className={`card ${bt.empty}`}>

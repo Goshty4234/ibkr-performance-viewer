@@ -77,6 +77,29 @@ class RetryState:
         self.retries = 0
 
 
+_QUOTE_URL = "https://query1.finance.yahoo.com/v7/finance/quote"
+_QUOTE_CHUNK = 200
+
+
+def quotes(symbols: list[str], fields: list[str]) -> dict[str, dict]:
+    """Yahoo's quote endpoint answers for up to a few hundred symbols per request, where the
+    quoteSummary modules (yahooquery) cost one request per symbol. Unknown symbols are absent."""
+    from yfinance.data import YfData
+
+    out: dict[str, dict] = {}
+    data = YfData()
+    wanted = list(dict.fromkeys(s for s in symbols if s))
+    for i in range(0, len(wanted), _QUOTE_CHUNK):
+        chunk = wanted[i:i + _QUOTE_CHUNK]
+        payload = data.get_raw_json(_QUOTE_URL, params={"symbols": ",".join(chunk), "fields": ",".join(["symbol", *fields])})
+        for row in ((payload or {}).get("quoteResponse") or {}).get("result") or []:
+            if row.get("symbol"):
+                out[row["symbol"]] = row
+        if i + _QUOTE_CHUNK < len(wanted):
+            time.sleep(1.0)
+    return out
+
+
 @contextlib.contextmanager
 def rate_limit_retry(on_wait=None) -> Iterator[RetryState]:
     """Temporarily wraps whatever `yf.download` currently is (real or test replay)."""

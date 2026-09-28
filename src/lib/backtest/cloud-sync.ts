@@ -1,5 +1,6 @@
 'use client';
 
+import { clientStorage, isGuest } from '@/lib/guest';
 import { createClient } from '@/lib/supabase/client';
 import type { RunOptions } from '@/lib/engine/types';
 import { DEFAULT_OPTIONS, type EditablePortfolio } from './portfolio';
@@ -148,7 +149,7 @@ function flush(): void {
 }
 
 export function startCloudSync(): void {
-  if (started || typeof window === 'undefined') return;
+  if (started || typeof window === 'undefined' || isGuest()) return;
   started = true;
   useBacktestStore.subscribe((s, prev) => {
     if (applying) return;
@@ -171,14 +172,16 @@ export function startCloudSync(): void {
 
 /** Real portfolio value typed in Allocations (null = use the backtest value). */
 export function readMyValue(name: string): number | null {
-  const raw = window.localStorage.getItem(VALUE_PREFIX + name);
+  const raw = clientStorage().getItem(VALUE_PREFIX + name);
   const n = raw === null ? NaN : Number(raw);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 export function writeMyValue(name: string, v: number | null): void {
-  if (v === null) window.localStorage.removeItem(VALUE_PREFIX + name);
-  else window.localStorage.setItem(VALUE_PREFIX + name, String(v));
+  const storage = clientStorage();
+  if (v === null) storage.removeItem(VALUE_PREFIX + name);
+  else storage.setItem(VALUE_PREFIX + name, String(v));
+  if (isGuest()) return;
   setStamp(VALUES_STAMP_KEY, Date.now());
   scheduleValues();
 }

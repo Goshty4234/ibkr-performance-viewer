@@ -100,6 +100,10 @@ lance le moteur sur une machine GitHub (jusqu'à 6 h par run, gratuit selon ton 
 
 - `ENGINE_AUTH=supabase` (par défaut en cloud) : seuls les utilisateurs connectés à ton site peuvent lancer un
   backtest (le jeton Supabase est vérifié à chaque requête).
+- Mode invité du site (« Essayer le backtester sans compte ») : désactivé côté moteur par défaut. Mets
+  `ENGINE_ALLOW_GUESTS=1` dans `.env` pour que les visiteurs sans compte puissent lancer des backtests sur le
+  moteur cloud ; chaque IP est limitée à `ENGINE_GUEST_MAX_QUEUE` jobs actifs (2 par défaut) et ne peut pas
+  vider les caches.
 - CORS : seuls `*.vercel.app`, `localhost` et `ENGINE_ALLOWED_ORIGINS` sont acceptés.
 - Les résultats sont effacés du serveur après `ENGINE_RESULT_TTL_H` heures. L'historique permanent est dans
   Supabase (ton compte).

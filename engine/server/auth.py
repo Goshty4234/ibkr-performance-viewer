@@ -49,10 +49,25 @@ def _verify_with_supabase(settings: Settings, token: str) -> str:
     return user_id
 
 
+GUEST_PREFIX = "guest:"
+
+
+def _guest_id(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    ip = forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
+    return GUEST_PREFIX + hashlib.sha256(ip.encode()).hexdigest()[:16]
+
+
+def is_guest(user: str) -> bool:
+    return user.startswith(GUEST_PREFIX)
+
+
 def current_user(request: Request, authorization: str | None = Header(default=None)) -> str:
     settings: Settings = request.app.state.settings
     if settings.auth == "none":
         return "local"
     if not authorization or not authorization.lower().startswith("bearer "):
+        if settings.allow_guests:
+            return _guest_id(request)
         raise HTTPException(401, "Missing bearer token")
     return _verify_with_supabase(settings, authorization.split(" ", 1)[1].strip())

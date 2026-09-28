@@ -1,6 +1,8 @@
 'use client';
 
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { allocationWindow } from '@/lib/backtest/allocation-window';
+import { isGuest } from '@/lib/guest';
 import { aiContext, downloadJson, useAllocationAnalysis } from '@/lib/backtest/allocations';
 import { latestRun, loadLatestOnce, loadRun } from '@/lib/backtest/history';
 import { okSummaries } from '@/lib/backtest/result-data';
@@ -505,7 +507,8 @@ export default function AllocationsView() {
     if (id) setPending(id);
   };
   // Stats of a short window say nothing about the strategy: they belong to Résultats.
-  const shortWindow = label.startsWith('Allocations ·');
+  const allocRun = label.startsWith('Allocations ·');
+  const shortWindow = allocRun && Boolean(result?.summary.options?.start_date);
   const sim = result?.summary.simulation;
 
   const { analysis, loading, error, saved, source, refresh } = useAllocationAnalysis(client, result, runId, label, p);
@@ -529,6 +532,7 @@ export default function AllocationsView() {
   }
 
   const today = p.today ?? null;
+  const fullHistoryReason = allocRun && !shortWindow ? allocationWindow([p.config]).reason : null;
   const pie: PieSlices = today?.pie?.length
     ? today.pie
     : Object.entries(p.today_weights ?? {}).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, v * 100]);
@@ -570,12 +574,18 @@ export default function AllocationsView() {
           </div>
           <div className={styles.heroMeta}>
             {shortWindow ? (
-              <span title="Juste l’historique nécessaire aux fenêtres de momentum, de volatilité, de bêta et de moyenne mobile : les poids du jour sont identiques à ceux d’un backtest complet.">
+              <span title="Juste l’historique nécessaire aux fenêtres de momentum, de volatilité, de bêta et de moyenne mobile, plus un an pour les rendements récents : cible, poids détenus et rendements sont identiques à ceux d’un backtest complet.">
                 Calcul court : {sim?.start} → {sim?.end}
               </span>
             ) : (
               <>
-                <span>Run : {label || 'Backtest'}</span>
+                {allocRun ? (
+                  <span title={fullHistoryReason ? `Historique complet nécessaire : ${fullHistoryReason}` : undefined}>
+                    Historique complet : {sim?.start} → {sim?.end}
+                  </span>
+                ) : (
+                  <span>Run : {label || 'Backtest'}</span>
+                )}
                 {p.stats_display.CAGR && <span>CAGR {p.stats_display.CAGR}</span>}
                 {p.stats_display.MaxDrawdown && <span>Drawdown max {p.stats_display.MaxDrawdown}</span>}
                 {p.stats_display.Sharpe && <span>Sharpe {p.stats_display.Sharpe}</span>}
@@ -590,7 +600,7 @@ export default function AllocationsView() {
                 {saved === 'ok' && !loading && ' · enregistrée'}
                 {saved === 'saving' && ' · enregistrement…'}
                 {saved === 'error' && ' · non enregistrée'}
-                {!runId && !loading && (resultSource === 'run' && !saveError ? ' · enregistrement du run…' : ' · non enregistrée')}
+                {!runId && !loading && (isGuest() ? ' · mode invité' : resultSource === 'run' && !saveError ? ' · enregistrement du run…' : ' · non enregistrée')}
               </span>
             )}
           </div>
@@ -632,9 +642,13 @@ export default function AllocationsView() {
 
       <div className={styles.kpis}>
         <Kpi
-          label={myValue ? 'Mon portefeuille' : 'Valeur simulée (backtest)'}
+          label={myValue ? 'Mon portefeuille' : shortWindow ? `Valeur simulée depuis ${sim?.start ?? '…'}` : 'Valeur simulée (backtest)'}
           value={money(myValue ?? today?.portfolio_value ?? null, 0)}
-          hint={`${positions} position${positions > 1 ? 's' : ''}${pie.some(([t]) => t === 'CASH') ? ' + cash' : ''}`}
+          hint={
+            !myValue && shortWindow
+              ? 'Sert juste d’échelle : entrez votre valeur réelle ci-dessous'
+              : `${positions} position${positions > 1 ? 's' : ''}${pie.some(([t]) => t === 'CASH') ? ' + cash' : ''}`
+          }
         />
         <Kpi label="P/E pondéré" value={finite(w.pe) ? w.pe.toFixed(2) : loading ? '…' : 'N/A'} hint={finite(w.pe) ? peRating(w.pe)[0] : 'Valorisation'} tone={finite(w.pe) ? peRating(w.pe)[1] : 'neutral'} />
         <Kpi label="Bêta pondéré" value={finite(w.beta) ? w.beta.toFixed(2) : loading ? '…' : 'N/A'} hint={finite(w.beta) ? betaRating(w.beta)[0] : 'Risque'} tone={finite(w.beta) ? betaRating(w.beta)[1] : 'neutral'} />

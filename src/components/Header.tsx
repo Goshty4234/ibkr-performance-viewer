@@ -3,12 +3,14 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import { leaveGuest } from '@/lib/guest';
 import { createClient } from '@/lib/supabase/client';
 import EngineStatus from './backtest/EngineStatus';
 import styles from './Header.module.css';
 
 interface Props {
   email?: string | null;
+  guest?: boolean;
 }
 
 const NO_ACCOUNT = '00000000-0000-0000-0000-000000000000';
@@ -28,7 +30,7 @@ function initials(email?: string | null): string {
   return email.charAt(0).toUpperCase();
 }
 
-export default function Header({ email }: Props) {
+export default function Header({ email, guest = false }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -47,7 +49,7 @@ export default function Header({ email }: Props) {
   // Dev only: next dev compiles a route on first visit; compile the sections in the background
   // (with the session cookie) and keep them warm so switching sections is instant.
   useEffect(() => {
-    if (process.env.NODE_ENV !== 'development') return;
+    if (process.env.NODE_ENV !== 'development' || guest) return;
     let stopped = false;
     const warm = async () => {
       for (const route of WARM_ROUTES) {
@@ -66,12 +68,17 @@ export default function Header({ email }: Props) {
       clearTimeout(first);
       clearInterval(keepAlive);
     };
-  }, []);
+  }, [guest]);
 
   async function handleSignOut() {
     await createClient().auth.signOut();
     router.push('/login');
     router.refresh();
+  }
+
+  function goToLogin() {
+    leaveGuest();
+    window.location.assign('/login');
   }
 
   const isBacktester = pathname === '/' || pathname.startsWith('/backtest');
@@ -85,21 +92,36 @@ export default function Header({ email }: Props) {
           <span className={styles.logo}>📈</span>
           <span className={styles.brandText}>Momentum Backtester</span>
         </Link>
-        <nav className={styles.switcher} aria-label="Section">
-          <Link href="/" prefetch className={`${styles.switchItem} ${isBacktester ? styles.switchItemActive : ''}`}>
-            Backtester
-          </Link>
-          <Link href="/ibkr" prefetch className={`${styles.switchItem} ${isIbkr ? styles.switchItemActive : ''}`}>
-            Comptes IBKR
-          </Link>
-        </nav>
-        <nav className={styles.nav} aria-label="Navigation principale">
-          <Link href="/settings" prefetch className={`${styles.navLink} ${isSettings ? styles.navLinkActive : ''}`}>
-            Paramètres
-          </Link>
-        </nav>
+        {!guest && (
+          <>
+            <nav className={styles.switcher} aria-label="Section">
+              <Link href="/" prefetch className={`${styles.switchItem} ${isBacktester ? styles.switchItemActive : ''}`}>
+                Backtester
+              </Link>
+              <Link href="/ibkr" prefetch className={`${styles.switchItem} ${isIbkr ? styles.switchItemActive : ''}`}>
+                Comptes IBKR
+              </Link>
+            </nav>
+            <nav className={styles.nav} aria-label="Navigation principale">
+              <Link href="/settings" prefetch className={`${styles.navLink} ${isSettings ? styles.navLinkActive : ''}`}>
+                Paramètres
+              </Link>
+            </nav>
+          </>
+        )}
       </div>
 
+      {guest ? (
+        <div className={styles.right}>
+          <EngineStatus />
+          <span className={styles.guestBadge} title="Rien n’est enregistré : historique, bibliothèque et espace de travail disparaissent en fermant l’onglet.">
+            Mode invité · rien n’est enregistré
+          </span>
+          <button type="button" className={styles.guestCta} onClick={goToLogin}>
+            Se connecter / créer un compte
+          </button>
+        </div>
+      ) : (
       <div className={styles.right}>
         <EngineStatus />
         <nav className={styles.mobileNav} aria-label="Navigation mobile">
@@ -132,6 +154,7 @@ export default function Header({ email }: Props) {
           )}
         </div>
       </div>
+      )}
     </header>
   );
 }

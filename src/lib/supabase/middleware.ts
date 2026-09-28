@@ -1,6 +1,21 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { getUserResilient } from '@/lib/supabase/auth-resilient';
+import { GUEST_COOKIE } from '@/lib/guest';
+
+/** Guests (no account) only get the backtester and the public helpers it calls. */
+function guestAllowed(path: string): boolean {
+  return path === '/' || path.startsWith('/api/fx');
+}
+
+function guestResponse(request: NextRequest, path: string, pass: NextResponse): NextResponse {
+  if (guestAllowed(path)) return pass;
+  if (path.startsWith('/api/')) return NextResponse.json({ error: 'Mode invité : réservé aux comptes' }, { status: 401 });
+  const home = request.nextUrl.clone();
+  home.pathname = '/';
+  home.search = '';
+  return NextResponse.redirect(home);
+}
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
@@ -47,9 +62,11 @@ export async function updateSession(request: NextRequest) {
   });
 
   const auth = await getUserResilient(supabase);
+  const guest = request.cookies.get(GUEST_COOKIE)?.value === '1';
 
   if (auth.status === 'timeout') {
     if (hasAuthCookie(request)) return supabaseResponse;
+    if (guest && !isPublic) return guestResponse(request, path, supabaseResponse);
     if (!isPublic) {
       if (path.startsWith('/api/')) {
         return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
@@ -63,6 +80,11 @@ export async function updateSession(request: NextRequest) {
   }
 
   const user = auth.user;
+
+  if (!user && guest && !isPublic) return guestResponse(request, path, supabaseResponse);
+
+  // Signed in: a leftover guest cookie would keep the browser in guest mode.
+  if (user && guest) supabaseResponse.cookies.delete(GUEST_COOKIE);
 
   if (!user && !isPublic) {
     if (path.startsWith('/api/')) {

@@ -1,3 +1,4 @@
+import { isGuest } from '@/lib/guest';
 import { createClient } from '@/lib/supabase/client';
 import type { EnginePrefs } from './prefs';
 import { normalizeUrl } from './prefs';
@@ -63,6 +64,7 @@ export async function resolveEngine(prefs: EnginePrefs): Promise<ResolvedEngine 
 }
 
 async function accessToken(): Promise<string | null> {
+  if (isGuest()) return null;
   const { data } = await createClient().auth.getSession();
   return data.session?.access_token ?? null;
 }
@@ -93,6 +95,9 @@ export class EngineClient {
         detail = typeof body?.detail === 'string' ? body.detail : JSON.stringify(body?.detail ?? body);
       } catch {
         /* not json */
+      }
+      if (res.status === 401 && isGuest()) {
+        detail = 'Le moteur de calcul est réservé aux comptes pour l’instant : crée un compte gratuit pour lancer des backtests.';
       }
       throw new EngineError(detail || `HTTP ${res.status}`, res.status);
     }
