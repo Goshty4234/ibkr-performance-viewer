@@ -65,6 +65,32 @@ export const FOCUSED_COLUMNS: { key: FocusedKey; label: string; fmt: 'pct' | 'pc
   { key: 'tailRatio', label: 'Tail Ratio', fmt: 'ratio' },
 ];
 
+export const FOCUSED_DEFINITIONS: Record<FocusedKey, string> = {
+  totalReturn: 'Rendement de la période : valeur finale / valeur de départ − 1 (série sans apports).',
+  cagr: 'Taux de croissance annuel composé sur la période choisie.',
+  maxDrawdown: 'Pire baisse d’un sommet à un creux pendant la période.',
+  volatility: 'Écart-type annualisé des rendements quotidiens : mesure la dispersion des prix.',
+  sharpe: 'Rendement excédentaire par unité de volatilité (taux sans risque 2 %).',
+  sortino: 'Comme le Sharpe, mais ne pénalise que la volatilité à la baisse.',
+  ulcerIndex: 'Profondeur moyenne des baisses. < 5 excellent, 5–10 modéré, > 10 élevé.',
+  upi: 'Ulcer Performance Index : rendement excédentaire divisé par l’Ulcer Index.',
+  beta: 'Sensibilité au benchmark sur la période : < 1 moins volatil, > 1 plus volatil.',
+  finalValueNoContrib: 'Ce que deviendraient 10 000 $ sur la période choisie, au CAGR de la période.',
+  medianDrawdown: 'Baisse médiane depuis le dernier sommet.',
+  winRate: 'Pourcentage de jours de bourse en hausse (jours sans variation exclus).',
+  lossRate: 'Pourcentage de jours de bourse en baisse (jours sans variation exclus).',
+  medianWin: 'Rendement médian des jours en hausse.',
+  medianLoss: 'Rendement médian des jours en baisse.',
+  profitFactor: 'Somme des gains quotidiens divisée par la somme des pertes quotidiennes.',
+  bestMonth: 'Meilleur rendement mensuel.',
+  worstMonth: 'Pire rendement mensuel.',
+  medianMonthly: 'Rendement mensuel médian.',
+  calmar: 'CAGR divisé par la pire baisse (Max Drawdown).',
+  sterling: 'CAGR divisé par la baisse médiane.',
+  recoveryFactor: 'Rendement total divisé par la pire baisse : capacité à se remettre des baisses.',
+  tailRatio: '95e centile des rendements quotidiens divisé par le 5e centile (en valeur absolue) : asymétrie des extrêmes.',
+};
+
 /** Streamlit `calculate_cagr` on a (dates, values) series. */
 export function cagrOf(days: ArrayLike<number>, values: ArrayLike<number>): number {
   let i0 = -1;

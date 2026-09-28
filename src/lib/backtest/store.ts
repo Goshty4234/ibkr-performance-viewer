@@ -129,6 +129,8 @@ interface BacktestState {
   removePortfolio: (id: string) => void;
   movePortfolio: (id: string, delta: number) => void;
   updatePortfolio: (id: string, patch: Partial<EditablePortfolio>) => void;
+  /** Back to the default settings, keeping the name (Streamlit "Reset Selected Portfolio"). */
+  resetPortfolio: (id: string) => void;
   renamePortfolio: (id: string, name: string) => void;
   updateStock: (id: string, index: number, patch: Partial<StockConfig>) => void;
   addStocks: (id: string, tickers: string[]) => void;
@@ -528,6 +530,8 @@ export const useBacktestStore = create<BacktestState>()(
         },
 
         updatePortfolio: (id, patch) => patchPortfolio(id, (p) => ({ ...p, ...patch })),
+
+        resetPortfolio: (id) => patchPortfolio(id, (p) => ({ ...defaultPortfolio(p.name), _id: p._id })),
 
         renamePortfolio: (id, name) => {
           const old = get().portfolios.find((p) => p._id === id)?.name;

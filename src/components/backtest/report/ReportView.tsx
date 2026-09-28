@@ -189,9 +189,26 @@ function AllocationSection({ p }: { p: PortfolioSummaryOk }) {
 export default function ReportView({ runId }: { runId: string }) {
   const [state, setState] = useState<{ row: BacktestRunRow; result: LoadedResult | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fileName, setFileName] = useState('');
   useEffect(() => {
     loadRun(runId).then(setState, (e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   }, [runId]);
+
+  const defaultFileName = state
+    ? `${state.row.label || 'Rapport de backtest'} ${new Date().toISOString().slice(0, 10)}`
+    : 'Rapport de backtest';
+
+  /** Browsers name the "Save as PDF" file after document.title. */
+  const printReport = () => {
+    const previous = document.title;
+    document.title = (fileName.trim() || defaultFileName).replace(/[\\/:*?"<>|]+/g, '-');
+    const restore = () => {
+      document.title = previous;
+      window.removeEventListener('afterprint', restore);
+    };
+    window.addEventListener('afterprint', restore);
+    window.print();
+  };
 
   const pfs = useMemo(() => (state?.result ? okSummaries(state.result.summary) : []), [state]);
   const byFinal = useMemo(
@@ -208,7 +225,15 @@ export default function ReportView({ runId }: { runId: string }) {
   return (
     <div className={styles.page}>
       <div className={styles.toolbar}>
-        <button type="button" className={styles.printBtn} onClick={() => window.print()}>Imprimer / Enregistrer en PDF</button>
+        <input
+          className={styles.fileName}
+          value={fileName}
+          onChange={(e) => setFileName(e.target.value)}
+          placeholder={defaultFileName}
+          aria-label="Nom du fichier PDF"
+          title="Nom proposé lors de « Enregistrer en PDF »"
+        />
+        <button type="button" className={styles.printBtn} onClick={printReport}>Imprimer / Enregistrer en PDF</button>
       </div>
       <header className={styles.cover}>
         <h1>{row.label || 'Rapport de backtest'}</h1>

@@ -44,6 +44,7 @@ export default function PortfolioEditor() {
   const commitName = useBacktestStore((s) => s.commitName);
   const createFusion = useBacktestStore((s) => s.createFusion);
   const importJson = useBacktestStore((s) => s.importJson);
+  const resetPortfolio = useBacktestStore((s) => s.resetPortfolio);
   const [jsonOpen, setJsonOpen] = useState(false);
 
   if (!p) {
@@ -68,6 +69,9 @@ export default function PortfolioEditor() {
       return;
     }
     switch (action) {
+      case 'reset':
+        if (confirm(`Remettre « ${p.name} » aux réglages par défaut (60/40 SPY/TLT, sans momentum) ? Le nom est conservé.`)) resetPortfolio(p._id);
+        break;
       case 'spy':
       case 'spytr': {
         const tr = action === 'spytr';
@@ -126,6 +130,7 @@ export default function PortfolioEditor() {
         >
           <option value="" disabled>Actions…</option>
           <optgroup label="Portfolio">
+            <option value="reset">Réinitialiser ce portfolio (réglages par défaut)</option>
             <option value="spy">Convertir en SPY (benchmark)</option>
             <option value="spytr">Convertir en SPY rendement total</option>
             <option value="fusion">Créer une fusion de tous les portfolios</option>

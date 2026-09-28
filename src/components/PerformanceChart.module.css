@@ -14,6 +14,28 @@
   padding-bottom: 0.75rem;
 }
 
+.scaleToggle {
+  float: right;
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.scaleToggle button {
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+}
+
+.scaleToggle button.scaleOn {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
 .title {
   font-size: 1rem;
   font-weight: 700;

@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { FOCUSED_COLUMNS, formatFocused, type FocusedRow } from '@/lib/backtest/analytics';
+import { FOCUSED_COLUMNS, FOCUSED_DEFINITIONS, formatFocused, type FocusedRow } from '@/lib/backtest/analytics';
 import { portfolioColor } from '@/lib/backtest/chart-data';
 import type { LoadedResult } from '@/lib/backtest/result-data';
 import { useAnalytics } from '@/lib/backtest/worker/use-analytics';
 import type { PortfolioSummaryOk } from '@/lib/engine/types';
 import DataGrid, { type GridColumn } from '../grid/DataGrid';
+import { ColumnDefinitions } from '../StatsTable';
 import styles from '../Results.module.css';
 
 function useDebounced<T>(value: T, ms: number): T {
@@ -64,6 +65,7 @@ export default function FocusedTab({ result, portfolios }: { result: LoadedResul
       ...cols.map<GridColumn<FocusedRow>>((c) => ({
         key: c.key,
         label: c.label,
+        title: FOCUSED_DEFINITIONS[c.key],
         width: c.key === 'finalValueNoContrib' ? 170 : Math.max(100, c.label.length * 7.5 + 24),
         align: 'right',
         value: (r) => {
@@ -130,6 +132,9 @@ export default function FocusedTab({ result, portfolios }: { result: LoadedResul
             maxHeight={620}
             csvName={`analyse-ciblee-${range.start}-${range.end}`}
             empty={loading ? 'Calcul…' : 'Aucun portfolio n’a assez de données sur cette période.'}
+          />
+          <ColumnDefinitions
+            columns={FOCUSED_COLUMNS.filter((c) => !essential || c.essential).map((c) => ({ label: c.label, title: FOCUSED_DEFINITIONS[c.key] }))}
           />
         </div>
       )}

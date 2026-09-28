@@ -81,6 +81,17 @@ export function nextRebalance(frequency: string, lastRebalance: string | null, n
   return { date: next, at: when, msUntil: when.getTime() - now.getTime() };
 }
 
+const PROGRESS_FREQUENCIES = new Set(['week', '2weeks', 'month', '3months', '6months', 'year']);
+
+/** Share of the period between the last rebalance (midnight) and the next one already elapsed, 0–1. */
+export function rebalanceProgress(frequency: string, lastRebalance: string, nextAt: Date, now = new Date()): number | null {
+  if (!PROGRESS_FREQUENCIES.has(frequency)) return null;
+  const start = parseLocal(lastRebalance).getTime();
+  const total = nextAt.getTime() - start;
+  if (!(total > 0)) return null;
+  return Math.min(Math.max((now.getTime() - start) / total, 0), 1);
+}
+
 /** Streamlit `format_time_until`, in French. */
 export function formatTimeUntil(ms: number): string {
   const total = Math.trunc(ms / 1000);

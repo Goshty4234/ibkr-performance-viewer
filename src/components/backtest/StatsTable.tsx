@@ -1,13 +1,14 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { STAT_COLUMNS, fmtMoney } from '@/lib/backtest/chart-data';
+import { MONEY_COLUMNS, STAT_COLUMNS, fmtMoney } from '@/lib/backtest/chart-data';
 import type { PortfolioSummaryOk as PortfolioResultOk } from '@/lib/engine/types';
 import styles from './Results.module.css';
 
 type SortKey = string;
 
-const LOWER_IS_BETTER = new Set(['Volatility', 'UlcerIndex', 'Beta']);
+const LOWER_IS_BETTER = new Set(['Volatility', 'UlcerIndex', 'Beta', 'Total Money Added']);
+const MONEY_KEYS = new Set(MONEY_COLUMNS.map((c) => c.key));
 
 export default function StatsTable({
   portfolios,
@@ -29,8 +30,7 @@ export default function StatsTable({
   const rows = useMemo(() => {
     if (!sort) return portfolios;
     const val = (p: PortfolioResultOk): number | null => {
-      if (sort.key === '__name') return null;
-      const v = sort.key === '__final' ? p.stats['Final Value (with)'] : p.stats[sort.key];
+      const v = p.stats[sort.key];
       return typeof v === 'number' && Number.isFinite(v) ? v : null;
     };
     return [...portfolios].sort((a, b) => {
@@ -52,6 +52,7 @@ export default function StatsTable({
   }
 
   const arrow = (key: SortKey) => (sort?.key === key ? (sort.dir === -1 ? ' ↓' : ' ↑') : '');
+  const columns = [...STAT_COLUMNS, ...MONEY_COLUMNS];
 
   return (
     <div className={`card ${styles.tableCard}`}>
@@ -69,13 +70,11 @@ export default function StatsTable({
           <thead>
             <tr>
               <th className={styles.stickyCol} onClick={() => clickSort('__name')}>Portfolio{arrow('__name')}</th>
-              {STAT_COLUMNS.map((c) => (
+              {columns.map((c) => (
                 <th key={c.key} title={c.title} onClick={() => clickSort(c.key)}>
                   {c.label}{arrow(c.key)}
                 </th>
               ))}
-              <th onClick={() => clickSort('__final')}>Valeur finale{arrow('__final')}</th>
-              <th>Apports</th>
             </tr>
           </thead>
           <tbody>
@@ -100,17 +99,34 @@ export default function StatsTable({
                       <span className={styles.nameText} title={p.name}>{p.name}</span>
                     </span>
                   </td>
-                  {STAT_COLUMNS.map((c) => (
-                    <td key={c.key} className={styles.num}>{p.stats_display[c.key] ?? 'N/A'}</td>
+                  {columns.map((c) => (
+                    <td key={c.key} className={styles.num}>
+                      {MONEY_KEYS.has(c.key) ? fmtMoney(p.stats[c.key]) : p.stats_display[c.key] ?? 'N/A'}
+                    </td>
                   ))}
-                  <td className={styles.num}>{fmtMoney(p.stats['Final Value (with)'])}</td>
-                  <td className={styles.num}>{fmtMoney(p.stats['Total Money Added'])}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+      <ColumnDefinitions columns={columns} />
     </div>
+  );
+}
+
+export function ColumnDefinitions({ columns }: { columns: { label: string; title: string }[] }) {
+  return (
+    <details className={styles.colDefs}>
+      <summary>ℹ️ Définitions des colonnes</summary>
+      <dl>
+        {columns.map((c) => (
+          <div key={c.label}>
+            <dt>{c.label}</dt>
+            <dd>{c.title}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
   );
 }

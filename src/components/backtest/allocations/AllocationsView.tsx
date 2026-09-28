@@ -7,7 +7,7 @@ import { aiContext, downloadJson, useAllocationAnalysis } from '@/lib/backtest/a
 import { latestRun, loadLatestOnce, loadRun } from '@/lib/backtest/history';
 import { okSummaries } from '@/lib/backtest/result-data';
 import { useBacktestStore } from '@/lib/backtest/store';
-import { FREQUENCY_LABELS, nextRebalance } from '@/lib/backtest/timer';
+import { FREQUENCY_LABELS, nextRebalance, rebalanceProgress } from '@/lib/backtest/timer';
 import { usePortfolioDetail } from '@/lib/backtest/use-detail';
 import { SERIES_PALETTE } from '@/lib/chart-series';
 import { useEngineStore } from '@/lib/engine/store';
@@ -72,12 +72,13 @@ function Section({ id, title, sub, actions, children }: { id: string; title: str
   );
 }
 
-function Kpi({ label, value, hint, tone = 'neutral' }: { label: string; value: ReactNode; hint?: ReactNode; tone?: Tone }) {
+function Kpi({ label, value, hint, tone = 'neutral', children }: { label: string; value: ReactNode; hint?: ReactNode; tone?: Tone; children?: ReactNode }) {
   return (
     <div className={`${styles.kpi} ${styles[`tone_${tone}`]}`}>
       <span className={styles.kpiLabel}>{label}</span>
       <strong className={styles.kpiValue}>{value}</strong>
       {hint && <span className={styles.kpiHint}>{hint}</span>}
+      {children}
     </div>
   );
 }
@@ -108,13 +109,27 @@ function TimerKpi({ timer }: { timer: TimerInfo | null }) {
   const now = useNow(30_000);
   if (!timer) return <Kpi label="Prochain rebalancement" value="—" hint="Aucun calendrier" />;
   const next = nextRebalance(timer.frequency, timer.last_rebalance, now);
+  const progress = next && timer.last_rebalance ? rebalanceProgress(timer.frequency, timer.last_rebalance, next.at, now) : null;
   return (
     <Kpi
       label="Prochain rebalancement"
       value={next ? compactUntil(next.msUntil) : 'Aucun'}
       hint={next ? `${next.date.toLocaleDateString('fr-CA')} · ${FREQUENCY_LABELS[timer.frequency] ?? timer.frequency}` : FREQUENCY_LABELS[timer.frequency] ?? timer.frequency}
       tone="neutral"
-    />
+    >
+      {progress !== null && (
+        <div
+          className={styles.rebalBar}
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(progress * 100)}
+          title={`Dernier rebalancement le ${timer.last_rebalance} · ${(progress * 100).toFixed(1)} % de la période écoulée`}
+        >
+          <span style={{ width: `${progress * 100}%` }} />
+        </div>
+      )}
+    </Kpi>
   );
 }
 
@@ -403,10 +418,32 @@ function Methodology() {
         <li><strong>Cours / valeur comptable</strong> : &lt; 1 potentiellement sous-évalué, 1–3 juste, &gt; 3 potentiellement surévalué.</li>
         <li><strong>Rendement du dividende</strong> : un rendement faible n’est pas forcément mauvais (titres de croissance).</li>
         <li><strong>Bêta</strong> : &lt; 0,8 faible, 0,8–1,2 équilibré, 1,2–1,5 modéré, &gt; 1,5 élevé.</li>
+        <li>
+          <strong>Titres canadiens</strong> : pour les fondamentaux seulement, ces tickers US ou OTC sont lus sur leur bourse canadienne,
+          où Yahoo a de meilleures données. Les prix du backtest restent ceux du ticker saisi (en USD) ; pour simuler en CAD, saisis
+          directement le ticker TSX (ex. POW.TO).
+          <div className={styles.canadaList}>
+            {CANADIAN_STATS_TICKERS.map(([from, to, name]) => (
+              <span key={from} title={name}><code>{from}</code> → <code>{to}</code></span>
+            ))}
+          </div>
+        </li>
       </ul>
     </details>
   );
 }
+
+/** `get_ticker_aliases_for_stats` of the engine (fundamentals only, prices keep the typed ticker). */
+const CANADIAN_STATS_TICKERS: [string, string, string][] = [
+  ['DLMAF', 'DOL.TO', 'Dollarama'], ['LBLCF', 'L.TO', 'Loblaw'], ['ANCTF', 'ATD.TO', 'Couche-Tard'], ['MRU', 'MRU.TO', 'Metro'],
+  ['CNSWF', 'CSU.TO', 'Constellation Software'], ['TOITF', 'TOI.V', 'Topicus'], ['LMGIF', 'LMN.V', 'Lumine'],
+  ['CLS', 'CLS.TO', 'Celestica'], ['CGI', 'GIB-A.TO', 'CGI'], ['DSGX', 'DSG.TO', 'Descartes'], ['MDALF', 'MDA.TO', 'MDA'],
+  ['KRKNF', 'PNG.V', 'Kraken Robotics'], ['BN', 'BN.TO', 'Brookfield Corp'], ['BAM', 'BAM.TO', 'Brookfield Asset Mgmt'],
+  ['FRFHF', 'FFH.TO', 'Fairfax'], ['PWCDF', 'POW.TO', 'Power Corp'], ['ENB', 'ENB.TO', 'Enbridge'], ['TRP', 'TRP.TO', 'TC Energy'],
+  ['CNQ', 'CNQ.TO', 'Canadian Natural'], ['SU', 'SU.TO', 'Suncor'], ['CP', 'CP.TO', 'Canadien Pacifique'],
+  ['CNI', 'CNR.TO', 'Canadien National'], ['BITF', 'BITF.TO', 'Bitfarms'], ['RY', 'RY.TO', 'Banque Royale'],
+  ['TD', 'TD.TO', 'Banque TD'], ['BNS', 'BNS.TO', 'Banque Scotia'], ['BMO', 'BMO.TO', 'BMO'], ['CM', 'CM.TO', 'CIBC'],
+];
 
 // ---- empty state -----------------------------------------------------------------------
 
@@ -533,6 +570,9 @@ export default function AllocationsView() {
 
   const today = p.today ?? null;
   const fullHistoryReason = allocRun && !shortWindow ? allocationWindow([p.config]).reason : null;
+  const targetedTickers = p.config.use_targeted_rebalancing
+    ? Object.entries(p.config.targeted_rebalancing_settings ?? {}).filter(([, s]) => s?.enabled).map(([t]) => t)
+    : [];
   const pie: PieSlices = today?.pie?.length
     ? today.pie
     : Object.entries(p.today_weights ?? {}).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, v * 100]);
@@ -670,6 +710,13 @@ export default function AllocationsView() {
         title="Allocation cible aujourd’hui"
         sub={`Poids issus des dernières métriques${p.config.use_momentum ? ' de momentum' : ' de la configuration'} · actions arrondies au dixième au dernier prix connu`}
       >
+        {targetedTickers.length > 0 && (
+          <div className={styles.warnLine}>
+            <strong>Rebalancement ciblé</strong> ({targetedTickers.join(', ')}) : contrairement au momentum, cette cible dépend de la date de
+            départ du backtest. Elle reflète l’écart actuel du portefeuille simulé par rapport aux poids initiaux : ce n’est pas une
+            stratégie qu’on peut recopier telle quelle depuis n’importe quel point de départ.
+          </div>
+        )}
         <ValueControl value={myValue} backtestValue={today?.portfolio_value ?? null} onChange={setMyValue} />
         <div className={styles.todayGrid}>
           <div className={styles.pieBox}><Pie slices={pie} height={320} /></div>

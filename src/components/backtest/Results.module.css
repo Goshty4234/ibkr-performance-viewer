@@ -79,6 +79,12 @@
 .padded { padding: 0 1.1rem 1.1rem; min-width: 0; }
 .toolbarRow { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; padding: 0 1.1rem 0.9rem; }
 .toolbarInline { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.8rem; }
+.chartTip { background: #141c2b; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; padding: 0.45rem 0.6rem; font-size: 12px; max-height: 340px; overflow: hidden; }
+.chartTipDate { color: var(--text-muted); margin-bottom: 0.25rem; font-family: var(--mono); }
+.chartTipRow { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 0.45rem; line-height: 1.5; }
+.chartTipRow i { width: 8px; height: 8px; border-radius: 2px; }
+.chartTipRow span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+.chartTipRow b { font-family: var(--mono); font-weight: 600; }
 .inlineField { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: var(--text-muted); }
 .inlineField :global(.input) { padding: 0.3rem 0.5rem; font-size: 0.8rem; }
 .inlineCheck { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--text-muted); cursor: pointer; }
@@ -158,6 +164,12 @@
 /* ---- stats table ------------------------------------------------------ */
 
 .tableCard { overflow: hidden; }
+.colDefs { margin-top: 0.6rem; font-size: 0.78rem; color: var(--text-muted); }
+.colDefs summary { cursor: pointer; font-weight: 600; user-select: none; width: fit-content; }
+.colDefs summary:hover { color: var(--text); }
+.colDefs dl { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.45rem 1.2rem; margin: 0.6rem 0 0; }
+.colDefs dt { font-weight: 700; color: var(--text); }
+.colDefs dd { margin: 0.1rem 0 0; line-height: 1.45; }
 .tableScroll { overflow: auto; max-height: 520px; }
 .table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.8rem; }
 .table th {

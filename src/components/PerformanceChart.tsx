@@ -45,6 +45,34 @@ interface Props {
   stacked?: boolean;
   hint?: string;
   title?: string;
+  /** Offer a log scale (growth multiple 1 + r, labelled in %). */
+  logToggle?: boolean;
+}
+
+const LOG_FLOOR = 1e-4;
+const toGrowth = (pct: number) => Math.max(1 + pct / 100, LOG_FLOOR);
+const fromGrowth = (g: number) => (g - 1) * 100;
+
+const MAX_LOG_TICKS = 7;
+
+/** Geometric ticks through 0 % (growth 1): ×2, ×4, ×10 or ×100 so at most ~7 fit; linear for narrow ranges. */
+function logTicks(lo: number, hi: number): number[] {
+  const span = Math.log(hi / lo);
+  const factor = [2, 4, 10, 100].find((f) => span / Math.log(f) <= MAX_LOG_TICKS) ?? 1000;
+  const ticks: number[] = [];
+  for (let g = factor ** Math.floor(Math.log(lo) / Math.log(factor)); g <= hi * 1.0001; g *= factor) {
+    if (g >= lo) ticks.push(g);
+  }
+  if (ticks.length >= 3) return ticks;
+  const step = (hi - lo) / 4;
+  return Array.from({ length: 5 }, (_, i) => lo + step * i);
+}
+
+function logTickLabel(g: number): string {
+  const pct = fromGrowth(g);
+  if (Math.abs(pct) >= 1e6) return `${Math.round(pct / 1e6)}M%`;
+  if (Math.abs(pct) >= 1e4) return `${Math.round(pct / 1e3)}k%`;
+  return `${Math.round(pct)}%`;
 }
 
 function TooltipContent({
@@ -52,11 +80,13 @@ function TooltipContent({
   payload,
   label,
   series,
+  log,
 }: {
   active?: boolean;
   payload?: Array<{ value: number; dataKey: string; color: string; payload?: { date?: string } }>;
   label?: unknown;
   series: ChartSeriesDef[];
+  log?: boolean;
 }) {
   if (!active || !payload?.length) return null;
   const labelById = new Map(series.map((s) => [s.id, s.label]));
@@ -80,7 +110,7 @@ function TooltipContent({
           const baseKey = e.dataKey.replace(/_(main|gap)$/, '');
           return (
             <div key={e.dataKey} style={{ color: e.color }} className="mono">
-              {labelById.get(baseKey) ?? baseKey}: {fmtPct(e.value)}
+              {labelById.get(baseKey) ?? baseKey}: {fmtPct(log ? fromGrowth(e.value) : e.value)}
             </div>
           );
         })}
@@ -108,8 +138,11 @@ export default function PerformanceChart({
   stacked,
   hint,
   title,
+  logToggle,
 }: Props) {
   const [mounted, setMounted] = useState(false);
+  const [logScale, setLogScale] = useState(false);
+  const log = Boolean(logToggle && logScale);
   const [drag, setDrag] = useState<DragState | null>(null);
   const plotRef = useRef<HTMLDivElement>(null);
 
@@ -146,13 +179,34 @@ export default function PerformanceChart({
       const r: MultiSeriesChartPoint = { ...row };
       for (const s of shown) {
         const gap = !!row[seriesGapKey(s.id)];
-        const v = row[s.id] as number;
+        const raw = row[s.id];
+        const v = log && typeof raw === 'number' ? toGrowth(raw) : (raw as number);
         r[`${s.id}_main`] = gap ? null : v;
         r[`${s.id}_gap`] = gap ? v : null;
       }
       return r;
     });
-  }, [data, shown]);
+  }, [data, shown, log]);
+
+  const logAxis = useMemo(() => {
+    if (!log) return null;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const row of chartData) {
+      for (const s of shown) {
+        for (const k of [`${s.id}_main`, `${s.id}_gap`]) {
+          const v = row[k];
+          if (typeof v === 'number' && Number.isFinite(v)) {
+            if (v < lo) lo = v;
+            if (v > hi) hi = v;
+          }
+        }
+      }
+    }
+    if (!Number.isFinite(lo)) return null;
+    const domain: [number, number] = [lo * 0.95, hi * 1.05];
+    return { domain, ticks: logTicks(domain[0], domain[1]) };
+  }, [log, chartData, shown]);
 
   const highlightSeries = useMemo(
     () => shown.find((s) => s.kind === 'primary') ?? shown[0] ?? null,
@@ -250,6 +304,12 @@ export default function PerformanceChart({
 
   return (
     <div className={`${styles.card} ${stacked ? styles.stackTop : ''}`}>
+      {logToggle && (
+        <div className={styles.scaleToggle} title="Échelle log : des écarts de rendement égaux en % ont la même hauteur, utile quand les portfolios divergent beaucoup">
+          <button type="button" className={logScale ? styles.scaleOn : ''} onClick={() => setLogScale(true)}>Log</button>
+          <button type="button" className={!logScale ? styles.scaleOn : ''} onClick={() => setLogScale(false)}>Linéaire</button>
+        </div>
+      )}
       <div className={styles.title}>{title ?? 'Performance relative (0% au début de la plage)'}</div>
       <div className={styles.sub}>
         {subtitle ?? 'TWRR chaîné · Forme journalière dérivée du CSV (trades, dividendes, frais)'}
@@ -299,16 +359,32 @@ export default function PerformanceChart({
                 syncMethod="value"
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-                <YAxis
-                  tickFormatter={(v) => `${v}%`}
-                  stroke="#5c6d85"
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                  width={CHART_YAXIS_WIDTH}
-                />
+                {logAxis ? (
+                  <YAxis
+                    scale="log"
+                    domain={logAxis.domain}
+                    ticks={logAxis.ticks}
+                    allowDataOverflow
+                    tickFormatter={logTickLabel}
+                    interval={0}
+                    stroke="#5c6d85"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                    width={CHART_YAXIS_WIDTH}
+                  />
+                ) : (
+                  <YAxis
+                    tickFormatter={(v) => `${v}%`}
+                    stroke="#5c6d85"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                    width={CHART_YAXIS_WIDTH}
+                  />
+                )}
                 <Tooltip
-                  content={<TooltipContent series={series} />}
+                  content={<TooltipContent series={series} log={log} />}
                   cursor={{ stroke: 'rgba(255,255,255,0.35)', strokeWidth: 1 }}
                   isAnimationActive={false}
                 />

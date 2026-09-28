@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { jsonFromPdf, jsonToPdf } from '@/lib/backtest/json-pdf';
 import { exportJson, exportPortfolioJson } from '@/lib/backtest/portfolio';
 import { useBacktestStore } from '@/lib/backtest/store';
 import styles from './Backtester.module.css';
@@ -25,7 +26,19 @@ export default function ImportExportDialog({
   const [text, setText] = useState('');
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [fileName, setFileName] = useState('');
+  const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  async function readFile(f: File) {
+    setError('');
+    try {
+      const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+      setText(isPdf ? await jsonFromPdf(f) : await f.text());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   const single = portfolioId ? portfolios.find((p) => p._id === portfolioId) ?? null : null;
   const exported = useMemo(() => {
@@ -50,18 +63,21 @@ export default function ImportExportDialog({
     }
   }
 
-  function download() {
-    const blob = new Blob([exported], { type: 'application/json' });
+  const day = new Date().toISOString().slice(0, 10);
+  const defaultName = single ? `${fileSlug(single.name)}-${day}` : `portfolios-${day}`;
+  const baseName = fileName.trim() ? fileSlug(fileName.trim()) : defaultName;
+
+  function save(blob: Blob, ext: 'json' | 'pdf') {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    const day = new Date().toISOString().slice(0, 10);
-    a.download = single ? `${fileSlug(single.name)}-${day}.json` : `portfolios-${day}.json`;
+    a.download = `${baseName}.${ext}`;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   const exportTitle = single ? `JSON de « ${single.name} »` : `Exporter ${portfolios.length} portfolios`;
+  const pdfTitle = fileName.trim() || (single ? `${single.name} · configuration JSON` : `${portfolios.length} portfolios · configuration JSON`);
 
   return (
     <div className={styles.overlay} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -74,24 +90,39 @@ export default function ImportExportDialog({
         {mode === 'import' ? (
           <>
             <p className={styles.sectionSub}>
-              Colle le JSON « export all portfolios » de Streamlit (ou un fichier exporté ici). Les options globales
-              (début, premier rebalancement, dates) sont reprises automatiquement. Le JSON d’un seul portfolio peut aussi
-              remplacer le portfolio sélectionné.
+              Colle le JSON « export all portfolios » de Streamlit (ou un fichier exporté ici), ou glisse un fichier .json ou un
+              PDF de configuration (celui de Streamlit ou d’ici). Les options globales (début, premier rebalancement, dates)
+              sont reprises automatiquement. Le JSON d’un seul portfolio peut aussi remplacer le portfolio sélectionné.
             </p>
-            <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder='[{"name": "...", "stocks": [...]}]' autoFocus />
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder='[{"name": "...", "stocks": [...]}]  ·  ou dépose un fichier .json / .pdf ici'
+              autoFocus
+              className={dragging ? styles.dropActive : undefined}
+              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                const f = e.dataTransfer.files?.[0];
+                if (f) void readFile(f);
+              }}
+            />
             <input
               ref={fileRef}
               type="file"
-              accept=".json,application/json,text/plain"
+              accept=".json,.pdf,application/json,application/pdf,text/plain"
               style={{ display: 'none' }}
-              onChange={async (e) => {
+              onChange={(e) => {
                 const f = e.target.files?.[0];
-                if (f) setText(await f.text());
+                if (f) void readFile(f);
+                e.target.value = '';
               }}
             />
             {error && <div className={styles.errorBox}>{error}</div>}
             <div className={styles.dialogActions}>
-              <button type="button" className="btn btn-ghost" onClick={() => fileRef.current?.click()}>Ouvrir un fichier…</button>
+              <button type="button" className="btn btn-ghost" onClick={() => fileRef.current?.click()}>Ouvrir un fichier (.json / .pdf)…</button>
               <button
                 type="button"
                 className="btn btn-ghost"
@@ -113,8 +144,28 @@ export default function ImportExportDialog({
                 : 'Format compatible avec l’import « paste all » de Streamlit.'}
             </p>
             <textarea value={exported} readOnly />
+            <label className={styles.fileNameField}>
+              Nom du fichier (optionnel)
+              <input
+                type="text"
+                className="input"
+                value={fileName}
+                placeholder={defaultName}
+                onChange={(e) => setFileName(e.target.value)}
+              />
+            </label>
             <div className={styles.dialogActions}>
-              <button type="button" className="btn btn-ghost" onClick={download}>Télécharger .json</button>
+              <button type="button" className="btn btn-ghost" onClick={() => save(new Blob([exported], { type: 'application/json' }), 'json')}>
+                Télécharger .json
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                title="PDF avec le JSON en texte (Ctrl+A / Ctrl+C) ; il se réimporte ici tel quel"
+                onClick={() => save(jsonToPdf(exported, pdfTitle), 'pdf')}
+              >
+                Télécharger .pdf
+              </button>
               <button
                 type="button"
                 className="btn btn-primary"

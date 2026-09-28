@@ -155,6 +155,7 @@ export default function OverviewTab({
             loading={false}
             hasStatements
             stacked
+            logToggle
             title="Performance cumulée (sans ajouts)"
             subtitle="Série « no_additions » du moteur · base 0 % au début · benchmarks en pointillés"
             hint="Cliquez-glissez pour mesurer une sous-période · simple clic ou Échap pour effacer."

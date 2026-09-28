@@ -7,6 +7,7 @@ import type { LoadedResult } from '@/lib/backtest/result-data';
 import { useAnalytics } from '@/lib/backtest/worker/use-analytics';
 import EChart from '../charts/EChart';
 import DataGrid, { type GridColumn } from '../grid/DataGrid';
+import { ColumnDefinitions } from '../StatsTable';
 import { gradient, money, num, pct } from './format';
 import styles from '../Results.module.css';
 
@@ -15,9 +16,14 @@ type PeriodRow = { k: number; label: string };
 const MAX_CHART_PORTFOLIOS = 15;
 
 function robustColumns(kind: PeriodKind): GridColumn<RobustRow>[] {
-  const unit = kind === 'year' ? 'Years' : 'Months';
-  const vol = kind === 'year' ? 'per-year from monthly %' : 'per-month from daily %';
-  const p = (key: keyof RobustRow, label: string, title?: string, scale = 1): GridColumn<RobustRow> => ({
+  const year = kind === 'year';
+  const unit = year ? 'Years' : 'Months';
+  const vol = year ? 'per-year from monthly %' : 'per-month from daily %';
+  const period = year ? 'année' : 'mois';
+  const periods = year ? 'années' : 'mois';
+  const inner = year ? 'mensuels' : 'quotidiens';
+  const volDef = `Pour chaque ${period}, écart-type de ses rendements ${inner} ; puis moyenne ou médiane de ces volatilités`;
+  const p = (key: keyof RobustRow, label: string, title: string, scale = 1): GridColumn<RobustRow> => ({
     key,
     label,
     title,
@@ -31,25 +37,30 @@ function robustColumns(kind: PeriodKind): GridColumn<RobustRow>[] {
   });
   return [
     { key: 'name', label: 'Portfolio', width: 220, value: (r) => r.name },
-    { key: 'positives', label: `Positive ${unit}`, width: 120, align: 'right', value: (r) => r.positives },
-    p('positivePct', `% Positive ${unit}`),
-    p('mean', 'Mean % Change'),
-    p('median', 'Median % Change'),
-    p('std', 'Std % Change', 'Écart-type population (ddof=0)'),
-    p('posMean', `Mean % (${unit} > 0)`),
-    p('posMedian', `Median % (${unit} > 0)`),
-    p('negMean', `Mean % (${unit} < 0)`),
-    p('negMedian', `Median % (${unit} < 0)`),
-    p('volMean', `Vol Mean (${vol})`, undefined, 100),
-    p('volMedian', `Vol Median (${vol})`, undefined, 100),
-    p('volAnnMean', 'Vol Mean (Annualized)', kind === 'year' ? '× √12' : '× √252', 100),
-    p('volAnnMedian', 'Vol Median (Annualized)', kind === 'year' ? '× √12' : '× √252', 100),
     {
-      key: 'betaMean', label: `Beta Mean (${kind === 'year' ? 'Yearly' : 'Monthly'})`, width: 150, align: 'right',
+      key: 'positives', label: `Positive ${unit}`, width: 120, align: 'right', value: (r) => r.positives,
+      title: `Nombre de ${periods} où la valeur de fin dépasse celle du début.`,
+    },
+    p('positivePct', `% Positive ${unit}`, `${year ? 'Années' : 'Mois'} positifs divisés par le nombre total de ${periods} évalués (× 100).`),
+    p('mean', 'Mean % Change', `Moyenne arithmétique des rendements par ${period} (série sans apports).`),
+    p('median', 'Median % Change', `Médiane des rendements par ${period}.`),
+    p('std', 'Std % Change', `Écart-type (population, ddof = 0) des rendements par ${period}.`),
+    p('posMean', `Mean % (${unit} > 0)`, `Moyenne des rendements des ${periods} positifs seulement.`),
+    p('posMedian', `Median % (${unit} > 0)`, `Médiane des rendements des ${periods} positifs seulement.`),
+    p('negMean', `Mean % (${unit} < 0)`, `Moyenne des rendements des ${periods} négatifs seulement.`),
+    p('negMedian', `Median % (${unit} < 0)`, `Médiane des rendements des ${periods} négatifs seulement.`),
+    p('volMean', `Vol Mean (${vol})`, `${volDef} (non annualisé) : moyenne.`, 100),
+    p('volMedian', `Vol Median (${vol})`, `${volDef} (non annualisé) : médiane.`, 100),
+    p('volAnnMean', 'Vol Mean (Annualized)', `Mêmes volatilités, multipliées par ${year ? '√12' : '√252'} pour les annualiser : moyenne.`, 100),
+    p('volAnnMedian', 'Vol Median (Annualized)', `Mêmes volatilités, multipliées par ${year ? '√12' : '√252'} pour les annualiser : médiane.`, 100),
+    {
+      key: 'betaMean', label: `Beta Mean (${year ? 'Yearly' : 'Monthly'})`, width: 150, align: 'right',
+      title: `Bêta de chaque ${period} (Cov(portfolio, benchmark) / Var(benchmark) sur ses rendements quotidiens) : moyenne.`,
       value: (r) => (Number.isNaN(r.betaMean) ? null : r.betaMean), format: (v) => num(v as number, 3),
     },
     {
-      key: 'betaMedian', label: `Beta Median (${kind === 'year' ? 'Yearly' : 'Monthly'})`, width: 160, align: 'right',
+      key: 'betaMedian', label: `Beta Median (${year ? 'Yearly' : 'Monthly'})`, width: 160, align: 'right',
+      title: `Bêta de chaque ${period} sur ses rendements quotidiens : médiane.`,
       value: (r) => (Number.isNaN(r.betaMedian) ? null : r.betaMedian), format: (v) => num(v as number, 3),
     },
   ];
@@ -99,6 +110,7 @@ export default function PeriodsTab({ result, hidden }: { result: LoadedResult; h
     () => (data ? data.robust.filter((r) => !hidden.has(portfolioSeriesId(r.index))) : []),
     [data, hidden],
   );
+  const robustCols = useMemo(() => robustColumns(kind), [kind]);
 
   const chartOption = useMemo(() => {
     if (!data || kind !== 'year') return null;
@@ -167,7 +179,8 @@ export default function PeriodsTab({ result, hidden }: { result: LoadedResult; h
           </div>
         </div>
         <div className={styles.padded}>
-          <DataGrid columns={robustColumns(kind)} rows={robust} rowKey={(r) => r.index} maxHeight={480} csvName={`stats-robustes-${kind}`} />
+          <DataGrid columns={robustCols} rows={robust} rowKey={(r) => r.index} maxHeight={480} csvName={`stats-robustes-${kind}`} />
+          <ColumnDefinitions columns={robustCols.flatMap((c) => (c.title ? [{ label: c.label, title: c.title }] : []))} />
         </div>
       </div>
 

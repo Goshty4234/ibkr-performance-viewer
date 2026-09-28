@@ -192,18 +192,25 @@ export function rebasePct(rows: MultiSeriesChartPoint[], ids: string[]): MultiSe
   });
 }
 
-export const STAT_COLUMNS: { key: string; label: string; title?: string }[] = [
-  { key: 'CAGR', label: 'CAGR' },
-  { key: 'Total Return', label: 'Rendement total' },
-  { key: 'MaxDrawdown', label: 'Max DD' },
-  { key: 'Volatility', label: 'Volatilité' },
-  { key: 'Sharpe', label: 'Sharpe' },
-  { key: 'Sortino', label: 'Sortino' },
-  { key: 'UlcerIndex', label: 'Ulcer' },
-  { key: 'UPI', label: 'UPI' },
-  { key: 'Beta', label: 'Bêta' },
-  { key: 'MWRR', label: 'MWRR', title: 'Rendement pondéré par l’argent (tient compte des ajouts)' },
-  { key: 'Total Return (Contributed)', label: 'Rend. / apports' },
+export const STAT_COLUMNS: { key: string; label: string; title: string }[] = [
+  { key: 'CAGR', label: 'CAGR', title: 'Taux de croissance annuel composé : rendement annuel moyen sur toute la période.' },
+  { key: 'Total Return', label: 'Rendement total', title: 'Rendement sur l’investissement initial seul : valeur finale sans apports / investissement initial − 1.' },
+  { key: 'MaxDrawdown', label: 'Max DD', title: 'Pire baisse d’un sommet à un creux : la plus grosse perte subie depuis un plus haut.' },
+  { key: 'Volatility', label: 'Volatilité', title: 'Écart-type annualisé des rendements : mesure l’amplitude des variations.' },
+  { key: 'Sharpe', label: 'Sharpe', title: 'Rendement excédentaire par unité de volatilité totale. > 1 bon, > 2 très bon, > 3 excellent.' },
+  { key: 'Sortino', label: 'Sortino', title: 'Rendement excédentaire par unité de volatilité à la baisse. > 1 bon, > 2 très bon, > 3 excellent.' },
+  { key: 'UlcerIndex', label: 'Ulcer', title: 'Profondeur moyenne des baisses. < 5 excellent, 5–10 modéré, > 10 élevé.' },
+  { key: 'UPI', label: 'UPI', title: 'Ulcer Performance Index : rendement excédentaire rapporté à l’Ulcer Index. > 1 bon, > 2 très bon, > 3 excellent.' },
+  { key: 'Beta', label: 'Bêta', title: 'Sensibilité au benchmark : < 1 moins volatil que le marché, > 1 plus volatil.' },
+  { key: 'MWRR', label: 'MWRR', title: 'Rendement pondéré par l’argent : tient compte du moment et du montant des apports.' },
+  { key: 'Total Return (Contributed)', label: 'Rend. / apports', title: 'Rendement sur tout l’argent investi : valeur finale / total des apports − 1.' },
+];
+
+/** Money columns shown after the ratio columns, with their definitions. */
+export const MONEY_COLUMNS: { key: string; label: string; title: string }[] = [
+  { key: 'Final Value (with)', label: 'Valeur finale', title: 'Valeur finale en comptant tous les apports et leurs rendements.' },
+  { key: 'Final Value (no_additions)', label: 'Valeur finale sans apports', title: 'Ce que serait devenu l’investissement initial seul, sans aucun apport périodique.' },
+  { key: 'Total Money Added', label: 'Apports', title: 'Total de l’argent investi : montant initial + apports périodiques.' },
 ];
 
 export function fmtMoney(v: number | null | undefined): string {
