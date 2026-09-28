@@ -284,6 +284,21 @@ create policy "Users can delete own backtest_runs"
 create index if not exists backtest_portfolios_user_idx on public.backtest_portfolios(user_id, updated_at desc);
 create index if not exists backtest_runs_user_idx on public.backtest_runs(user_id, created_at desc);
 
+-- request_key: sha256 of the normalized request (portfolios + options), used to find an identical
+-- earlier run before launching; engine_code: engine code fingerprint that produced it;
+-- kind: 'backtest' (Construire) or 'allocations' (today's target, short window).
+alter table public.backtest_runs add column if not exists request_key text;
+alter table public.backtest_runs add column if not exists engine_code text;
+alter table public.backtest_runs add column if not exists kind text not null default 'backtest';
+create index if not exists backtest_runs_request_key_idx on public.backtest_runs(user_id, request_key, created_at desc);
+
+-- Per portfolio (same order as summary): config_keys = sha256 of its config + run options except
+-- the end date (computed by the app, cheap pre-filter); portfolio_keys = engine history_key (also
+-- covers the common simulation start). Equal portfolio key + equal end = identical result.
+alter table public.backtest_runs add column if not exists config_keys text[] not null default '{}';
+alter table public.backtest_runs add column if not exists portfolio_keys text[] not null default '{}';
+create index if not exists backtest_runs_config_keys_idx on public.backtest_runs using gin(config_keys);
+
 -- Private bucket for result payloads (gzip JSON), one folder per user
 insert into storage.buckets (id, name, public, file_size_limit)
 values ('backtest-results', 'backtest-results', false, 104857600)

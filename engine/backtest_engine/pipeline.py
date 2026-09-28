@@ -35,6 +35,7 @@ from .context import RunContext
 from .results import Axis, build_summary, dump_gz, load_gz, portfolio_detail, portfolio_summary
 from .runner import (BacktestRun, PreparedRun, _reindex, assemble, install_session, isolate_frames, is_fusion, ma_seed,
                      prepare, run_one, tickers_for)
+from .serialize import date_key
 
 _DROP_COLUMNS = {"Open", "High", "Low", "Volume", "Adj Close", "Stock Splits", "Capital Gains"}
 _MAX_FRAMES = int(os.environ.get("ENGINE_WORKER_FRAMES", "800"))
@@ -264,6 +265,49 @@ def _reuse_key(entry: _JobEntry, index: int, keys: list[str], seed: list) -> str
     })
 
 
+_NOT_IDENTITY = ("end_date", "align_start")
+
+
+def history_key(prep: PreparedRun, index: int) -> str | None:
+    """Identity of portfolio `index`'s result apart from where it ends.
+
+    Two runs whose keys match and whose simulations end on the same day give identical results
+    for this portfolio, so the web app can reuse a saved one (and align a new run's end on it).
+    Price contents are not part of it: bars that were final when the earlier run was made do not
+    change, and the app only reuses runs made after their last bar settled.
+    """
+    cfg = prep.configs[index]
+    group = [cfg]
+    if is_fusion(cfg):
+        wanted = set(cfg["fusion_portfolio"].get("selected_portfolios", []))
+        group += [c for c in prep.configs if not is_fusion(c) and (not wanted or c.get("name") in wanted)]
+    sim = prep.simulation_index
+    return result_cache.task_key({
+        "kind": "history",
+        "configs": [{k: v for k, v in c.items() if k != "end_date_user"} for c in group],
+        "options": {k: v for k, v in prep.options.to_dict().items() if k not in _NOT_IDENTITY},
+        "start": str(sim[0]) if len(sim) else None,
+        "display_start": str(prep.display_start),
+        "ma_seed": ma_seed(prep, index),
+        "session": result_cache.object_digest(prep.session),
+        "data": sorted(tickers_for(prep, index)),
+    })
+
+
+def plan(portfolios: Any, options: Any) -> dict[str, Any]:
+    """Simulation range and history keys of a request, without simulating (prices come from cache)."""
+    prep = prepare(portfolios, options, RunContext(), download_lock=download_lock())
+    sim = prep.simulation_index
+    return {
+        "simulation": {
+            "start": date_key(sim[0]) if len(sim) else None,
+            "end": date_key(sim[-1]) if len(sim) else None,
+            "display_start": date_key(prep.display_start) if prep.display_start is not None else None,
+        },
+        "portfolios": [{"name": c["name"], "history_key": history_key(prep, i)} for i, c in enumerate(prep.configs)],
+    }
+
+
 def _write_reused(job_dir: Path, index: int, rec: dict[str, Any]) -> int:
     piece = rec["piece"]
     detail_gz: bytes = rec["detail_gz"]
@@ -290,10 +334,11 @@ def task_portfolio(job_dir: Path, index: int) -> dict[str, Any]:
     keys = tickers_for(prep, index)
     seed = ma_seed(prep, index)
     key = _reuse_key(entry, index, keys, seed) if result_cache.ENABLED and not entry.keep_raw else None
+    hkey = history_key(prep, index)
     if key:
         rec = result_cache.load(key)
         if rec is not None:
-            _write_reused(job_dir, index, rec)
+            _write_reused(job_dir, index, dict(rec, piece=dict(rec["piece"], history_key=hkey)))
             return {"ok": bool(rec["piece"].get("ok")), "name": cfg["name"], "reused": True,
                     "seconds": round(time.perf_counter() - t0, 3)}
     raw, reindexed = entry.frames(keys)
@@ -302,6 +347,7 @@ def task_portfolio(job_dir: Path, index: int) -> dict[str, Any]:
     outcome = run_one(prep, index, reindexed, raw)
     s_extra, d_extra = analytics.portfolio_extras(prep, cfg, outcome, raw, reindexed)
     piece = portfolio_summary(cfg, outcome, entry.axis, s_extra)
+    piece["history_key"] = hkey
     detail_path = job_dir / "portfolio" / f"{index}.json.gz"
     size = dump_gz(portfolio_detail(outcome, d_extra), detail_path)
     messages = outcome.get("messages", [])

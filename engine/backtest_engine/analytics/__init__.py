@@ -39,7 +39,7 @@ def portfolio_extras(prep: Any, cfg: dict, outcome: dict, raw: dict, reindexed: 
     fusion = bool(outcome.get("fusion"))
     summary = {
         "today": _guard("today", today.today_block, cfg, entry, metrics, allocations, raw, errors=errors),
-        "timer": _guard("timer", today.timer_info, cfg, allocations, errors=errors),
+        "timer": _guard("timer", today.timer_info, cfg, allocations, getattr(prep, "simulation_index", None), errors=errors),
     }
     detail: dict[str, Any] = {
         "rebalance_compare": _guard("rebalance_compare", today.rebalance_compare, cfg, entry, allocations, raw, fusion,

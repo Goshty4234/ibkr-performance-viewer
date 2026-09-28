@@ -2,7 +2,7 @@
 
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { aiContext, downloadJson, useAllocationAnalysis } from '@/lib/backtest/allocations';
-import { listRuns, loadLatestOnce, loadRun } from '@/lib/backtest/history';
+import { latestRun, loadLatestOnce, loadRun } from '@/lib/backtest/history';
 import { okSummaries } from '@/lib/backtest/result-data';
 import { useBacktestStore } from '@/lib/backtest/store';
 import { FREQUENCY_LABELS, nextRebalance } from '@/lib/backtest/timer';
@@ -408,31 +408,33 @@ function Methodology() {
 
 // ---- empty state -----------------------------------------------------------------------
 
+const focusOf = (label: string) => label.replace(/^Allocations · /, '');
+
 function EmptyState({ onRun, running }: { onRun: (id: string) => void; running: boolean }) {
   const portfolios = useBacktestStore((s) => s.portfolios);
-  const showResult = useBacktestStore((s) => s.showResult);
+  const showAllocResult = useBacktestStore((s) => s.showAllocResult);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     setLoading(true);
-    loadLatestOnce()
+    loadLatestOnce('allocations')
       .then((hit) => {
-        if (hit && !useBacktestStore.getState().result) showResult(hit.result, hit.row.id, hit.row.label);
+        if (hit && !useBacktestStore.getState().alloc) showAllocResult(hit.result, hit.row.id, hit.row.label, focusOf(hit.row.label));
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [showResult]);
+  }, [showAllocResult]);
 
   async function loadLatest() {
     setLoading(true);
     setError('');
     try {
-      const [latest] = await listRuns(1);
-      if (!latest) throw new Error('Aucun run enregistré pour l’instant.');
+      const latest = await latestRun('backtest');
+      if (!latest) throw new Error('Aucun backtest enregistré pour l’instant.');
       const { row, result } = await loadRun(latest.id);
       if (!result) throw new Error('Le résultat de ce run n’est plus disponible.');
-      showResult(result, row.id, row.label);
+      showAllocResult(result, row.id, row.label);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -445,8 +447,8 @@ function EmptyState({ onRun, running }: { onRun: (id: string) => void; running: 
       <div className={styles.emptyIcon}>◔</div>
       <h2>Analyse d’allocation</h2>
       <p>
-        Choisis un portfolio : le backtest calcule l’allocation cible d’aujourd’hui, puis la page ajoute les fondamentaux,
-        la composition par secteur, le risque et la comparaison aux benchmarks.
+        Choisis un portfolio : un calcul court (juste l’historique nécessaire aux poids d’aujourd’hui) donne l’allocation cible,
+        puis la page ajoute les fondamentaux, la composition par secteur, le risque et la comparaison aux benchmarks.
       </p>
       <div className={styles.emptyList}>
         {portfolios.map((p) => (
@@ -462,7 +464,7 @@ function EmptyState({ onRun, running }: { onRun: (id: string) => void; running: 
       </div>
       <div className={styles.emptyActions}>
         <button type="button" className="btn btn-ghost btn-sm" onClick={loadLatest} disabled={loading}>
-          {loading ? 'Chargement…' : 'Ou utiliser le dernier run enregistré'}
+          {loading ? 'Chargement…' : 'Ou utiliser le dernier backtest enregistré'}
         </button>
       </div>
       {error && <div className={styles.errorLine}>{error}</div>}
@@ -473,40 +475,38 @@ function EmptyState({ onRun, running }: { onRun: (id: string) => void; running: 
 // ---- page ------------------------------------------------------------------------------
 
 export default function AllocationsView() {
-  const result = useBacktestStore((s) => s.result);
-  const runId = useBacktestStore((s) => s.resultRunId);
-  const label = useBacktestStore((s) => s.resultLabel);
-  const resultSource = useBacktestStore((s) => s.resultSource);
-  const saveError = useBacktestStore((s) => s.saveError);
+  const alloc = useBacktestStore((s) => s.alloc);
+  const result = alloc?.result ?? null;
+  const runId = alloc?.runId ?? null;
+  const label = alloc?.label ?? '';
+  const resultSource = alloc?.source ?? 'run';
+  const saveError = alloc?.saveError ?? null;
   const workspace = useBacktestStore((s) => s.portfolios);
   const runs = useBacktestStore((s) => s.runs);
-  const startRun = useBacktestStore((s) => s.startRun);
-  const openRun = useBacktestStore((s) => s.openRun);
+  const startAllocationRun = useBacktestStore((s) => s.startAllocationRun);
   const launchError = useBacktestStore((s) => s.launchError);
   const client = useEngineStore((s) => s.client);
 
   const pfs = useMemo(() => (result ? okSummaries(result.summary) : []), [result]);
   const [selected, setSelected] = useState<number | null>(null);
-  const p: PortfolioSummaryOk | null = pfs.find((x) => x.index === selected) ?? pfs[0] ?? null;
+  const focused = pfs.find((x) => x.name === alloc?.focus) ?? null;
+  const p: PortfolioSummaryOk | null = pfs.find((x) => x.index === selected) ?? focused ?? pfs[0] ?? null;
   useEffect(() => setSelected(null), [result]);
 
   const [pending, setPending] = useState<string | null>(null);
   const pendingRun = runs.find((r) => r.id === pending) ?? null;
   useEffect(() => {
-    if (!pendingRun) return;
-    if (pendingRun.phase === 'done') {
-      setPending(null);
-      void openRun(pendingRun.id);
-    } else if (['error', 'cancelled'].includes(pendingRun.phase)) {
-      setPending(null);
-    }
-  }, [pendingRun, openRun]);
+    // The finished run fills the Allocations slot by itself.
+    if (pendingRun && !['submitting', 'queued', 'running', 'fetching'].includes(pendingRun.phase)) setPending(null);
+  }, [pendingRun]);
 
-  // Today's target weights need the backtest to reach today, whatever end date the builder uses.
-  const run = async (ids: string[]) => {
-    const id = await startRun(ids, { end_date: null });
+  const run = async (portfolioId: string) => {
+    const id = await startAllocationRun(portfolioId);
     if (id) setPending(id);
   };
+  // Stats of a short window say nothing about the strategy: they belong to Résultats.
+  const shortWindow = label.startsWith('Allocations ·');
+  const sim = result?.summary.simulation;
 
   const { analysis, loading, error, saved, source, refresh } = useAllocationAnalysis(client, result, runId, label, p);
   const { detail } = usePortfolioDetail(result, p?.index ?? null);
@@ -523,7 +523,7 @@ export default function AllocationsView() {
       <div className={styles.page}>
         {running && <div className={styles.progress}><span style={{ width: `${Math.max(4, runProgress)}%` }} />Backtest en cours… {runProgress}%</div>}
         {launchError && <div className={styles.errorLine}>{launchError}</div>}
-        <EmptyState onRun={(id) => run([id])} running={running} />
+        <EmptyState onRun={(id) => void run(id)} running={running} />
       </div>
     );
   }
@@ -569,10 +569,18 @@ export default function AllocationsView() {
             {p.config.use_momentum && <span className={styles.tag}>Momentum</span>}
           </div>
           <div className={styles.heroMeta}>
-            <span>Run : {label || 'Backtest'}</span>
-            {p.stats_display.CAGR && <span>CAGR {p.stats_display.CAGR}</span>}
-            {p.stats_display.MaxDrawdown && <span>Drawdown max {p.stats_display.MaxDrawdown}</span>}
-            {p.stats_display.Sharpe && <span>Sharpe {p.stats_display.Sharpe}</span>}
+            {shortWindow ? (
+              <span title="Juste l’historique nécessaire aux fenêtres de momentum, de volatilité, de bêta et de moyenne mobile : les poids du jour sont identiques à ceux d’un backtest complet.">
+                Calcul court : {sim?.start} → {sim?.end}
+              </span>
+            ) : (
+              <>
+                <span>Run : {label || 'Backtest'}</span>
+                {p.stats_display.CAGR && <span>CAGR {p.stats_display.CAGR}</span>}
+                {p.stats_display.MaxDrawdown && <span>Drawdown max {p.stats_display.MaxDrawdown}</span>}
+                {p.stats_display.Sharpe && <span>Sharpe {p.stats_display.Sharpe}</span>}
+              </>
+            )}
             {updated && (
               <span className={styles.status}>
                 <i className={loading ? styles.dotBusy : saved === 'ok' ? styles.dotOk : saved === 'error' ? styles.dotErr : styles.dotIdle} />
@@ -582,9 +590,7 @@ export default function AllocationsView() {
                 {saved === 'ok' && !loading && ' · enregistrée'}
                 {saved === 'saving' && ' · enregistrement…'}
                 {saved === 'error' && ' · non enregistrée'}
-                {!runId && !loading && (resultSource === 'run' && !saveError
-                  ? ' · enregistrement du run…'
-                  : resultSource === 'file' ? ' · fichier local, non enregistrée' : ' · non enregistrée')}
+                {!runId && !loading && (resultSource === 'run' && !saveError ? ' · enregistrement du run…' : ' · non enregistrée')}
               </span>
             )}
           </div>
@@ -593,14 +599,24 @@ export default function AllocationsView() {
           <button type="button" className="btn btn-ghost btn-sm" onClick={refresh} disabled={loading || !client} title={client ? 'Recharger les fondamentaux et les benchmarks' : 'Moteur hors ligne'}>
             ↻ Actualiser
           </button>
+          <select
+            className={styles.heroPick}
+            value=""
+            disabled={running}
+            onChange={(e) => e.target.value && void run(e.target.value)}
+            aria-label="Analyser un autre portfolio"
+          >
+            <option value="">Analyser un autre portfolio…</option>
+            {workspace.map((x) => <option key={x._id} value={x._id}>{x.name}</option>)}
+          </select>
           <button
             type="button"
             className="btn btn-secondary btn-sm"
-            onClick={() => wsMatch && run([wsMatch._id])}
+            onClick={() => wsMatch && void run(wsMatch._id)}
             disabled={!wsMatch || running}
-            title={wsMatch ? 'Relance le backtest de ce portfolio avec les prix du jour' : 'Ce portfolio n’est plus dans l’espace de travail'}
+            title={wsMatch ? 'Recalcule la cible de ce portfolio avec les prix du jour (repris tel quel si rien n’a changé)' : 'Ce portfolio n’est plus dans l’espace de travail'}
           >
-            {running ? `Backtest… ${runProgress}%` : '▶ Relancer le backtest'}
+            {running ? `Calcul… ${runProgress}%` : '▶ Mettre à jour'}
           </button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={exportAi} disabled={!analysis} title="Paramètres + résultats dans un seul JSON (prêt pour une IA)">
             Export JSON

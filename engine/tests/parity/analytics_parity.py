@@ -111,7 +111,9 @@ def check_config(name: str, raw: dict) -> list[str]:
         problems += [f"{tag} today.table{p}" for p in diff(_r6(json.loads(json.dumps(ref_tab, default=float))),
                                                          json.loads(json.dumps(block["table"])), limit=4)]
 
-        problems += [f"{tag} timer{p}" for p in diff(R.timer(cfg, allocations), today.timer_info(cfg, allocations))]
+        # Weekly cycles deliberately differ: Streamlit took the day before the last (daily) allocation.
+        if str(cfg.get("rebalancing_frequency", "")).lower() not in ("weekly", "week", "biweekly", "bi-weekly", "2weeks"):
+            problems += [f"{tag} timer{p}" for p in diff(R.timer(cfg, allocations), today.timer_info(cfg, allocations))]
 
         fusion = is_fusion(cfg)
         last, final = R.last_rebalance_date(cfg, entry, allocations)

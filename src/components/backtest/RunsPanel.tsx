@@ -27,7 +27,10 @@ function statusText(run: RunState): string {
       return `${job?.message || 'Calcul en cours…'}${tasks}${reusedText(job?.tasks_reused)}`;
     }
     case 'fetching': return 'Réception des résultats…';
-    case 'done': return `Terminé en ${fmtElapsed((run.finishedAt ?? 0) - (run.startedAt ?? 0))}${reusedText(job?.summary?.reused)}`;
+    case 'done': {
+      const fromHistory = run.reusedCount ? ` · ${run.reusedCount} repris de l’historique` : '';
+      return `Terminé en ${fmtElapsed((run.finishedAt ?? 0) - (run.startedAt ?? 0))}${fromHistory}${reusedText(job?.summary?.reused)}`;
+    }
     case 'cancelled': return 'Annulé';
     case 'error': return run.error ?? 'Erreur';
     default: return '';
@@ -96,6 +99,11 @@ function RunRow({ run, now, current }: { run: RunState; now: number; current: bo
 export default function RunsPanel() {
   const runs = useBacktestStore((s) => s.runs);
   const currentKey = useBacktestStore((s) => s.result?.key ?? null);
+  const allocKey = useBacktestStore((s) => s.alloc?.result.key ?? null);
+  const isCurrent = (r: RunState) => {
+    const keys = [`merge:${r.id}`, ...(r.job ? [`job:${r.job.id}`] : [])];
+    return keys.includes(r.purpose === 'allocations' ? allocKey ?? '' : currentKey ?? '');
+  };
   const [now, setNow] = useState(Date.now());
   const [collapsed, setCollapsed] = useState(false);
   const activeCount = runs.filter(isActive).length;
@@ -129,7 +137,7 @@ export default function RunsPanel() {
       {!collapsed && (
         <ul className={styles.runList}>
           {runs.map((r) => (
-            <RunRow key={r.id} run={r} now={now} current={!!r.job && currentKey === `job:${r.job.id}`} />
+            <RunRow key={r.id} run={r} now={now} current={isCurrent(r)} />
           ))}
         </ul>
       )}

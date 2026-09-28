@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { startCloudSync } from '@/lib/backtest/cloud-sync';
+import { cleanupOldRuns } from '@/lib/backtest/history';
 import { useBacktestStore, type BacktestView } from '@/lib/backtest/store';
 import { useEngineStore } from '@/lib/engine/store';
 import AllocationsView from './allocations/AllocationsView';
@@ -11,6 +12,7 @@ import LibraryDialog from './LibraryDialog';
 import PortfolioEditor from './PortfolioEditor';
 import PortfolioList from './PortfolioList';
 import ResultsView from './ResultsView';
+import ReuseDialog, { ReuseNoticeBar } from './ReuseDialog';
 import RunBar from './RunBar';
 import RunsPanel from './RunsPanel';
 import styles from './Backtester.module.css';
@@ -52,6 +54,7 @@ export default function BacktesterApp() {
     initEngine();
     resumeRun();
     startCloudSync();
+    cleanupOldRuns().catch(() => {});
   }, [initEngine, resumeRun]);
 
   return (
@@ -88,6 +91,8 @@ export default function BacktesterApp() {
 
       <RunBar />
       <RunsPanel />
+      {view === 'results' && <ReuseNoticeBar purpose="backtest" />}
+      {view === 'allocations' && <ReuseNoticeBar purpose="allocations" />}
 
       {/* Build and results stay mounted once opened: switching back is instant and keeps scroll/tab state. */}
       {mounted('build') && (
@@ -107,6 +112,7 @@ export default function BacktesterApp() {
       )}
       {view === 'history' && <HistoryView />}
 
+      <ReuseDialog />
       {dialog === 'library' && <LibraryDialog onClose={() => setDialog(null)} />}
       {(dialog === 'import' || dialog === 'export') && <ImportExportDialog mode={dialog} onClose={() => setDialog(null)} />}
     </div>

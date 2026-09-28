@@ -3,7 +3,8 @@
 Transcribes the selected-portfolio blocks of 1_Multi_Backtest.py: today's
 weights come from the latest momentum metrics (or the normalized config
 allocations), share counts are rounded to 0.1 at the latest close, and the
-timer's last rebalance date is inferred from the allocation date pattern.
+timer's last rebalance date comes from the rebalancing calendar (Streamlit took
+the day before the last allocation for weekly cycles, wrong with daily allocations).
 """
 
 from __future__ import annotations
@@ -177,13 +178,19 @@ def allocation_table(alloc: dict, price_date: pd.Timestamp | None, pv: float, ra
             "cash_shown": show_cash}
 
 
-def timer_info(cfg: dict, allocations: dict) -> dict[str, Any] | None:
+def timer_info(cfg: dict, allocations: dict, axis: pd.DatetimeIndex | None = None) -> dict[str, Any] | None:
     dates = sorted(allocations.keys())
     if not dates:
         return None
     freq = cfg.get("rebalancing_frequency", "none") or "none"
     f = str(freq).lower()
-    if f in ("annually", "yearly", "year"):
+    if f in ("weekly", "week", "biweekly", "bi-weekly", "2weeks"):
+        # Allocations are daily: the week cycle is only known from the simulation's first Monday
+        # (the whole axis, even when the display starts later).
+        index = axis if axis is not None and len(axis) else pd.DatetimeIndex(dates)
+        cycle = dates_by_freq("Weekly" if f in ("weekly", "week") else "Biweekly", index)
+        reb = [d for d in cycle if d <= dates[-1]]
+    elif f in ("annually", "yearly", "year"):
         reb = [d for d in dates if d.month == 1 and d.day == 1]
     elif f in ("monthly", "month"):
         reb = [d for d in dates if d.day == 1]

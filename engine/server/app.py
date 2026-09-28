@@ -1,6 +1,7 @@
 """FastAPI engine used by the web app, on the user's PC or on any cloud host.
 
     GET    /health               engine status (no auth; used for auto-detection)
+    POST   /plan                 simulation range + per-portfolio history keys, no simulation
     POST   /jobs                 queue a backtest -> {id}
     GET    /jobs                 caller's jobs
     GET    /jobs/{id}            status / progress
@@ -19,6 +20,7 @@ from __future__ import annotations
 import inspect
 import os
 import sys
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -112,16 +114,40 @@ def _manager(request: Request) -> JobManager:
 
 @app.get("/health")
 def health(request: Request) -> dict:
+    from backtest_engine.result_cache import static_fingerprint
+
     return {
         "status": "ok",
         "engine": "momentum-backtest",
         "version": __version__,
+        "code": static_fingerprint()[:16],
         "mode": settings.mode,
         "auth_required": settings.auth != "none",
         "cpu_count": os.cpu_count(),
         "uptime_s": round(time.time() - STARTED_AT, 1),
         **_manager(request).stats(),
     }
+
+
+_plan_lock = threading.Lock()
+
+
+@app.post("/plan")
+def plan_request(body: JobRequest, user: str = Depends(current_user)) -> dict:
+    """What a launch would simulate, so the app can find identical portfolios in the history first."""
+    from backtest_engine.cli import split_request
+    from backtest_engine.context import BacktestError
+    from backtest_engine.pipeline import plan
+
+    portfolios, options = split_request({"portfolios": body.portfolios, "options": body.options or {}})
+    # prepare() drives the process-wide Streamlit session shim: one plan at a time.
+    with _plan_lock:
+        try:
+            return plan(portfolios, options)
+        except BacktestError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(400, f"Invalid portfolio configuration: {exc}") from exc
 
 
 @app.post("/jobs")

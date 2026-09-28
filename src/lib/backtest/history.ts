@@ -8,6 +8,10 @@ const UPLOAD_CONCURRENCY = 6;
 export interface RunSummaryRow {
   name: string;
   ok: boolean;
+  /** Detail chunk index of this portfolio in the run. */
+  index?: number;
+  /** Engine history_key: identity of the result apart from its end date. */
+  key?: string | null;
   cagr?: string;
   maxdd?: string;
   sharpe?: string;
@@ -32,8 +36,14 @@ export interface BacktestRunRow {
   result_size: number | null;
   pinned: boolean;
   created_at: string;
+  kind?: RunKind;
+  request_key?: string | null;
+  engine_code?: string | null;
   request?: { portfolios: PortfolioConfig[]; options: Partial<RunOptions> };
 }
+
+/** 'backtest' = launched from Construire; 'allocations' = today's target (short window). */
+export type RunKind = 'backtest' | 'allocations';
 
 async function gzip(text: string): Promise<Blob> {
   const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'));
@@ -70,6 +80,8 @@ export function summarize(summary: ResultSummary): RunSummaryRow[] {
       ? {
           name: p.name,
           ok: true,
+          index: p.index,
+          key: p.history_key ?? null,
           cagr: p.stats_display.CAGR,
           maxdd: p.stats_display.MaxDrawdown,
           sharpe: p.stats_display.Sharpe,
@@ -87,6 +99,11 @@ export async function saveRun(args: {
   label: string;
   engine: string;
   request: { portfolios: PortfolioConfig[]; options: Partial<RunOptions> };
+  requestKey?: string | null;
+  engineCode?: string | null;
+  kind?: RunKind;
+  /** Aligned with summary.portfolios. */
+  configKeys?: string[];
   summary: ResultSummary;
   summaryText: string;
   detailText: (index: number) => Promise<string>;
@@ -107,6 +124,11 @@ export async function saveRun(args: {
     user_id: user.id,
     label: args.label.slice(0, 200),
     request: args.request,
+    request_key: args.requestKey ?? null,
+    engine_code: args.engineCode ?? null,
+    kind: args.kind ?? 'backtest',
+    config_keys: args.configKeys ?? [],
+    portfolio_keys: s.portfolios.map((p) => (p.ok ? p.history_key ?? '' : '')),
     engine: args.engine,
     engine_version: s.engine_version,
     duration_s: s.duration_s,
@@ -136,12 +158,67 @@ export async function saveRun(args: {
   return id;
 }
 
+const LIST_COLUMNS = 'id,label,engine,engine_version,duration_s,simulation_start,simulation_end,summary,warnings,result_path,result_size,created_at,kind,request_key,engine_code';
+
 export async function listRuns(limit = 100): Promise<BacktestRunRow[]> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from('backtest_runs')
-    .select('id,label,engine,engine_version,duration_s,simulation_start,simulation_end,summary,warnings,result_path,result_size,pinned,created_at')
+    .select(`${LIST_COLUMNS},pinned`)
     .order('pinned', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as BacktestRunRow[];
+}
+
+/** Saved runs holding at least one portfolio with one of these config keys, newest first. */
+export async function findRunsByConfigKeys(keys: string[], limit = 60): Promise<BacktestRunRow[]> {
+  if (!keys.length) return [];
+  const { data, error } = await createClient()
+    .from('backtest_runs')
+    .select(`${LIST_COLUMNS},pinned`)
+    .overlaps('config_keys', keys)
+    .not('result_path', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as BacktestRunRow[];
+}
+
+export const RETENTION_DAYS = 30;
+const CLEANUP_STAMP = 'backtester-history-cleanup';
+
+/** Deletes unprotected runs older than RETENTION_DAYS (at most once a day per browser). */
+export async function cleanupOldRuns(): Promise<number> {
+  const today = new Date().toISOString().slice(0, 10);
+  if (typeof window === 'undefined' || localStorage.getItem(CLEANUP_STAMP) === today) return 0;
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return 0;
+  const cutoff = new Date(Date.now() - RETENTION_DAYS * 86_400_000).toISOString();
+  const { data, error } = await supabase
+    .from('backtest_runs')
+    .select('id,result_path')
+    .eq('pinned', false)
+    .lt('created_at', cutoff)
+    .limit(200);
+  if (error) throw new Error(error.message);
+  for (const row of data ?? []) await deleteRun(row as Pick<BacktestRunRow, 'id' | 'result_path'>);
+  localStorage.setItem(CLEANUP_STAMP, today);
+  return data?.length ?? 0;
+}
+
+/** Saved runs made from exactly this request, newest first (only those with a stored result). */
+export async function findRunsByKey(requestKey: string, limit = 5): Promise<BacktestRunRow[]> {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data, error } = await supabase
+    .from('backtest_runs')
+    .select(`${LIST_COLUMNS},pinned`)
+    .eq('request_key', requestKey)
+    .not('result_path', 'is', null)
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) throw new Error(error.message);
@@ -183,13 +260,25 @@ export async function loadRun(id: string): Promise<{ row: BacktestRunRow; result
   };
 }
 
-let latestTried = false;
+export async function latestRun(kind: RunKind): Promise<BacktestRunRow | null> {
+  const { data, error } = await createClient()
+    .from('backtest_runs')
+    .select(`${LIST_COLUMNS},pinned`)
+    .eq('kind', kind)
+    .not('result_path', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (error) throw new Error(error.message);
+  return ((data ?? [])[0] as BacktestRunRow | undefined) ?? null;
+}
 
-/** Latest saved run, shown automatically once per page load by whichever view needs a result first. */
-export async function loadLatestOnce(): Promise<{ row: BacktestRunRow; result: LoadedResult } | null> {
-  if (latestTried) return null;
-  latestTried = true;
-  const [latest] = await listRuns(1);
+const latestTried = new Set<RunKind>();
+
+/** Latest saved run of a kind, shown automatically once per page load by the view that needs it. */
+export async function loadLatestOnce(kind: RunKind = 'backtest'): Promise<{ row: BacktestRunRow; result: LoadedResult } | null> {
+  if (latestTried.has(kind)) return null;
+  latestTried.add(kind);
+  const latest = await latestRun(kind);
   if (!latest) return null;
   const { row, result } = await loadRun(latest.id);
   return result ? { row, result } : null;

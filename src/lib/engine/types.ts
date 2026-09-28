@@ -4,6 +4,8 @@ export interface EngineHealth {
   status: 'ok';
   engine: 'momentum-backtest';
   version: string;
+  /** Hash of the engine code + static series: two runs from the same code and data are identical. */
+  code?: string;
   mode: 'local' | 'cloud';
   auth_required: boolean;
   cpu_count: number | null;
@@ -67,6 +69,8 @@ export interface PortfolioSummaryOk {
   fusion: boolean;
   ok: true;
   config: PortfolioConfig;
+  /** Identity of this result apart from its end date (engine history_key). */
+  history_key?: string | null;
   series: {
     offset?: number;
     dates?: string[];
@@ -277,6 +281,15 @@ export interface RunOptions {
   auto_adjust_momentum_start: boolean;
   start_date: string | null;
   end_date: string | null;
+  /** Common start of an earlier run, so portfolios computed to complete it share its axis. */
+  align_start?: string | null;
+}
+
+/** POST /plan: what a launch would simulate. */
+export interface RunPlan {
+  simulation: { start: string | null; end: string | null; display_start: string | null };
+  /** history_key: identity of the portfolio's result apart from its end date. */
+  portfolios: { name: string; history_key: string | null }[];
 }
 
 export type StatKey =

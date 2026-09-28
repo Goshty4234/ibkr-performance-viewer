@@ -68,7 +68,8 @@
 .dotIdle { background: var(--text-faint); }
 .dotBusy { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.3; } }
-.heroActions { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.heroActions { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; }
+.heroPick { max-width: 220px; padding: 0.3rem 0.6rem !important; font-size: 0.8rem !important; }
 
 /* ---- KPI strip ------------------------------------------------------------------------ */
 

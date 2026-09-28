@@ -27,6 +27,9 @@ class RunOptions:
     # Custom date range applied to every portfolio (ISO dates), like the sidebar dates.
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    # Common simulation start of an earlier run: portfolios computed to complete that run
+    # keep its axis even though the set that fixed the start is not recomputed.
+    align_start: Optional[str] = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "RunOptions":

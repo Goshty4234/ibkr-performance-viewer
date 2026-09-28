@@ -283,6 +283,26 @@
 .historyTitleWrap { display: flex; align-items: center; gap: 0.4rem; min-width: 0; flex: 1; }
 .historyTitle { font-weight: 700; font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
 .historyActions { display: flex; gap: 0.35rem; align-items: center; flex-shrink: 0; }
+.historyPick { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
+.historyPick:disabled { cursor: not-allowed; opacity: 0.3; }
+.historySelected { border-color: rgba(248, 113, 113, 0.55); }
+.historyProtected { border-color: rgba(77, 141, 255, 0.35); }
+.protectOn { color: var(--accent-hover); border-color: rgba(77, 141, 255, 0.5); background: rgba(77, 141, 255, 0.12); }
+.expiring { color: var(--orange); border-color: rgba(251, 146, 60, 0.4); }
+.kindTag { color: var(--accent-hover); border-color: rgba(77, 141, 255, 0.4); }
+.selectionBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.55rem 0.85rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+.selectionBar > span { display: inline-flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .historyFooter { display: flex; gap: 0.4rem; margin-top: auto; flex-wrap: wrap; }
 .historyExpanded { grid-column: 1 / -1; }
 /* Performance + drawdown read as one card: same plot width, dates aligned. */

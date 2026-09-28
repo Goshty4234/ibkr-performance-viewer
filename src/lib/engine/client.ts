@@ -10,6 +10,7 @@ import type {
   PortfolioConfig,
   PortfolioDetail,
   RunOptions,
+  RunPlan,
 } from './types';
 
 export type EngineKind = 'local' | 'cloud';
@@ -100,6 +101,11 @@ export class EngineClient {
 
   submit(portfolios: PortfolioConfig[], options: Partial<RunOptions>, label?: string): Promise<EngineJob> {
     return this.request('/jobs', { method: 'POST', body: JSON.stringify({ portfolios, options, label }) });
+  }
+
+  /** Simulation range + per-portfolio history keys, without simulating. */
+  plan(portfolios: PortfolioConfig[], options: Partial<RunOptions>): Promise<RunPlan> {
+    return this.request('/plan', { method: 'POST', body: JSON.stringify({ portfolios, options }) });
   }
 
   job(id: string): Promise<EngineJob> {

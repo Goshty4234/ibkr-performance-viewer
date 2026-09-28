@@ -308,6 +308,8 @@ def _simulation_range(data: dict, configs: list[dict], options: RunOptions, ctx:
             vt = [data[t] for t in valid_portfolio_tickers if not isinstance(data[t], str)]
             final_start = min(df.first_valid_index() for df in vt) if vt else pd.Timestamp("1989-01-01")
 
+    if options.align_start:
+        final_start = max(final_start, pd.to_datetime(options.align_start))
     for cfg in configs:
         if cfg.get("start_date_user"):
             final_start = max(final_start, pd.to_datetime(cfg["start_date_user"]))

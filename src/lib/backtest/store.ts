@@ -2,11 +2,14 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { EngineClient, type EngineKind } from '@/lib/engine/client';
+import { EngineClient, type EngineKind, type ResolvedEngine } from '@/lib/engine/client';
 import { useEngineStore } from '@/lib/engine/store';
 import type { EngineJob, PortfolioConfig, ResultSummary, RunOptions, StockConfig } from '@/lib/engine/types';
-import { loadRun, saveRun } from './history';
+import { alignToCycle, allocationOptions, allocationWindow, needsCycleAnchor } from './allocation-window';
+import { type BacktestRunRow, findRunsByConfigKeys, findRunsByKey, loadRun, type RunKind, saveRun } from './history';
 import type { LoadedResult } from './result-data';
+import { buildOffer, decide, type MergePart, mergeResults, type ReuseDecision, type ReuseOffer } from './reuse';
+import { configKeys, requestKey, type RunRequest, sameMarketData, sameNyDay } from './run-key';
 import {
   DEFAULT_OPTIONS,
   defaultPortfolio,
@@ -22,8 +25,54 @@ import { isInverse, resolveTicker } from './tickers';
 export type RunPhase = 'idle' | 'submitting' | 'queued' | 'running' | 'fetching' | 'done' | 'error' | 'cancelled';
 export type BacktestView = 'build' | 'results' | 'allocations' | 'history';
 
-/** Opening a result keeps the user on the Allocations page (it reads the same result). */
+/** A backtest result loaded while on the Allocations page waits in Résultats without moving the user. */
 const resultView = (current: BacktestView): BacktestView => (current === 'allocations' ? 'allocations' : 'results');
+
+/** Allocations has its own result, independent of the one shown in Résultats. */
+export interface AllocSlot {
+  result: LoadedResult;
+  runId: string | null;
+  label: string;
+  source: 'run' | 'history';
+  /** Portfolio the analysis was asked for (a fusion run also carries its members). */
+  focus: string | null;
+  saveError: string | null;
+}
+
+/** Answer to the "already computed" dialog; `accepted` = positions whose stored result is taken. */
+export type ReuseChoice = { action: 'reuse'; accepted: number[] } | { action: 'fresh' } | { action: 'cancel' };
+
+/** A run completed with portfolio results taken from earlier runs. */
+export interface MergeSpec {
+  reused: { position: number; runId: string; index: number }[];
+  /** Positions computed by this job, in job order. */
+  computed: number[];
+  planKeys: (string | null)[];
+  /** The whole request, end date set to the common end. */
+  request: RunRequest;
+  configKeys: string[];
+}
+
+/** Shown above a result that was reopened instead of recomputed. */
+export interface ReuseNotice {
+  purpose: RunKind;
+  createdAt: string;
+  label: string;
+  rerun: () => void;
+  /** Prices have not moved since: identical to a new run (otherwise same day, intraday prices). */
+  exact: boolean;
+}
+
+const AUTO_REUSE_KEY = 'backtester-reuse-auto';
+
+export function autoReuse(): boolean {
+  return typeof window !== 'undefined' && localStorage.getItem(AUTO_REUSE_KEY) === '1';
+}
+
+export function setAutoReuse(on: boolean) {
+  if (on) localStorage.setItem(AUTO_REUSE_KEY, '1');
+  else localStorage.removeItem(AUTO_REUSE_KEY);
+}
 
 export interface RunState {
   id: string;
@@ -39,6 +88,15 @@ export interface RunState {
   portfolioCount: number;
   savedId: string | null;
   request: { portfolios: PortfolioConfig[]; options: RunOptions } | null;
+  purpose?: RunKind;
+  requestKey?: string | null;
+  engineCode?: string | null;
+  /** Portfolio an Allocations run was launched for. */
+  focus?: string | null;
+  /** Aligned with request.portfolios. */
+  configKeys?: string[];
+  merge?: MergeSpec | null;
+  reusedCount?: number;
 }
 
 export const ACTIVE_PHASES: readonly RunPhase[] = ['submitting', 'queued', 'running', 'fetching'];
@@ -59,6 +117,9 @@ interface BacktestState {
   resultLabel: string;
   resultSource: 'run' | 'history' | 'file';
   saveError: string | null;
+  alloc: AllocSlot | null;
+  reuseOffer: ReuseOffer | null;
+  reuseNotice: ReuseNotice | null;
 
   select: (id: string) => void;
   setView: (v: BacktestView) => void;
@@ -81,9 +142,16 @@ interface BacktestState {
   addVariants: (baseId: string, variants: EditablePortfolio[], keepBase: boolean) => void;
   createFusion: (name: string, allocations: Record<string, number>, frequency: string) => void;
   replaceAll: (portfolios: EditablePortfolio[], options?: Partial<RunOptions>) => void;
-  /** Resolves with the run id once the job is submitted (null when nothing was launched). */
-  /** `overrides` apply to this run only (the builder options are left untouched). */
-  startRun: (onlyIds?: string[], overrides?: Partial<RunOptions>) => Promise<string | null>;
+  /**
+   * Resolves with the run id once the job is submitted (null when nothing was launched, or when
+   * everything came from saved runs). `force` skips the search for already computed portfolios.
+   */
+  startRun: (onlyIds?: string[], opts?: { force?: boolean }) => Promise<string | null>;
+  /** Today's target for one portfolio (+ its fusion members) on the shortest exact window. */
+  startAllocationRun: (portfolioId: string, opts?: { force?: boolean }) => Promise<string | null>;
+  resolveReuse: (choice: ReuseChoice) => void;
+  dismissReuseNotice: () => void;
+  showAllocResult: (result: LoadedResult, runId: string | null, label: string, focus?: string | null) => void;
   cancelRun: (id: string) => Promise<void>;
   dismissRun: (id: string) => void;
   openRun: (id: string) => Promise<void>;
@@ -94,6 +162,49 @@ interface BacktestState {
 const pollTimers = new Map<string, ReturnType<typeof setTimeout>>();
 /** Finished results kept in memory (not persisted) so any finished run can be reopened instantly. */
 const runResults = new Map<string, LoadedResult>();
+let reuseResolver: ((choice: ReuseChoice) => void) | null = null;
+
+const NO_ENGINE = 'Aucun moteur disponible. Lance le moteur sur ton PC ou configure le moteur en ligne.';
+
+/** Saved results matching portfolios of this request exactly (engine-confirmed), or null. */
+async function findOffer(engine: ResolvedEngine, request: RunRequest, keys: string[]): Promise<ReuseOffer | null> {
+  const rows = await findRunsByConfigKeys([...new Set(keys)]).catch(() => [] as BacktestRunRow[]);
+  if (!rows.length) return null;
+  try {
+    const plan = await new EngineClient(engine.url, engine.health.auth_required).plan(request.portfolios, request.options);
+    return buildOffer(request, plan, rows);
+  } catch {
+    return null;
+  }
+}
+
+async function composeMerge(merge: MergeSpec, job: LoadedResult | null, key: string): Promise<LoadedResult> {
+  const loaded = new Map<string, LoadedResult>();
+  for (const r of merge.reused) {
+    if (loaded.has(r.runId)) continue;
+    const { result } = await loadRun(r.runId);
+    if (!result) throw new Error('un run repris n’a plus de résultat stocké');
+    loaded.set(r.runId, result);
+  }
+  const parts: MergePart[] = [
+    ...(job ? merge.computed.map((position, index) => ({ position, result: job, index, historyKey: merge.planKeys[position] ?? null })) : []),
+    ...merge.reused.map((r) => ({ position: r.position, result: loaded.get(r.runId)!, index: r.index, historyKey: merge.planKeys[r.position] ?? null })),
+  ];
+  return mergeResults(key, merge.request.options, parts);
+}
+
+/**
+ * Newest saved run of this exact request that read the same market data a launch now would
+ * (or, with `sameDay`, any run of today: a day's target barely moves intraday).
+ */
+async function findReusable(key: string, request: RunRequest, engineCode: string | undefined, sameDay = false): Promise<BacktestRunRow | null> {
+  const rows = await findRunsByKey(key).catch(() => [] as BacktestRunRow[]);
+  return rows.find((r) => {
+    const at = new Date(r.created_at);
+    return (sameMarketData(at, request) || (sameDay && sameNyDay(at)))
+      && (!engineCode || !r.engine_code || r.engine_code === engineCode);
+  }) ?? null;
+}
 
 function stopPolling(id: string) {
   const t = pollTimers.get(id);
@@ -115,15 +226,127 @@ export const useBacktestStore = create<BacktestState>()(
       const patchRun = (id: string, patch: Partial<RunState>) =>
         set((s) => ({ runs: s.runs.map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
 
-      function presentResult(run: RunState, result: LoadedResult) {
-        set({
+      function presentResult(run: RunState, result: LoadedResult, switchView: boolean) {
+        if (run.purpose === 'allocations') {
+          set((s) => ({
+            alloc: { result, runId: run.savedId, label: run.label, source: 'run', focus: run.focus ?? null, saveError: null },
+            reuseNotice: s.reuseNotice?.purpose === 'allocations' ? null : s.reuseNotice,
+            ...(switchView ? { view: 'allocations' as const } : {}),
+          }));
+          return;
+        }
+        set((s) => ({
           result,
           resultRunId: run.savedId,
           resultLabel: run.label,
           resultSource: 'run',
-          view: resultView(get().view),
           saveError: null,
+          reuseNotice: s.reuseNotice?.purpose === 'backtest' ? null : s.reuseNotice,
+          ...(switchView ? { view: 'results' as const } : {}),
+        }));
+      }
+
+      /** Current slot holding `result` (Résultats or Allocations), to attach its saved id or error. */
+      function patchSlotOf(result: LoadedResult, patch: { runId?: string | null; saveError?: string }) {
+        if (get().result === result) {
+          set({
+            ...(patch.runId !== undefined ? { resultRunId: patch.runId } : {}),
+            ...(patch.saveError !== undefined ? { saveError: patch.saveError } : {}),
+          });
+        }
+        const a = get().alloc;
+        if (a?.result === result) {
+          set({ alloc: { ...a, ...(patch.runId !== undefined ? { runId: patch.runId } : {}), ...(patch.saveError !== undefined ? { saveError: patch.saveError } : {}) } });
+        }
+      }
+
+      function savedIdOf(result: LoadedResult): string | null {
+        if (get().result === result) return get().resultRunId;
+        const a = get().alloc;
+        return a?.result === result ? a.runId : null;
+      }
+
+      async function openSaved(row: BacktestRunRow, purpose: RunKind, focus: string | null, rerun: () => void, request: RunRequest): Promise<boolean> {
+        const { result } = await loadRun(row.id);
+        if (!result) return false;
+        const exact = sameMarketData(new Date(row.created_at), request);
+        const notice: ReuseNotice = { purpose, createdAt: row.created_at, label: row.label, rerun, exact };
+        if (purpose === 'allocations') {
+          set({ alloc: { result, runId: row.id, label: row.label, source: 'history', focus, saveError: null }, reuseNotice: notice });
+        } else {
+          set({ result, resultRunId: row.id, resultLabel: row.label, resultSource: 'history', saveError: null, view: 'results', reuseNotice: notice });
+        }
+        return true;
+      }
+
+      function askReuse(offer: ReuseOffer): Promise<ReuseChoice> {
+        reuseResolver?.({ action: 'cancel' });
+        return new Promise((resolve) => {
+          reuseResolver = resolve;
+          set({ reuseOffer: offer });
         });
+      }
+
+      /** Runs only what is missing on the saved runs' date axis, then stitches everything together. */
+      async function launchWithReuse(engine: ResolvedEngine, offer: ReuseOffer, decision: ReuseDecision, label: string, keys: string[]): Promise<string | null> {
+        const { request, plan } = offer;
+        const options: RunOptions = { ...request.options, end_date: decision.end };
+        const full: RunRequest = { portfolios: request.portfolios.map((p) => ({ ...p, end_date_user: decision.end })), options };
+        const merge: MergeSpec = {
+          reused: [...decision.reuse].map(([position, s]) => ({ position, runId: s.row.id, index: s.index })),
+          computed: decision.compute,
+          planKeys: plan.portfolios.map((p) => p.history_key),
+          request: full,
+          configKeys: keys,
+        };
+        const extra: Partial<RunState> = { purpose: 'backtest', merge, reusedCount: merge.reused.length, configKeys: keys };
+        if (!decision.compute.length) {
+          const id = newId();
+          const result = await composeMerge(merge, null, `merge:${id}`);
+          const run: RunState = {
+            id, phase: 'done', job: null, engineUrl: null, engineKind: engine.kind, authRequired: false, error: null,
+            startedAt: Date.now(), finishedAt: Date.now(), label, portfolioCount: full.portfolios.length, savedId: null,
+            request: full, engineCode: engine.health.code ?? null, ...extra,
+          };
+          set((s) => ({ runs: [run, ...s.runs].slice(0, MAX_KEPT_RUNS), launchError: null }));
+          await present(run.id, result, result.summary, JSON.stringify(result.summary), async (i) => JSON.stringify(await result.fetchDetail(i)));
+          return null;
+        }
+        const subset: RunRequest = {
+          portfolios: decision.compute.map((pos) => full.portfolios[pos]),
+          options: { ...options, align_start: plan.simulation.start },
+        };
+        return launch(engine, subset, label, extra);
+      }
+
+      async function engineForRun(): Promise<ResolvedEngine | null> {
+        const engineState = useEngineStore.getState();
+        return engineState.engine ?? (await engineState.detect());
+      }
+
+      async function launch(engine: ResolvedEngine, request: RunRequest, label: string, extra: Partial<RunState>): Promise<string> {
+        const run: RunState = {
+          id: newId(), phase: 'submitting', job: null, engineUrl: engine.url, engineKind: engine.kind,
+          authRequired: engine.health.auth_required, error: null, startedAt: Date.now(), finishedAt: null, label,
+          portfolioCount: request.portfolios.length, savedId: null, request, engineCode: engine.health.code ?? null, ...extra,
+        };
+        set((s) => {
+          const kept = [run, ...s.runs];
+          const active = kept.filter(isActive);
+          const finished = kept.filter((r) => !isActive(r)).slice(0, Math.max(0, MAX_KEPT_RUNS - active.length));
+          const keep = new Set([...active, ...finished].map((r) => r.id));
+          for (const r of s.runs) if (!keep.has(r.id)) runResults.delete(r.id);
+          return { runs: kept.filter((r) => keep.has(r.id)), launchError: null };
+        });
+        const client = new EngineClient(engine.url, engine.health.auth_required);
+        try {
+          const job = await client.submit(request.portfolios, request.options, label);
+          patchRun(run.id, { job, phase: job.status as RunPhase });
+          poll(client, run.id, job.id, 250);
+        } catch (e) {
+          patchRun(run.id, { phase: 'error', error: e instanceof Error ? e.message : String(e), finishedAt: Date.now() });
+        }
+        return run.id;
       }
 
       async function finish(client: EngineClient, runId: string, job: EngineJob) {
@@ -139,33 +362,77 @@ export const useBacktestStore = create<BacktestState>()(
             try {
               return await client.portfolio(jobId, i);
             } catch (e) {
-              const savedId = getRun(runId)?.savedId ?? (get().result === result ? get().resultRunId : null);
+              // A merged run is saved with other chunk numbers: its copy cannot stand in for this job.
+              const savedId = getRun(runId)?.merge ? null : (getRun(runId)?.savedId ?? savedIdOf(result));
               if (!savedId) throw e;
               const saved = await loadRun(savedId);
               return saved.result ? saved.result.fetchDetail(i) : null;
             }
           },
         };
+        const merge = getRun(runId)?.merge;
+        if (!merge) {
+          await present(runId, result, summary, summaryText, (i) => client.portfolioText(jobId, i));
+          return;
+        }
+        const drifted = merge.computed.some((pos, i) => {
+          const piece = summary.portfolios.find((p) => p.index === i);
+          return piece?.ok && piece.history_key !== merge.planKeys[pos];
+        });
+        let merged: LoadedResult | null = null;
+        let failure = drifted ? 'calcul partiel différent du calcul complet' : '';
+        if (!drifted) {
+          try {
+            merged = await composeMerge(merge, result, `merge:${runId}`);
+          } catch (e) {
+            failure = e instanceof Error ? e.message : String(e);
+          }
+        }
+        if (!merged) {
+          // Never show a stitched result that a full run would not give: compute everything instead.
+          const run = getRun(runId);
+          patchRun(runId, { phase: 'error', error: `Reprise impossible (${failure}) : recalcul complet lancé.`, finishedAt: Date.now() });
+          const engine = await engineForRun();
+          if (engine && run) void launch(engine, merge.request, run.label, { purpose: 'backtest', configKeys: merge.configKeys });
+          return;
+        }
+        const shown = merged;
+        await present(runId, shown, shown.summary, JSON.stringify(shown.summary), async (i) => JSON.stringify(await shown.fetchDetail(i)));
+      }
+
+      /** Shows a finished result where it belongs and stores it in the history. */
+      async function present(runId: string, result: LoadedResult, summary: ResultSummary, summaryText: string, detailText: (i: number) => Promise<string>) {
         runResults.set(runId, result);
         patchRun(runId, { phase: 'done', finishedAt: Date.now() });
         const run = getRun(runId);
         if (!run) return;
-        // Never yank the user away from a result they are reading: finished runs wait in the panel.
-        if ((get().view !== 'results' && get().view !== 'allocations') || !get().result) presentResult(run, result);
-        const request = run.request ?? { portfolios: get().portfolios.map(toEngineConfig), options: get().options };
+        if (run.purpose === 'allocations') {
+          // Asked for from the Allocations page: fill its own slot, whatever page is open.
+          presentResult(run, result, false);
+        } else {
+          // Never yank the user away from a result they are reading: finished runs wait in the panel.
+          const view = get().view;
+          if (view === 'build' || view === 'history') presentResult(run, result, true);
+          else if (!get().result) presentResult(run, result, false);
+        }
+        const request = run.merge?.request ?? run.request ?? { portfolios: get().portfolios.map(toEngineConfig), options: get().options };
         saveRun({
           label: run.label,
           engine: run.engineKind ?? 'local',
           request,
+          requestKey: run.requestKey ?? null,
+          engineCode: run.engineCode ?? null,
+          kind: run.purpose ?? 'backtest',
+          configKeys: run.merge?.configKeys ?? run.configKeys ?? [],
           summary,
           summaryText,
-          detailText: (i) => client.portfolioText(jobId, i),
+          detailText,
         })
           .then((id) => {
             patchRun(runId, { savedId: id });
-            if (get().result === result) set({ resultRunId: id });
+            patchSlotOf(result, { runId: id });
           })
-          .catch((e: Error) => { if (get().result === result) set({ saveError: e.message }); });
+          .catch((e: Error) => patchSlotOf(result, { saveError: e.message }));
       }
 
       function poll(client: EngineClient, runId: string, jobId: string, delay: number) {
@@ -212,6 +479,9 @@ export const useBacktestStore = create<BacktestState>()(
         resultLabel: '',
         resultSource: 'run',
         saveError: null,
+        alloc: null,
+        reuseOffer: null,
+        reuseNotice: null,
 
         select: (id) => set({ selectedId: id }),
         setView: (view) => set({ view }),
@@ -400,15 +670,8 @@ export const useBacktestStore = create<BacktestState>()(
             view: 'build',
           })),
 
-        async startRun(onlyIds, overrides) {
-          const engineState = useEngineStore.getState();
-          let engine = engineState.engine;
-          if (!engine) engine = await engineState.detect();
-          if (!engine) {
-            set({ launchError: 'Aucun moteur disponible. Lance le moteur sur ton PC ou configure le moteur en ligne.' });
-            return null;
-          }
-          const options: RunOptions = { ...get().options, ...overrides };
+        async startRun(onlyIds, opts) {
+          const options: RunOptions = get().options;
           let selected = get().portfolios;
           if (onlyIds?.length) {
             const wanted = new Set(onlyIds);
@@ -431,29 +694,91 @@ export const useBacktestStore = create<BacktestState>()(
             return null;
           }
           const label = runLabel(selected.map((p) => p.name));
-          const run: RunState = {
-            id: newId(), phase: 'submitting', job: null, engineUrl: engine.url, engineKind: engine.kind,
-            authRequired: engine.health.auth_required, error: null, startedAt: Date.now(), finishedAt: null, label,
-            portfolioCount: portfolios.length, savedId: null, request: { portfolios, options },
-          };
-          set((s) => {
-            const kept = [run, ...s.runs];
-            const active = kept.filter(isActive);
-            const finished = kept.filter((r) => !isActive(r)).slice(0, Math.max(0, MAX_KEPT_RUNS - active.length));
-            const keep = new Set([...active, ...finished].map((r) => r.id));
-            for (const r of s.runs) if (!keep.has(r.id)) runResults.delete(r.id);
-            return { runs: kept.filter((r) => keep.has(r.id)), launchError: null };
-          });
-          const client = new EngineClient(engine.url, engine.health.auth_required);
-          try {
-            const job = await client.submit(portfolios, options, label);
-            patchRun(run.id, { job, phase: job.status as RunPhase });
-            poll(client, run.id, job.id, 250);
-          } catch (e) {
-            patchRun(run.id, { phase: 'error', error: e instanceof Error ? e.message : String(e), finishedAt: Date.now() });
+          const request: RunRequest = { portfolios, options };
+          set({ launchError: null });
+          const engine = await engineForRun();
+          if (!engine) {
+            set({ launchError: NO_ENGINE });
+            return null;
           }
-          return run.id;
+          const keys = await configKeys(request).catch(() => [] as string[]);
+          const offer = opts?.force ? null : await findOffer(engine, request, keys);
+          if (offer) {
+            const available = offer.items.filter((i) => i.sources.length).map((i) => i.position);
+            const upToDate = offer.items.every((i) => !i.sources.length || i.sources[0].end === offer.targetEnd);
+            // "Toujours reprendre" stays silent only when taking the saved results changes nothing.
+            const choice: ReuseChoice = autoReuse() && upToDate ? { action: 'reuse', accepted: available } : await askReuse(offer);
+            if (choice.action === 'cancel') return null;
+            if (choice.action === 'reuse') {
+              const decision = decide(offer, choice.accepted);
+              if (decision.reuse.size) {
+                try {
+                  return await launchWithReuse(engine, offer, decision, label, keys);
+                } catch (e) {
+                  set({ launchError: `Reprise impossible (${e instanceof Error ? e.message : String(e)}) : calcul complet.` });
+                }
+              }
+            }
+          }
+          return launch(engine, request, label, { purpose: 'backtest', configKeys: keys });
         },
+
+        async startAllocationRun(portfolioId, opts) {
+          const all = get().portfolios;
+          const target = all.find((p) => p._id === portfolioId);
+          if (!target) return null;
+          const members = new Set(target.fusion_portfolio?.enabled ? target.fusion_portfolio.selected_portfolios : []);
+          const configs = all.filter((p) => p._id === portfolioId || members.has(p.name)).map(toEngineConfig);
+          const errors = validatePortfolios(configs);
+          if (errors.length) {
+            set({ launchError: `Analyse bloquée :\n• ${errors.join('\n• ')}` });
+            return null;
+          }
+          set({ launchError: null });
+          const engine = await engineForRun();
+          const window = allocationWindow(configs);
+          if (window.start && needsCycleAnchor(configs)) {
+            // The 2-week cycle is anchored on the full run's start: only the engine knows it.
+            const full = allocationOptions({ start: null, days: null, reason: null });
+            const plan = engine
+              ? await new EngineClient(engine.url, engine.health.auth_required)
+                .plan(configs.map((c) => ({ ...c, start_date_user: null, end_date_user: null })), full)
+                .catch(() => null)
+              : null;
+            window.start = plan?.simulation.start ? alignToCycle(window.start, plan.simulation.start) : null;
+          }
+          const options = allocationOptions(window);
+          const portfolios = configs.map((c) => ({ ...c, start_date_user: options.start_date, end_date_user: null }));
+          const request: RunRequest = { portfolios, options };
+          const key = await requestKey(request).catch(() => null);
+          if (key && !opts?.force) {
+            const row = await findReusable(key, request, engine?.health.code, true);
+            const rerun = () => void get().startAllocationRun(portfolioId, { force: true });
+            if (row && (await openSaved(row, 'allocations', target.name, rerun, request).catch(() => false))) return null;
+          }
+          if (!engine) {
+            set({ launchError: NO_ENGINE });
+            return null;
+          }
+          const keys = await configKeys(request).catch(() => [] as string[]);
+          return launch(engine, request, `Allocations · ${target.name}`, { purpose: 'allocations', requestKey: key, focus: target.name, configKeys: keys });
+        },
+
+        resolveReuse(choice) {
+          const resolve = reuseResolver;
+          reuseResolver = null;
+          set({ reuseOffer: null });
+          resolve?.(choice);
+        },
+
+        dismissReuseNotice: () => set({ reuseNotice: null }),
+
+        showAllocResult: (result, runId, label, focus = null) =>
+          set((s) => ({
+            alloc: { result, runId, label, source: 'history', focus, saveError: null },
+            reuseNotice: s.reuseNotice?.purpose === 'allocations' ? null : s.reuseNotice,
+            view: s.view === 'history' ? 'allocations' : s.view,
+          })),
 
         async cancelRun(id) {
           const run = getRun(id);
@@ -480,14 +805,14 @@ export const useBacktestStore = create<BacktestState>()(
           if (!run) return;
           const cached = runResults.get(id);
           if (cached) {
-            presentResult(run, cached);
+            presentResult(run, cached, true);
             return;
           }
           if (run.savedId) {
             const saved = await loadRun(run.savedId);
             if (saved.result) {
               runResults.set(id, saved.result);
-              presentResult(run, saved.result);
+              presentResult(run, saved.result, true);
               return;
             }
           }
@@ -496,7 +821,7 @@ export const useBacktestStore = create<BacktestState>()(
               await finish(new EngineClient(run.engineUrl, run.authRequired), id, run.job);
               const loaded = runResults.get(id);
               const fresh = getRun(id);
-              if (loaded && fresh) presentResult(fresh, loaded);
+              if (loaded && fresh) presentResult(fresh, loaded, true);
               return;
             } catch {
               /* engine result expired */
@@ -514,14 +839,15 @@ export const useBacktestStore = create<BacktestState>()(
         },
 
         showResult: (result, runId, label) =>
-          set({
+          set((s) => ({
             result,
             resultRunId: runId,
             resultLabel: label,
             resultSource: runId ? 'history' : 'file',
             saveError: null,
-            view: resultView(get().view),
-          }),
+            reuseNotice: s.reuseNotice?.purpose === 'backtest' ? null : s.reuseNotice,
+            view: resultView(s.view),
+          })),
       };
     },
     {
