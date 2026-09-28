@@ -34,4 +34,7 @@ def activate_engine_home() -> Path:
     for p in (str(home), str(ENGINE_ROOT)):
         if p not in sys.path:
             sys.path.insert(0, p)
+    from backtest_engine.top20 import ensure_table
+
+    ensure_table(home)
     return home

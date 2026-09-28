@@ -195,7 +195,7 @@ export const SPECIAL_TICKERS: { group: string; items: SpecialTicker[] }[] = [
     group: 'Séries complètes / synthétiques',
     items: [
       { label: 'Simulation S&P 500 complète (1885+)', alias: 'SPYSIM' },
-      { label: 'S&P 500 Top 20 dynamique', alias: 'SP500TOP20', help: 'BÊTA : top 20 du S&P 500 par capitalisation historique, rééquilibré chaque année. Nécessite TOP_20_SP500_COMPLETE_TEMPLATE.csv dans le dossier du moteur (absent pour l’instant).' },
+      { label: 'S&P 500 Top 20 dynamique', alias: 'SP500TOP20', help: 'Top 20 du S&P 500 par capitalisation (1989+) : chaque année détient le classement de fin d’année précédente (pas de connaissance du futur) ; après le dernier classement connu, la dernière liste est conservée.' },
       { label: 'Simulateur de cash (ZEROX)', alias: 'ZEROX', help: 'Position cash qui ne bouge pas (ni prix, ni dividendes)' },
       { label: 'T-Bills complet (1885+)', alias: 'TBILL' },
       { label: 'IEF complet (1962+)', alias: 'IEFTR' },

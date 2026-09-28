@@ -24,8 +24,6 @@ RUN pip install -r requirements.txt \
 COPY backtest_engine ./backtest_engine
 COPY server ./server
 COPY Complete_Tickers ./Complete_Tickers
-# SP500TOP20: the legacy code opens these from the working directory.
-COPY ["TOP_20_SP500_COMPLETE_TEMPLATE.csv", "TOP 20 S&P 500 compagnies over time.csv", "./"]
 
 # Price cache (.streamlit) and job results (.jobs) live in volumes.
 RUN useradd --create-home --uid 10001 engine \
