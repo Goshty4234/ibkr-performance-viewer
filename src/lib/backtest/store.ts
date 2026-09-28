@@ -82,7 +82,8 @@ interface BacktestState {
   createFusion: (name: string, allocations: Record<string, number>, frequency: string) => void;
   replaceAll: (portfolios: EditablePortfolio[], options?: Partial<RunOptions>) => void;
   /** Resolves with the run id once the job is submitted (null when nothing was launched). */
-  startRun: (onlyIds?: string[]) => Promise<string | null>;
+  /** `overrides` apply to this run only (the builder options are left untouched). */
+  startRun: (onlyIds?: string[], overrides?: Partial<RunOptions>) => Promise<string | null>;
   cancelRun: (id: string) => Promise<void>;
   dismissRun: (id: string) => void;
   openRun: (id: string) => Promise<void>;
@@ -399,7 +400,7 @@ export const useBacktestStore = create<BacktestState>()(
             view: 'build',
           })),
 
-        async startRun(onlyIds) {
+        async startRun(onlyIds, overrides) {
           const engineState = useEngineStore.getState();
           let engine = engineState.engine;
           if (!engine) engine = await engineState.detect();
@@ -407,7 +408,7 @@ export const useBacktestStore = create<BacktestState>()(
             set({ launchError: 'Aucun moteur disponible. Lance le moteur sur ton PC ou configure le moteur en ligne.' });
             return null;
           }
-          const { options } = get();
+          const options: RunOptions = { ...get().options, ...overrides };
           let selected = get().portfolios;
           if (onlyIds?.length) {
             const wanted = new Set(onlyIds);

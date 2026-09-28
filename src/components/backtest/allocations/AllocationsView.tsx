@@ -502,8 +502,9 @@ export default function AllocationsView() {
     }
   }, [pendingRun, openRun]);
 
+  // Today's target weights need the backtest to reach today, whatever end date the builder uses.
   const run = async (ids: string[]) => {
-    const id = await startRun(ids);
+    const id = await startRun(ids, { end_date: null });
     if (id) setPending(id);
   };
 
