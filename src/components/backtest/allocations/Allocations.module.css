@@ -318,9 +318,65 @@
 .emptyGo { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-size: 0.78rem; font-weight: 600; color: var(--accent-hover); }
 .emptyActions { display: flex; gap: 0.5rem; }
 
+/* ---- my portfolio value + currency converter ------------------------------------------- */
+
+.valueCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(77, 141, 255, 0.25);
+  background: linear-gradient(135deg, rgba(77, 141, 255, 0.08), rgba(45, 212, 168, 0.04));
+}
+.valueMain { display: flex; flex-direction: column; gap: 0.4rem; }
+.valueLabel { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.valueInputRow { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.valueCurrency { font-family: var(--mono); font-size: 1.1rem; color: var(--text-muted); }
+.valueInputRow .valueInput {
+  width: 220px;
+  flex: 0 0 auto;
+  padding: 0.45rem 0.7rem;
+  font-family: var(--mono);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+  background: rgba(8, 11, 18, 0.6);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+.valueInputRow .valueInput:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(77, 141, 255, 0.18); }
+.valueHint { font-size: 0.76rem; color: var(--text-muted); line-height: 1.45; }
+.fxOn { border-color: var(--accent) !important; color: var(--accent) !important; }
+.fxBox {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: var(--radius-sm);
+  background: rgba(8, 11, 18, 0.5);
+  border: 1px solid var(--border);
+}
+.fxRow { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.fxRow .fxAmount { width: 150px; flex: 0 0 auto; }
+.fxRow .fxCurrency { width: 90px; flex: 0 0 auto; }
+.fxSwap {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.fxSwap:hover { color: var(--text); border-color: var(--border-strong); }
+.fxMeta { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; font-size: 0.76rem; color: var(--text-muted); }
+.fxErr { color: var(--orange); }
+
 /* ---- print (PDF): page isolation lives in globals.css (.alloc-print-root) --------------- */
 
 @media print {
-  .heroActions, .sectionNav, .method { display: none !important; }
+  .heroActions, .sectionNav, .method, .fxBox, .valueHint { display: none !important; }
   .section, .kpi, .riskCard, .breakdown { break-inside: avoid; }
 }

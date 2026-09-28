@@ -15,6 +15,7 @@ import { AllocationHistorySection } from '../results/PortfolioTab';
 import { AllocTable, Pie, PurchaseCalculator } from '../results/TodayTab';
 import { money, num, pct } from '../results/format';
 import { FUND_TABS, type FundTab, fundColumns, peColor } from './columns';
+import ValueControl, { rescaleReport, rescaleTable, useMyValue } from './ValueControl';
 import styles from './Allocations.module.css';
 
 type Tone = 'good' | 'fair' | 'warn' | 'bad' | 'neutral';
@@ -463,7 +464,11 @@ export default function AllocationsView() {
 
   const { analysis, loading, error, saved, source, refresh } = useAllocationAnalysis(client, result, runId, label, p);
   const { detail } = usePortfolioDetail(result, p?.index ?? null);
-  const report = analysis?.fundamentals ?? null;
+  const [myValue, setMyValue] = useMyValue(p?.name ?? '');
+  const baseReport = analysis?.fundamentals ?? null;
+  const report = useMemo(() => (myValue ? rescaleReport(baseReport, myValue) : baseReport), [baseReport, myValue]);
+  const todayTable = p?.today?.table ?? null;
+  const table = useMemo(() => (myValue ? rescaleTable(todayTable, myValue) : todayTable), [todayTable, myValue]);
   const running = !!pendingRun;
   const runProgress = pendingRun?.job ? Math.round((pendingRun.job.progress ?? 0) * 100) : 0;
 
@@ -489,7 +494,10 @@ export default function AllocationsView() {
   const exportAi = () => {
     if (!analysis) return;
     const safe = p.name.replace(/[^\w-]+/g, '_').slice(0, 60);
-    downloadJson(`allocations-${safe}-${analysis.created_at.slice(0, 10)}.json`, aiContext(analysis));
+    const doc = myValue
+      ? { ...analysis, portfolio: { ...analysis.portfolio, portfolio_value: myValue }, fundamentals: report }
+      : analysis;
+    downloadJson(`allocations-${safe}-${analysis.created_at.slice(0, 10)}.json`, aiContext(doc));
   };
 
   const print = () => {
@@ -561,7 +569,11 @@ export default function AllocationsView() {
       {analysis?.errors.benchmarks && analysis.fundamentals && <div className={styles.warnLine}>Benchmarks : {analysis.errors.benchmarks}</div>}
 
       <div className={styles.kpis}>
-        <Kpi label="Valeur du portefeuille" value={money(today?.portfolio_value ?? null, 0)} hint={`${positions} position${positions > 1 ? 's' : ''}${pie.some(([t]) => t === 'CASH') ? ' + cash' : ''}`} />
+        <Kpi
+          label={myValue ? 'Mon portefeuille' : 'Valeur simulée (backtest)'}
+          value={money(myValue ?? today?.portfolio_value ?? null, 0)}
+          hint={`${positions} position${positions > 1 ? 's' : ''}${pie.some(([t]) => t === 'CASH') ? ' + cash' : ''}`}
+        />
         <Kpi label="P/E pondéré" value={finite(w.pe) ? w.pe.toFixed(2) : loading ? '…' : 'N/A'} hint={finite(w.pe) ? peRating(w.pe)[0] : 'Valorisation'} tone={finite(w.pe) ? peRating(w.pe)[1] : 'neutral'} />
         <Kpi label="Bêta pondéré" value={finite(w.beta) ? w.beta.toFixed(2) : loading ? '…' : 'N/A'} hint={finite(w.beta) ? betaRating(w.beta)[0] : 'Risque'} tone={finite(w.beta) ? betaRating(w.beta)[1] : 'neutral'} />
         <Kpi label="Rendement du dividende" value={finite(w.dividend_yield) ? pct(w.dividend_yield) : loading ? '…' : 'N/A'} hint={finite(w.dividend_yield) ? yieldRating(w.dividend_yield)[0] : 'Pondéré'} />
@@ -582,9 +594,10 @@ export default function AllocationsView() {
         title="Allocation cible aujourd’hui"
         sub={`Poids issus des dernières métriques${p.config.use_momentum ? ' de momentum' : ' de la configuration'} · actions arrondies au dixième au dernier prix connu`}
       >
+        <ValueControl value={myValue} backtestValue={today?.portfolio_value ?? null} onChange={setMyValue} />
         <div className={styles.todayGrid}>
           <div className={styles.pieBox}><Pie slices={pie} height={320} /></div>
-          <div><AllocTable table={today?.table ?? null} /></div>
+          <div><AllocTable table={table} /></div>
         </div>
       </Section>
 

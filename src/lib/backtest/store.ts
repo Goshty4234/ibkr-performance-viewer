@@ -308,7 +308,12 @@ export const useBacktestStore = create<BacktestState>()(
             if (!target || portfolios.length !== 1) throw new Error('Colle le JSON d’un seul portfolio pour mettre à jour le portfolio actif.');
             const taken = new Set(get().portfolios.filter((p) => p._id !== target._id).map((p) => p.name));
             const next = { ...portfolios[0], _id: target._id, name: uniqueName(portfolios[0].name, taken) };
-            set((s) => ({ portfolios: s.portfolios.map((p) => (p._id === target._id ? next : p)), options: { ...s.options, ...options } }));
+            // Like Streamlit's single-portfolio paste: global settings (start_with, first rebalance,
+            // auto-adjust) only come from a bulk import; the dates are the only options applied.
+            const dates: Partial<RunOptions> = {};
+            if (options.start_date !== undefined) dates.start_date = options.start_date;
+            if (options.end_date !== undefined) dates.end_date = options.end_date;
+            set((s) => ({ portfolios: s.portfolios.map((p) => (p._id === target._id ? next : p)), options: { ...s.options, ...dates } }));
             return 1;
           }
           if (mode === 'replace') {

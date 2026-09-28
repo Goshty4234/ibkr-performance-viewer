@@ -195,13 +195,12 @@ export function parseImport(text: string): ImportResult {
     options.auto_adjust_momentum_start = Boolean(first.auto_adjust_momentum_start);
   }
   const isoDate = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : null);
-  if (options.start_date === undefined && options.end_date === undefined) {
-    const s = isoDate(first.start_date_user);
-    const e = isoDate(first.end_date_user);
-    if (s || e) {
-      options.start_date = s;
-      options.end_date = e;
-    }
+  // Exports always carry both keys (null = no custom dates), which turns custom dates off like
+  // Streamlit does; a hand-written JSON without the keys leaves the current dates alone.
+  if (options.start_date === undefined && options.end_date === undefined
+    && ('start_date_user' in first || 'end_date_user' in first)) {
+    options.start_date = isoDate(first.start_date_user);
+    options.end_date = isoDate(first.end_date_user);
   }
   const portfolios = (list as Record<string, unknown>[]).map((p) => {
     if (!p || typeof p !== 'object' || !('name' in p)) throw new Error('Portfolio invalide (nom manquant).');

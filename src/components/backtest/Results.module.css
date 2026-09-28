@@ -257,7 +257,7 @@
   background: rgba(77, 141, 255, 0.12);
   border: 1px solid rgba(77, 141, 255, 0.3);
 }
-.historySearch {
+.historyControls .historySearch {
   width: 280px;
   max-width: 100%;
   padding: 0.45rem 0.75rem;
@@ -267,7 +267,7 @@
   color: var(--text);
   font-size: 0.82rem;
 }
-.historySearch:focus { outline: none; border-color: var(--accent); }
+.historyControls .historySearch:focus { outline: none; border-color: var(--accent); }
 .historyMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; font-size: 0.74rem; color: var(--text-muted); }
 .historyMeta > span:first-child { margin-right: 0.25rem; }
 .historyTag {
