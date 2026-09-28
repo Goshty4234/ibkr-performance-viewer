@@ -19,7 +19,9 @@ class StopRun(Exception):
 
 class _SessionState(MutableMapping):
     def __init__(self) -> None:
-        object.__setattr__(self, "_data", {})
+        # Legacy loaders do `st.session_state.api_call_count += 1` and fall back to a
+        # shorter or empty series when it raises (GOLDX, ZEROX): it must always exist.
+        object.__setattr__(self, "_data", {"api_call_count": 0})
 
     def __getitem__(self, key: str) -> Any:
         return self._data[key]

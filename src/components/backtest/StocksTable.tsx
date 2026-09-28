@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { type EditablePortfolio, totalAllocation } from '@/lib/backtest/portfolio';
 import { useBacktestStore } from '@/lib/backtest/store';
-import { isInverse, nonUsdTickers, resolveTicker } from '@/lib/backtest/tickers';
+import { isInverse, nonUsdTickers, resolveTicker, searchSpecialTickers } from '@/lib/backtest/tickers';
 import { useEngineStore } from '@/lib/engine/store';
 import { NumInput } from './fields';
 import TickerTools from './TickerTools';
@@ -12,7 +12,7 @@ import styles from './Backtester.module.css';
 
 const ROW_H = 42;
 
-interface Quote { symbol: string; name: string; exchange: string; type: string }
+interface Quote { symbol: string; name: string; exchange: string; type: string; special?: boolean }
 
 export default function StocksTable({ portfolio: p }: { portfolio: EditablePortfolio }) {
   const updateStock = useBacktestStore((s) => s.updateStock);
@@ -26,6 +26,7 @@ export default function StocksTable({ portfolio: p }: { portfolio: EditablePortf
   const [draft, setDraft] = useState('');
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [activeQuote, setActiveQuote] = useState(-1);
+  const [suggestHidden, setSuggestHidden] = useState(false);
 
   const showCap = p.use_momentum;
   const showMa = p.use_sma_filter;
@@ -49,7 +50,7 @@ export default function StocksTable({ portfolio: p }: { portfolio: EditablePortf
 
   useEffect(() => {
     const q = draft.trim();
-    if (!client || q.length < 2 || /[\s,;]/.test(q)) {
+    if (!client || q.length < 2 || /[\s,;_]/.test(q)) {
       setQuotes([]);
       return;
     }
@@ -58,6 +59,22 @@ export default function StocksTable({ portfolio: p }: { portfolio: EditablePortf
     }, 250);
     return () => clearTimeout(t);
   }, [draft, client]);
+
+  const suggestions = useMemo<Quote[]>(() => {
+    const q = draft.trim();
+    if (!q || /[,;]/.test(q)) return [];
+    const local: Quote[] = searchSpecialTickers(q).map((s) => ({
+      symbol: s.alias,
+      name: s.label,
+      exchange: s.target !== s.alias ? `→ ${s.target}` : 'Série du moteur',
+      type: '',
+      special: true,
+    }));
+    const taken = new Set(local.map((s) => resolveTicker(s.symbol)));
+    const remote = quotes.filter((x) => !taken.has(resolveTicker(x.symbol)));
+    const exact = remote.filter((x) => x.symbol.toUpperCase() === q.toUpperCase());
+    return [...exact, ...local, ...remote.filter((x) => !exact.includes(x))];
+  }, [draft, quotes]);
 
   function commit(value: string) {
     const tickers = value.split(/[\s,;]+/).map((t) => t.trim()).filter(Boolean);
@@ -115,30 +132,33 @@ export default function StocksTable({ portfolio: p }: { portfolio: EditablePortf
             value={draft}
             placeholder="Ajouter : SPY  ou colle une liste « QQQ, GLD, TLT, SPY?L=3 »"
             spellCheck={false}
-            onChange={(e) => { setDraft(e.target.value); setActiveQuote(-1); }}
+            onChange={(e) => { setDraft(e.target.value); setActiveQuote(-1); setSuggestHidden(false); }}
+            onBlur={() => setSuggestHidden(true)}
+            onFocus={() => setSuggestHidden(false)}
             onKeyDown={(e) => {
-              if (e.key === 'ArrowDown' && quotes.length) { e.preventDefault(); setActiveQuote((i) => Math.min(quotes.length - 1, i + 1)); }
-              else if (e.key === 'ArrowUp' && quotes.length) { e.preventDefault(); setActiveQuote((i) => Math.max(-1, i - 1)); }
-              else if (e.key === 'Enter') { e.preventDefault(); commit(activeQuote >= 0 ? quotes[activeQuote].symbol : draft); }
-              else if (e.key === 'Escape') setQuotes([]);
+              if (suggestHidden && e.key !== 'Enter') setSuggestHidden(false);
+              if (e.key === 'ArrowDown' && suggestions.length) { e.preventDefault(); setActiveQuote((i) => Math.min(suggestions.length - 1, i + 1)); }
+              else if (e.key === 'ArrowUp' && suggestions.length) { e.preventDefault(); setActiveQuote((i) => Math.max(-1, i - 1)); }
+              else if (e.key === 'Enter') { e.preventDefault(); commit(activeQuote >= 0 && suggestions[activeQuote] ? suggestions[activeQuote].symbol : draft); }
+              else if (e.key === 'Escape') { setSuggestHidden(true); setActiveQuote(-1); }
             }}
             onPaste={(e) => {
               const text = e.clipboardData.getData('text');
               if (/[\s,;]/.test(text.trim())) { e.preventDefault(); commit(text); }
             }}
           />
-          {quotes.length > 0 && (
+          {!suggestHidden && suggestions.length > 0 && (
             <div className={styles.suggest}>
-              {quotes.map((q, i) => (
+              {suggestions.map((q, i) => (
                 <button
-                  key={q.symbol}
+                  key={`${q.special ? 's' : 'y'}:${q.symbol}`}
                   type="button"
                   className={`${styles.suggestItem} ${i === activeQuote ? styles.suggestItemActive : ''}`}
                   onMouseDown={(e) => { e.preventDefault(); commit(q.symbol); }}
                 >
-                  <span className={styles.suggestSym}>{q.symbol}</span>
+                  <span className={`${styles.suggestSym} ${q.special ? styles.suggestSpecial : ''}`}>{q.symbol}</span>
                   <span className={styles.suggestName}>{q.name}</span>
-                  <span className={styles.suggestEx}>{q.exchange} · {q.type}</span>
+                  <span className={styles.suggestEx}>{q.type ? `${q.exchange} · ${q.type}` : q.exchange}</span>
                 </button>
               ))}
             </div>

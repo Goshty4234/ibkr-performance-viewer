@@ -9,7 +9,7 @@ import { FREQUENCY_LABELS, nextRebalance } from '@/lib/backtest/timer';
 import { usePortfolioDetail } from '@/lib/backtest/use-detail';
 import { SERIES_PALETTE } from '@/lib/chart-series';
 import { useEngineStore } from '@/lib/engine/store';
-import type { BenchmarkRow, FundamentalsReport, PieSlices, PortfolioSummaryOk, TimerInfo } from '@/lib/engine/types';
+import type { BenchmarkRow, FundamentalsReport, PieSlices, PortfolioSummaryOk, ReturnsRow, TimerInfo } from '@/lib/engine/types';
 import DataGrid from '../grid/DataGrid';
 import { AllocationHistorySection } from '../results/PortfolioTab';
 import { AllocTable, Pie, PurchaseCalculator } from '../results/TodayTab';
@@ -22,6 +22,7 @@ type Tone = 'good' | 'fair' | 'warn' | 'bad' | 'neutral';
 
 const SECTIONS = [
   { id: 'alloc-today', label: 'Cible du jour' },
+  { id: 'alloc-returns', label: 'Rendements' },
   { id: 'alloc-fundamentals', label: 'Fondamentaux' },
   { id: 'alloc-risk', label: 'Risque & valorisation' },
   { id: 'alloc-composition', label: 'Composition' },
@@ -344,6 +345,50 @@ function BenchmarksSection({ rows, loading, name }: { rows: BenchmarkRow[] | nul
   );
 }
 
+function ReturnsSection({ rows, loading, stale, name }: { rows: ReturnsRow[] | null; loading: boolean; stale: boolean; name: string }) {
+  const na = <span className={styles.faint}>N/A</span>;
+  return (
+    <Section
+      id="alloc-returns"
+      title="Rendements par position"
+      sub="Momentum, bêta et volatilité des dernières métriques (sinon mesurés sur 365 jours) · rendements de prix sur des périodes calendaires · positions à 0 % en fin de liste"
+    >
+      {!rows && loading ? (
+        <Skeleton height={240} />
+      ) : rows?.length ? (
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Poids</th>
+                <th>Momentum</th>
+                <th>Bêta</th>
+                <th>Volatilité</th>
+                {PERIOD_COLS.map(([, l]) => <th key={l}>{l}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.ticker} className={r.portfolio ? styles.rowHighlight : r.weight <= 0.0001 ? styles.rowMuted : ''}>
+                  <td className={styles.tickerCell}>{r.portfolio ? <>★ {name}</> : r.ticker}</td>
+                  <td>{r.portfolio ? '' : `${(r.weight * 100).toFixed(1)}%`}</td>
+                  <td>{finite(r.momentum) ? signed(r.momentum) : na}</td>
+                  <td>{finite(r.beta) ? r.beta.toFixed(2) : na}</td>
+                  <td>{finite(r.volatility) ? `${r.volatility.toFixed(2)}%` : na}</td>
+                  {PERIOD_COLS.map(([k]) => <td key={k}>{signed(r[k as keyof ReturnsRow] as number | null)}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className={styles.emptyLine}>{stale ? 'Analyse enregistrée avant l’ajout de ce tableau : clique « Actualiser » pour le calculer.' : 'Rendements indisponibles.'}</div>
+      )}
+    </Section>
+  );
+}
+
 function Methodology() {
   return (
     <details className={styles.method}>
@@ -600,6 +645,8 @@ export default function AllocationsView() {
           <div><AllocTable table={table} /></div>
         </div>
       </Section>
+
+      <ReturnsSection rows={analysis?.returns ?? null} loading={loading} stale={Boolean(analysis) && analysis?.returns === undefined} name={p.name} />
 
       {today && Object.keys(today.weights).length > 0 && <PurchaseCalculator weights={today.weights} prices={today.prices} />}
 

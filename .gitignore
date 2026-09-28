@@ -50,3 +50,7 @@ engine/deploy/.env
 # market data CSVs used by the engine (not personal data)
 !engine/Complete_Tickers/Historical CSV/*.csv
 !Streamlit Momentum Backtester/Complete_Tickers/Historical CSV/*.csv
+!engine/TOP_20_SP500_COMPLETE_TEMPLATE.csv
+!engine/TOP 20 S&P 500 compagnies over time.csv
+!Streamlit Momentum Backtester/Complete_Tickers/TOP_20_SP500_*.csv
+!Streamlit Momentum Backtester/Complete_Tickers/TOP 20 S&P 500 compagnies over time.csv

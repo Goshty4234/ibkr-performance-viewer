@@ -97,12 +97,23 @@ export const TICKER_ALIASES: Record<string, string> = {
   XLCND: '^SP500-50',
 };
 
-/** Same steps as Streamlit's update_stock_ticker: commas → dots, upper case, BRK fix, alias. */
+const ALIAS_TARGETS = new Set(Object.values(TICKER_ALIASES));
+
+/**
+ * Same steps as Streamlit's update_stock_ticker: commas → dots, upper case, BRK fix, alias.
+ * Extra: underscores are ignored when that yields an alias (GOLD_SIM → GOLDSIM). Yahoo symbols
+ * never contain "_", and the engine's own names (GOLDSIM_COMPLETE…) are kept as typed.
+ */
 export function resolveTicker(input: string): string {
   let t = input.trim().replace(/,/g, '.').toUpperCase();
   if (t === 'BRK.B') t = 'BRK-B';
   else if (t === 'BRK.A') t = 'BRK-A';
-  return TICKER_ALIASES[t] ?? t;
+  if (TICKER_ALIASES[t]) return TICKER_ALIASES[t];
+  if (t.includes('_') && !ALIAS_TARGETS.has(t)) {
+    const compact = t.replace(/_/g, '');
+    if (TICKER_ALIASES[compact]) return TICKER_ALIASES[compact];
+  }
+  return t;
 }
 
 /** Inverse ETFs (?L=-N) have dividends switched off, like Streamlit. */
@@ -184,9 +195,9 @@ export const SPECIAL_TICKERS: { group: string; items: SpecialTicker[] }[] = [
     group: 'Séries complètes / synthétiques',
     items: [
       { label: 'Simulation S&P 500 complète (1885+)', alias: 'SPYSIM' },
-      { label: 'S&P 500 Top 20 dynamique', alias: 'SP500TOP20', help: 'BÊTA : top 20 du S&P 500 par capitalisation historique, rééquilibré chaque année' },
+      { label: 'S&P 500 Top 20 dynamique', alias: 'SP500TOP20', help: 'BÊTA : top 20 du S&P 500 par capitalisation historique, rééquilibré chaque année. Nécessite TOP_20_SP500_COMPLETE_TEMPLATE.csv dans le dossier du moteur (absent pour l’instant).' },
       { label: 'Simulateur de cash (ZEROX)', alias: 'ZEROX', help: 'Position cash qui ne bouge pas (ni prix, ni dividendes)' },
-      { label: 'T-Bills complet (1948+)', alias: 'TBILL' },
+      { label: 'T-Bills complet (1885+)', alias: 'TBILL' },
       { label: 'IEF complet (1962+)', alias: 'IEFTR' },
       { label: 'TLT complet (1962+)', alias: 'TLTTR' },
       { label: 'ZROZ complet (1962+)', alias: 'ZROZX' },
@@ -228,7 +239,7 @@ export const ALIAS_CHEATSHEET: [string, string][] = [
   ['TLTETF / IEFETF', 'ETF TLT / IEF (2002+)'],
   ['TLTTR / IEFTR / ZROZX', 'Séries obligataires complètes (1962+)'],
   ['TNX / TYX / IRX', 'Taux 10 ans / 30 ans / 3 mois'],
-  ['TBILL', 'T-Bills complet (1948+)'],
+  ['TBILL', 'T-Bills complet (1885+)'],
   ['SPYSIM', 'S&P 500 simulé (1885+)'],
   ['GOLDSIM / GOLDX', 'Or simulé (1968+) / complet (1975+)'],
   ['KMLMX / DBMFX', 'Managed futures complets'],
@@ -237,3 +248,46 @@ export const ALIAS_CHEATSHEET: [string, string][] = [
   ['TICKER?L=2', 'Levier quotidien x2 (coût = (L-1) × taux sans risque)'],
   ['TICKER?E=0.95', 'Frais annuels 0,95 %'],
 ];
+
+export interface SpecialSuggestion { alias: string; target: string; label: string; group: string }
+
+const compactKey = (s: string) => s.toUpperCase().replace(/[\s_.\-^=?]/g, '');
+const plain = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+/** Every alias the engine understands, described ones first (SPECIAL_TICKERS), then the raw alias table. */
+const SPECIAL_INDEX: (SpecialSuggestion & { keys: string[]; words: string[] })[] = (() => {
+  const out: (SpecialSuggestion & { keys: string[]; words: string[] })[] = [];
+  const seen = new Set<string>();
+  const push = (alias: string, label: string, group: string) => {
+    if (seen.has(alias)) return;
+    seen.add(alias);
+    const target = TICKER_ALIASES[alias] ?? alias;
+    const words = plain(`${label} ${group}`).split(/[^a-z0-9&]+/).filter(Boolean);
+    out.push({ alias, target, label, group, keys: [compactKey(alias), compactKey(target)], words });
+  };
+  for (const g of SPECIAL_TICKERS) for (const it of g.items) push(it.alias, it.label, g.group);
+  for (const [alias, target] of Object.entries(TICKER_ALIASES)) {
+    if (alias !== target) push(alias, `Alias de ${target}`, 'Alias');
+  }
+  return out;
+})();
+
+/** Local matches for the ticker box: alias or engine name (ignoring _ - . spaces), then label words. */
+export function searchSpecialTickers(query: string, limit = 6): SpecialSuggestion[] {
+  const key = compactKey(query);
+  const words = plain(query).split(/\s+/).filter((w) => w.length >= 2);
+  if (key.length < 2 || query.includes('?')) return [];
+  const scored: [number, number, SpecialSuggestion][] = [];
+  SPECIAL_INDEX.forEach((e, i) => {
+    let score = 0;
+    if (e.keys[0] === key) score = 4;
+    else if (e.keys[1] === key) score = 3;
+    else if (e.keys.some((k) => k.startsWith(key))) score = 2;
+    else if (words.length && words.every((w) => e.words.some((x) => x.startsWith(w)))) score = 1;
+    if (score) scored.push([score, i, e]);
+  });
+  return scored
+    .sort((a, b) => b[0] - a[0] || a[1] - b[1])
+    .slice(0, limit)
+    .map(([, , { alias, target, label, group }]) => ({ alias, target, label, group }));
+}

@@ -487,6 +487,8 @@
 
 .suggestItem:hover, .suggestItemActive { background: rgba(77, 141, 255, 0.12); }
 .suggestSym { font-family: var(--mono); font-weight: 600; min-width: 70px; }
+.suggestSpecial { color: var(--accent, #4d8dff); }
+.suggestSpecial::after { content: '★'; margin-left: 0.3rem; font-size: 0.7rem; opacity: 0.8; }
 .suggestName { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .suggestEx { color: var(--text-faint); font-size: 0.72rem; }
 

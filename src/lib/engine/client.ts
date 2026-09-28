@@ -3,6 +3,7 @@ import type { EnginePrefs } from './prefs';
 import { normalizeUrl } from './prefs';
 import type {
   BenchmarkRow,
+  ReturnsRow,
   EngineHealth,
   EngineJob,
   FundamentalsReport,
@@ -157,6 +158,19 @@ export class EngineClient {
     portfolio_pe: number | null;
   }): Promise<BenchmarkRow[]> {
     const r = await this.request<{ rows: BenchmarkRow[] }>('/allocations/benchmarks', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    return r.rows;
+  }
+
+  async allocationReturns(body: {
+    weights: Record<string, number>;
+    metrics: Record<string, Record<string, number | null>> | null;
+    benchmark_ticker: string | null;
+    portfolio: { dates: string[]; values: (number | null)[] } | null;
+  }): Promise<ReturnsRow[]> {
+    const r = await this.request<{ rows: ReturnsRow[] }>('/allocations/returns', {
       method: 'POST',
       body: JSON.stringify(body),
     });

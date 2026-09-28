@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { EngineClient } from '@/lib/engine/client';
-import type { BenchmarkRow, FundamentalsReport, PortfolioConfig, PortfolioSummaryOk, TimerInfo } from '@/lib/engine/types';
+import type { BenchmarkRow, FundamentalsReport, PortfolioConfig, PortfolioDetail, PortfolioSummaryOk, ReturnsRow, TimerInfo } from '@/lib/engine/types';
 import { RESULTS_BUCKET } from './history';
-import { noAdditions, portfolioDates, type LoadedResult } from './result-data';
+import { detailCache, noAdditions, portfolioDates, type LoadedResult } from './result-data';
 
 /** Allocations analysis of one portfolio of one run: inputs + every output of the page. */
 export interface AllocationAnalysis {
@@ -25,12 +25,14 @@ export interface AllocationAnalysis {
   };
   fundamentals: FundamentalsReport | null;
   benchmarks: BenchmarkRow[] | null;
-  errors: { fundamentals?: string; benchmarks?: string };
+  /** Absent in analyses saved before the Returns Summary existed. */
+  returns?: ReturnsRow[] | null;
+  errors: { fundamentals?: string; benchmarks?: string; returns?: string };
 }
 
 const BENCH_WINDOW_DAYS = 400;
 
-function inputsOf(result: LoadedResult, runId: string | null, label: string, p: PortfolioSummaryOk): Omit<AllocationAnalysis, 'fundamentals' | 'benchmarks' | 'errors'> {
+function inputsOf(result: LoadedResult, runId: string | null, label: string, p: PortfolioSummaryOk): Omit<AllocationAnalysis, 'fundamentals' | 'benchmarks' | 'returns' | 'errors'> {
   const today = p.today;
   const weights = today?.weights ?? p.today_weights ?? {};
   const value = today?.portfolio_value ?? p.stats['Final Value (with)'] ?? p.config.initial_value ?? 10000;
@@ -63,6 +65,38 @@ function recentSeries(result: LoadedResult, p: PortfolioSummaryOk): { dates: str
   return { dates: dates.slice(k), values: values.slice(k) };
 }
 
+/** Streamlit's final_alloc (allocation at the last date, zero weights included) and the metrics of the last date. */
+function returnsInputs(detail: PortfolioDetail | null, fallback: Record<string, number>) {
+  let weights: Record<string, number> = {};
+  const alloc = detail?.allocations;
+  if (alloc?.dates.length) {
+    const k = alloc.dates.length - 1;
+    for (const [t, col] of Object.entries(alloc.weights)) {
+      const v = col[k];
+      if (v !== null && v !== undefined) weights[t] = v;
+    }
+  }
+  if (!Object.keys(weights).length) weights = { ...fallback };
+
+  let metrics: Record<string, Record<string, number | null>> | null = null;
+  const m = detail?.metrics;
+  if (m?.dates.length) {
+    const last = m.dates.length - 1;
+    const wanted = m.fields.filter((f) => f === 'Momentum' || f === 'Beta' || f === 'Volatility');
+    metrics = {};
+    m.date_idx.forEach((d, row) => {
+      if (d !== last) return;
+      const rec: Record<string, number | null> = {};
+      for (const f of wanted) {
+        const v = m.values[f]?.[row];
+        rec[f] = typeof v === 'number' && Number.isFinite(v) ? v : null;
+      }
+      metrics![m.tickers[m.ticker_idx[row]]] = rec;
+    });
+  }
+  return { weights, metrics };
+}
+
 export async function computeAnalysis(
   client: EngineClient,
   result: LoadedResult,
@@ -87,7 +121,14 @@ export async function computeAnalysis(
       errors.benchmarks = e.message;
       return null;
     });
-  return { ...base, fundamentals, benchmarks, errors };
+  const detail = await detailCache.get(result, p.index).catch(() => null);
+  const returns = await client
+    .allocationReturns({ ...returnsInputs(detail, weights), benchmark_ticker, portfolio: recentSeries(result, p) })
+    .catch((e: Error) => {
+      errors.returns = e.message;
+      return null;
+    });
+  return { ...base, fundamentals, benchmarks, returns, errors };
 }
 
 // ---- Supabase: stored next to the run, backtest-results/<uid>/<runId>/allocations/<index>.json.gz
@@ -142,12 +183,14 @@ export function aiContext(a: AllocationAnalysis) {
       'Weighted metrics use % of portfolio as weights and skip P/E or PEG outside (0, 1000], beta outside [-5, 5] and negative ratios.',
       'Benchmark returns are price-return snapshots over calendar lookbacks; volatility is annualized over the last 365 days.',
       'The PORTFOLIO benchmark row uses the backtest curve without additions.',
+      'returns_summary: one row per ticker of the final allocation (weight = fraction), momentum / volatility / period returns in %, then PORTFOLIO HISTORICAL.',
     ],
     units: FIELD_UNITS,
     run: a.run,
     portfolio: a.portfolio,
     fundamentals: a.fundamentals,
     benchmarks: a.benchmarks,
+    returns_summary: a.returns ?? null,
     errors: a.errors,
   };
 }

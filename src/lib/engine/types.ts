@@ -367,6 +367,21 @@ export interface BenchmarkRow {
   '1Y': number | null;
 }
 
+/** Returns Summary row (2_Allocations.py): percents, beta raw; `portfolio` marks PORTFOLIO HISTORICAL. */
+export interface ReturnsRow {
+  ticker: string;
+  weight: number;
+  momentum: number | null;
+  beta: number | null;
+  volatility: number | null;
+  '1W': number | null;
+  '1M': number | null;
+  '3M': number | null;
+  '6M': number | null;
+  '1Y': number | null;
+  portfolio?: boolean;
+}
+
 export interface StockConfig {
   ticker: string;
   allocation: number;

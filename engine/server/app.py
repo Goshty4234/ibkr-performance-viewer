@@ -300,6 +300,25 @@ def allocations_benchmarks(body: BenchmarksBody, user: str = Depends(current_use
     return {"rows": rows}
 
 
+class ReturnsBody(BaseModel):
+    weights: dict[str, float] = Field(max_length=2000)
+    metrics: dict[str, dict[str, float | None]] | None = Field(default=None, max_length=2000)
+    benchmark_ticker: str | None = Field(default=None, max_length=40)
+    portfolio: SeriesBody | None = None
+
+
+@app.post("/allocations/returns")
+def allocations_returns(body: ReturnsBody, user: str = Depends(current_user)) -> dict:
+    from backtest_engine.allocations_api import returns_summary
+
+    try:
+        rows = returns_summary(body.weights, body.metrics, body.benchmark_ticker,
+                               body.portfolio.model_dump() if body.portfolio else None)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"Returns summary failed: {exc}") from exc
+    return {"rows": rows}
+
+
 @app.post("/tickers/resolve")
 def tickers_resolve(body: TickersBody, user: str = Depends(current_user)) -> dict:
     from backtest_engine.data_api import resolve_tickers

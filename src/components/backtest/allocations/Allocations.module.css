@@ -236,6 +236,7 @@
 .tickerCell { font-weight: 700; font-family: var(--font) !important; }
 .rowHighlight, .rowHighlight:hover { background: rgba(77, 141, 255, 0.12) !important; }
 .rowHighlight td:first-child { box-shadow: inset 3px 0 0 var(--accent); color: var(--accent-hover); }
+.rowMuted td { opacity: 0.55; }
 
 /* ---- misc ----------------------------------------------------------------------------- */
 

@@ -341,6 +341,100 @@ def _period_returns(s: pd.Series) -> dict[str, float | None]:
     return out
 
 
+def _annualized_vol(rets: pd.Series) -> float | None:
+    """Std of the observed returns scaled by their own frequency (~252/yr for stocks, ~365 for crypto)."""
+    rets = rets.dropna()
+    if len(rets) < 20:
+        return None
+    span = (rets.index[-1] - rets.index[0]).days
+    per_year = len(rets) * 365.25 / span if span > 0 else 252.0
+    return float(rets.std() * np.sqrt(per_year) * 100)
+
+
+def _beta(rets: pd.Series, bench_rets: pd.Series) -> float | None:
+    idx = rets.index.intersection(bench_rets.index)
+    if len(idx) < 3:
+        return None
+    t, b = rets.loc[idx], bench_rets.loc[idx]
+    var = b.var()
+    if not var or np.isnan(var):
+        return None
+    beta = t.cov(b) / var
+    return None if np.isnan(beta) else float(beta)
+
+
+def _last_year_returns(s: pd.Series) -> pd.Series:
+    return s.loc[s.index[-1] - pd.Timedelta(days=365):].pct_change().dropna()
+
+
+def returns_summary(
+    weights: dict[str, float],
+    metrics: dict[str, dict[str, float | None]] | None,
+    benchmark_ticker: str | None,
+    portfolio: dict[str, list] | None,
+) -> list[dict[str, Any]]:
+    """Returns Summary of 2_Allocations.py (calculate_returns_table), one row per ticker of the final allocation.
+
+    Momentum / Beta / Volatility come from the last momentum metrics when present. Otherwise beta and
+    volatility are measured over the last 365 days: on trading-day returns annualized at their own
+    frequency (Streamlit forward-filled weekends and used sqrt(252), which understates volatility), and
+    beta against the portfolio benchmark (^GSPC by default). The PORTFOLIO HISTORICAL row looks back in
+    calendar days like the ticker rows (Streamlit counted rows of the daily curve, 365 rows ≈ 17 months).
+    """
+    tickers = [t for t in weights if t and t.upper() != "CASH"]
+    bench_ticker = benchmark_ticker or "^GSPC"
+    hist = _histories(list(dict.fromkeys(tickers + [bench_ticker])))
+    bench = hist.get(bench_ticker)
+    bench_rets = _last_year_returns(bench) if bench is not None and len(bench) > 2 else None
+    metrics = metrics or {}
+
+    def pct(v: Any, scale_small: bool = False) -> float | None:
+        x = _num(v)
+        if x is None:
+            return None
+        return x * 100 if not scale_small or x <= 3 else x
+
+    rows: list[dict[str, Any]] = []
+    for t in tickers:
+        s = hist.get(t)
+        if s is None or not len(s):
+            continue
+        m = metrics.get(t) or {}
+        row: dict[str, Any] = {
+            "ticker": t,
+            "weight": float(weights.get(t) or 0),
+            "momentum": pct(m.get("Momentum")),
+            "beta": _num(m.get("Beta")),
+            "volatility": pct(m.get("Volatility"), scale_small=True),
+        }
+        row.update(_period_returns(s))
+        rows.append(row)
+
+    # Streamlit fills a column only when no ticker has it from the metrics.
+    need_beta = not any(r["beta"] is not None for r in rows)
+    need_vol = not any(r["volatility"] is not None for r in rows)
+    if need_beta or need_vol:
+        for r in rows:
+            rets = _last_year_returns(hist[r["ticker"]])
+            if need_vol:
+                r["volatility"] = _annualized_vol(rets)
+            if need_beta and bench_rets is not None:
+                r["beta"] = _beta(rets, bench_rets)
+
+    rows.sort(key=lambda r: (r["weight"] <= 0.0001, r["ticker"]))
+
+    if portfolio and portfolio.get("dates"):
+        s = pd.Series(portfolio["values"], index=pd.to_datetime(portfolio["dates"]), dtype=float).dropna()
+        if len(s):
+            row = {"ticker": "PORTFOLIO HISTORICAL", "weight": 1.0, "momentum": None, "portfolio": True}
+            row.update(_period_returns(s))
+            rets = _last_year_returns(s)
+            row["volatility"] = _annualized_vol(rets)
+            row["beta"] = _beta(rets, bench_rets) if bench_rets is not None else None
+            rows.append(row)
+    return rows
+
+
 def _histories(tickers: list[str]) -> dict[str, pd.Series]:
     L = _legacy()
     with _lock, contextlib.redirect_stdout(io.StringIO()):
@@ -380,7 +474,7 @@ def benchmarks(portfolio: dict[str, list] | None, benchmark_ticker: str | None, 
                     if len(common) >= 60:
                         rets = rets.reindex(common).dropna()
             if len(rets) >= 60:
-                row["volatility"] = float(rets.std() * np.sqrt(365.25) * 100)
+                row["volatility"] = _annualized_vol(rets)
         bench = hist.get(benchmark_ticker or "^GSPC") if benchmark_ticker else None
         if window is not None and bench is not None:
             b = bench.reindex(window.index, method="ffill")
@@ -404,7 +498,7 @@ def benchmarks(portfolio: dict[str, list] | None, benchmark_ticker: str | None, 
             start = s.index[-1] - pd.Timedelta(days=365)
             rets = s.loc[start:].pct_change().dropna()
             if len(rets) >= 60:
-                row["volatility"] = float(rets.std() * np.sqrt(365.25) * 100)
+                row["volatility"] = _annualized_vol(rets)
                 if t == "SPY":
                     row["beta"] = 1.0
                 elif spy is not None and len(spy) >= 60:
