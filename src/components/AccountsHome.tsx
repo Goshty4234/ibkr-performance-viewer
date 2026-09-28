@@ -6,6 +6,11 @@ import { dbToAccount, formatAccountLinkLabel } from '@/lib/account-mapper';
 import type { PortfolioAccount } from '@/lib/types';
 import styles from './AccountsHome.module.css';
 
+function initials(name: string): string {
+  const words = name.replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
+  return (words.length > 1 ? words[0][0] + words[1][0] : (words[0] ?? '?').slice(0, 2)).toUpperCase();
+}
+
 export default function AccountsHome() {
   const router = useRouter();
   const [accounts, setAccounts] = useState<PortfolioAccount[]>([]);
@@ -67,7 +72,7 @@ export default function AccountsHome() {
       setError(j.error || 'Erreur à la création');
       return;
     }
-    router.push(`/compte/${j.id}`);
+    router.push(`/ibkr/compte/${j.id}`);
   }
 
   async function handleRename(acc: PortfolioAccount) {
@@ -98,7 +103,7 @@ export default function AccountsHome() {
   }
 
   function openAccount(id: string) {
-    router.push(`/compte/${id}`);
+    router.push(`/ibkr/compte/${id}`);
   }
 
   function handleRowClick(acc: PortfolioAccount) {
@@ -136,27 +141,29 @@ export default function AccountsHome() {
   return (
     <div className={styles.page}>
       <div className={styles.hero}>
-        <h1>Mes comptes IBKR</h1>
-        <p className={styles.sub}>
-          Chaque ligne = un compte. <strong>Cliquez sur une ligne</strong> pour l&apos;ouvrir.
-        </p>
-        {!loading && accounts.length > 0 && (
-          <p className={styles.stats}>
-            {accounts.length} compte{accounts.length !== 1 ? 's' : ''}
-            {totalImports > 0 && ` · ${totalImports} CSV importé${totalImports !== 1 ? 's' : ''}`}
+        <div className={styles.heroText}>
+          <span className={styles.eyebrow}>Performance réelle</span>
+          <h1>Mes comptes IBKR</h1>
+          <p className={styles.sub}>
+            Importe tes relevés CSV Interactive Brokers pour suivre la performance réelle (TWR, NAV, flux) de chaque compte.
           </p>
-        )}
+          {!loading && accounts.length > 0 && (
+            <div className={styles.stats}>
+              <span className={styles.statChip}><strong>{accounts.length}</strong> compte{accounts.length !== 1 ? 's' : ''}</span>
+              <span className={styles.statChip}><strong>{totalImports}</strong> CSV importé{totalImports !== 1 ? 's' : ''}</span>
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          className={`btn btn-primary ${styles.createBtn}`}
+          onClick={() => setShowForm(!showForm)}
+        >
+          {showForm ? 'Fermer' : '+ Nouveau compte'}
+        </button>
       </div>
 
       {error && <div className={styles.error}>{error}</div>}
-
-      <button
-        type="button"
-        className={`btn btn-primary ${styles.createBtn}`}
-        onClick={() => setShowForm(!showForm)}
-      >
-        + Nouveau compte
-      </button>
 
       {showForm && (
         <form className={`card ${styles.createCard}`} onSubmit={handleCreate}>
@@ -180,32 +187,37 @@ export default function AccountsHome() {
       )}
 
       {loading ? (
-        <p className={styles.loading}>Chargement…</p>
+        <div className={styles.grid}>
+          {[0, 1, 2].map((k) => <div key={k} className={`card ${styles.skeleton}`} />)}
+        </div>
       ) : accounts.length === 0 ? (
         <div className={`card ${styles.empty}`}>
-          <p>Aucun compte. Cliquez <strong>+ Nouveau compte</strong> ou importez un CSV depuis un compte.</p>
+          <div className={styles.emptyIcon}>📊</div>
+          <h2>Aucun compte pour l&apos;instant</h2>
+          <p>Crée un compte, puis importe un relevé CSV d&apos;Interactive Brokers depuis sa page.</p>
+          {!showForm && (
+            <button type="button" className="btn btn-primary" onClick={() => setShowForm(true)}>+ Créer mon premier compte</button>
+          )}
         </div>
       ) : (
-        <div className={`card ${styles.list}`}>
-          <div className={styles.listHeader}>
-            <span>Nom du compte</span>
-            <span>Statut</span>
-            <span>Données</span>
-            <span>Actions</span>
-          </div>
+        <div className={styles.grid}>
           {accounts.map((a) => {
             const isEditing = editingId === a.id;
+            const count = a.statementCount ?? 0;
+            const name = a.displayName || 'Sans nom';
             return (
             <div
               key={a.id}
-              className={`${styles.row} ${isEditing ? styles.rowEditing : styles.rowClickable}`}
+              className={`card ${styles.row} ${isEditing ? styles.rowEditing : styles.rowClickable}`}
               onClick={() => handleRowClick(a)}
               onKeyDown={(e) => handleRowKeyDown(e, a)}
               role={isEditing ? undefined : 'button'}
               tabIndex={isEditing ? undefined : 0}
-              aria-label={isEditing ? undefined : `Ouvrir ${a.displayName || 'Sans nom'}`}
+              aria-label={isEditing ? undefined : `Ouvrir ${name}`}
             >
-              <div className={styles.nameCol}>
+              <div className={styles.cardHead}>
+                <span className={styles.avatar} aria-hidden>{initials(name)}</span>
+                <div className={styles.nameCol}>
                 {isEditing ? (
                   <div className={styles.renameRow} onClick={stopRowClick} onKeyDown={stopRowClick}>
                     <input
@@ -231,23 +243,26 @@ export default function AccountsHome() {
                     </button>
                   </div>
                 ) : (
-                  <span className={styles.accountName}>{a.displayName || 'Sans nom'}</span>
+                  <span className={styles.accountName} title={name}>{name}</span>
                 )}
+                </div>
               </div>
-              <div className={styles.idCol}>{formatAccountLinkLabel(a.ibkrAccountId)}</div>
-              <div className={styles.dataCol}>
-                {(a.statementCount ?? 0) > 0
-                  ? `${a.statementCount} CSV`
-                  : <span className={styles.noData}>Vide</span>}
-                {!isEditing && <span className={styles.openHint} aria-hidden>→</span>}
+              <div className={styles.chips}>
+                <span className={styles.chip}>{formatAccountLinkLabel(a.ibkrAccountId)}</span>
+                {count > 0
+                  ? <span className={`${styles.chip} ${styles.chipOk}`}>{count} CSV</span>
+                  : <span className={`${styles.chip} ${styles.chipWarn}`}>Aucun relevé</span>}
+                <span className={styles.chipMuted}>Créé le {new Date(a.created_at).toLocaleDateString('fr-CA', { dateStyle: 'medium' })}</span>
               </div>
-              <div className={styles.actionsCol} onClick={stopRowClick} onKeyDown={stopRowClick}>
-                {editingId !== a.id && (
-                  <button
-                    type="button"
-                    className={`btn btn-secondary btn-sm ${styles.renameBtn}`}
-                    onClick={() => startEdit(a)}
-                  >
+              <div className={styles.cardFoot} onClick={stopRowClick} onKeyDown={stopRowClick}>
+                {!isEditing && (
+                  <button type="button" className="btn btn-primary btn-sm" onClick={() => openAccount(a.id)}>
+                    {count > 0 ? 'Voir la performance →' : 'Importer un CSV →'}
+                  </button>
+                )}
+                <span className={styles.footSpacer} />
+                {!isEditing && (
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => startEdit(a)}>
                     Renommer
                   </button>
                 )}

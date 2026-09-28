@@ -1,0 +1,23 @@
+{
+  "options": {"start_with": "all", "first_rebalance_strategy": "rebalancing_date", "start_date": "2005-01-01", "end_date": "2024-12-31"},
+  "portfolios": [
+    {
+      "name": "SPY MA cross",
+      "stocks": [
+        {"ticker": "SPY", "allocation": 1.0, "include_dividends": true}
+      ],
+      "benchmark_ticker": "^GSPC",
+      "initial_value": 10000,
+      "added_amount": 0,
+      "added_frequency": "Never",
+      "rebalancing_frequency": "Monthly",
+      "use_momentum": false,
+      "use_sma_filter": true,
+      "sma_window": 200,
+      "ma_type": "SMA",
+      "ma_cross_rebalance": true,
+      "ma_tolerance_percent": 2.0,
+      "ma_confirmation_days": 3
+    }
+  ]
+}

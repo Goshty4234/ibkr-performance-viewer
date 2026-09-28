@@ -43,6 +43,8 @@ interface Props {
   noDataInRange?: boolean;
   subtitle?: string;
   stacked?: boolean;
+  hint?: string;
+  title?: string;
 }
 
 function TooltipContent({
@@ -104,6 +106,8 @@ export default function PerformanceChart({
   noDataInRange,
   subtitle,
   stacked,
+  hint,
+  title,
 }: Props) {
   const [mounted, setMounted] = useState(false);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -246,15 +250,14 @@ export default function PerformanceChart({
 
   return (
     <div className={`${styles.card} ${stacked ? styles.stackTop : ''}`}>
-      <div className={styles.title}>Performance relative (0% au début de la plage)</div>
+      <div className={styles.title}>{title ?? 'Performance relative (0% au début de la plage)'}</div>
       <div className={styles.sub}>
         {subtitle ?? 'TWRR chaîné · Forme journalière dérivée du CSV (trades, dividendes, frais)'}
       </div>
 
       {showChart && (
         <p className={styles.dragHint}>
-          Cliquez-glissez pour mesurer une sous-période · simple clic pour effacer · Échap pour effacer.
-          Traits gris pointillés = trou entre imports CSV.
+          {hint ?? 'Cliquez-glissez pour mesurer une sous-période · simple clic pour effacer · Échap pour effacer. Traits gris pointillés = trou entre imports CSV.'}
         </p>
       )}
 

@@ -1,0 +1,46 @@
+{
+  "options": {"start_with": "all", "first_rebalance_strategy": "rebalancing_date", "start_date": "2012-01-01", "end_date": "2024-12-31"},
+  "portfolios": [
+    {
+      "name": "Equities",
+      "stocks": [
+        {"ticker": "SPY", "allocation": 0.5, "include_dividends": true},
+        {"ticker": "QQQ", "allocation": 0.5, "include_dividends": true}
+      ],
+      "benchmark_ticker": "^GSPC",
+      "initial_value": 10000,
+      "added_amount": 0,
+      "added_frequency": "Never",
+      "rebalancing_frequency": "Monthly",
+      "use_momentum": false
+    },
+    {
+      "name": "Defensive",
+      "stocks": [
+        {"ticker": "GLD", "allocation": 0.5, "include_dividends": true},
+        {"ticker": "IEF", "allocation": 0.5, "include_dividends": true}
+      ],
+      "benchmark_ticker": "^GSPC",
+      "initial_value": 10000,
+      "added_amount": 0,
+      "added_frequency": "Never",
+      "rebalancing_frequency": "Monthly",
+      "use_momentum": false
+    },
+    {
+      "name": "Fusion 70/30",
+      "stocks": [],
+      "benchmark_ticker": "^GSPC",
+      "initial_value": 10000,
+      "added_amount": 0,
+      "added_frequency": "Never",
+      "rebalancing_frequency": "Quarterly",
+      "use_momentum": false,
+      "fusion_portfolio": {
+        "enabled": true,
+        "selected_portfolios": ["Equities", "Defensive"],
+        "allocations": {"Equities": 0.7, "Defensive": 0.3}
+      }
+    }
+  ]
+}

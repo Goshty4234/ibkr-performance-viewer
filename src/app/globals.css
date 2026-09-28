@@ -61,10 +61,14 @@ button, input, select, textarea {
   font-size: 0.9375rem;
 }
 
+input:not([type]),
 input[type="date"],
 input[type="email"],
+input[type="number"],
 input[type="password"],
+input[type="search"],
 input[type="text"],
+input[type="url"],
 select,
 textarea {
   width: 100%;
@@ -213,4 +217,19 @@ select {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   border: 0;
+}
+
+/* Allocations PDF: print only that page, dark theme kept. */
+@media print {
+  body.print-allocations * { visibility: hidden; }
+  body.print-allocations .alloc-print-root,
+  body.print-allocations .alloc-print-root * { visibility: visible; }
+  body.print-allocations .alloc-print-root {
+    position: absolute;
+    inset: 0 0 auto 0;
+    padding: 0.5rem;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  body.print-allocations .alloc-print-root button { display: none !important; }
 }

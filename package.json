@@ -11,13 +11,16 @@
   "dependencies": {
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.49.1",
+    "@tanstack/react-virtual": "^3.14.13",
     "date-fns": "^4.1.0",
+    "echarts": "^6.1.0",
     "next": "^15.2.4",
     "pg": "^8.14.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-is": "^19.0.0",
-    "recharts": "^2.15.1"
+    "recharts": "^2.15.1",
+    "zustand": "^5.0.15"
   },
   "overrides": {
     "react-is": "$react-is",

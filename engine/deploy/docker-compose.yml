@@ -1,0 +1,40 @@
+# Cloud engine + automatic HTTPS (Let's Encrypt via Caddy).
+# Works on any Linux host with Docker: Oracle Always Free, Hetzner, a home server, etc.
+#
+#   cp .env.example .env   # then edit it
+#   docker compose up -d --build
+services:
+  engine:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ENGINE_MODE: cloud
+    volumes:
+      - engine-cache:/app/.streamlit
+      - engine-jobs:/app/.jobs
+    expose:
+      - "8765"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - engine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      ENGINE_DOMAIN: ${ENGINE_DOMAIN:?set ENGINE_DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  engine-cache:
+  engine-jobs:
+  caddy-data:
+  caddy-config:

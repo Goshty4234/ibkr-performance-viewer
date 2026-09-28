@@ -1,0 +1,19 @@
+{
+  "options": {"start_with": "all", "first_rebalance_strategy": "rebalancing_date", "start_date": "1990-01-01", "end_date": "2024-12-31"},
+  "portfolios": [
+    {
+      "name": "SPYSIM GOLDSIM TLTTR",
+      "stocks": [
+        {"ticker": "SPYSIM", "allocation": 0.5, "include_dividends": true},
+        {"ticker": "GOLDSIM", "allocation": 0.25, "include_dividends": true},
+        {"ticker": "TLTTR", "allocation": 0.25, "include_dividends": true}
+      ],
+      "benchmark_ticker": "^GSPC",
+      "initial_value": 10000,
+      "added_amount": 200,
+      "added_frequency": "Monthly",
+      "rebalancing_frequency": "Annually",
+      "use_momentum": false
+    }
+  ]
+}

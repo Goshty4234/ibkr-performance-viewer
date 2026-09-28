@@ -1,0 +1,44 @@
+{
+  "options": {"start_with": "all", "first_rebalance_strategy": "rebalancing_date", "start_date": "2008-01-01", "end_date": "2024-12-31"},
+  "portfolios": [
+    {
+      "name": "Momentum + SMA200",
+      "stocks": [
+        {"ticker": "SPY", "allocation": 0.34, "include_dividends": true},
+        {"ticker": "EFA", "allocation": 0.33, "include_dividends": true},
+        {"ticker": "GLD", "allocation": 0.33, "include_dividends": true}
+      ],
+      "benchmark_ticker": "^GSPC",
+      "initial_value": 10000,
+      "added_amount": 1000,
+      "added_frequency": "Quarterly",
+      "rebalancing_frequency": "Monthly",
+      "use_momentum": true,
+      "momentum_strategy": "Classic",
+      "negative_momentum_strategy": "Cash",
+      "momentum_windows": [{"lookback": 200, "exclude": 20, "weight": 1.0}],
+      "use_sma_filter": true,
+      "sma_window": 200,
+      "ma_type": "SMA",
+      "calc_volatility": false
+    },
+    {
+      "name": "EMA filter global ref",
+      "stocks": [
+        {"ticker": "QQQ", "allocation": 0.7, "include_dividends": true},
+        {"ticker": "IEF", "allocation": 0.3, "include_dividends": true, "include_in_sma_filter": false}
+      ],
+      "benchmark_ticker": "^GSPC",
+      "initial_value": 10000,
+      "added_amount": 0,
+      "added_frequency": "Never",
+      "rebalancing_frequency": "Weekly",
+      "use_momentum": false,
+      "use_sma_filter": true,
+      "sma_window": 150,
+      "ma_type": "EMA",
+      "use_global_ma_reference": true,
+      "global_ma_reference_ticker": "SPY"
+    }
+  ]
+}

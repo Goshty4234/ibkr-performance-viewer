@@ -1,0 +1,10 @@
+{$ENGINE_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy engine:8765 {
+		# Backtest results can take a while to stream on slow links.
+		transport http {
+			read_timeout 10m
+			write_timeout 10m
+		}
+	}
+}

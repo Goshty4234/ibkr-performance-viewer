@@ -1,0 +1,59 @@
+{
+  "options": {"start_with": "all", "first_rebalance_strategy": "rebalancing_date", "start_date": "2010-01-01", "end_date": "2024-12-31"},
+  "portfolios": [
+    {
+      "name": "Momentum Classic",
+      "stocks": [
+        {"ticker": "SPY", "allocation": 0.25, "include_dividends": true},
+        {"ticker": "QQQ", "allocation": 0.25, "include_dividends": true},
+        {"ticker": "GLD", "allocation": 0.25, "include_dividends": true},
+        {"ticker": "TLT", "allocation": 0.25, "include_dividends": true}
+      ],
+      "benchmark_ticker": "^GSPC",
+      "initial_value": 10000,
+      "added_amount": 500,
+      "added_frequency": "Monthly",
+      "rebalancing_frequency": "Monthly",
+      "use_momentum": true,
+      "momentum_strategy": "Classic",
+      "negative_momentum_strategy": "Cash",
+      "momentum_windows": [
+        {"lookback": 365, "exclude": 30, "weight": 0.5},
+        {"lookback": 180, "exclude": 30, "weight": 0.3},
+        {"lookback": 120, "exclude": 30, "weight": 0.2}
+      ],
+      "calc_beta": false,
+      "calc_volatility": false
+    },
+    {
+      "name": "Momentum Relative BetaVol",
+      "stocks": [
+        {"ticker": "SPY", "allocation": 0.2, "include_dividends": true},
+        {"ticker": "QQQ", "allocation": 0.2, "include_dividends": true},
+        {"ticker": "GLD", "allocation": 0.2, "include_dividends": true},
+        {"ticker": "TLT", "allocation": 0.2, "include_dividends": true},
+        {"ticker": "IEF", "allocation": 0.2, "include_dividends": true}
+      ],
+      "benchmark_ticker": "SPY",
+      "initial_value": 10000,
+      "added_amount": 0,
+      "added_frequency": "Never",
+      "rebalancing_frequency": "Monthly",
+      "use_momentum": true,
+      "momentum_strategy": "Relative Momentum",
+      "negative_momentum_strategy": "Equal weight",
+      "momentum_windows": [
+        {"lookback": 252, "exclude": 21, "weight": 60},
+        {"lookback": 126, "exclude": 21, "weight": 40}
+      ],
+      "calc_beta": true,
+      "beta_window_days": 365,
+      "exclude_days_beta": 30,
+      "calc_volatility": true,
+      "vol_window_days": 365,
+      "exclude_days_vol": 30,
+      "use_max_allocation": true,
+      "max_allocation_percent": 40.0
+    }
+  ]
+}

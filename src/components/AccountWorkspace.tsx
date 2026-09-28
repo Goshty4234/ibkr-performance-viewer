@@ -633,13 +633,13 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
   async function handleDeleteAccount() {
     if (!confirm(`Supprimer le compte « ${account.displayName} » et toutes ses données ?`)) return;
     const res = await fetch(`/api/accounts?id=${account.id}`, { method: 'DELETE' });
-    if (res.ok) router.push('/');
+    if (res.ok) router.push('/ibkr');
   }
 
   return (
     <div className={styles.page}>
       <nav className={styles.breadcrumb}>
-        <Link href="/">← Tableau de bord</Link>
+        <Link href="/ibkr">← Comptes IBKR</Link>
       </nav>
 
       <header className={styles.accountHeader}>

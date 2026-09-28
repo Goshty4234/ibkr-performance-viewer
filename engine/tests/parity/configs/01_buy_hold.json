@@ -1,0 +1,30 @@
+{
+  "options": {"start_with": "all", "first_rebalance_strategy": "rebalancing_date"},
+  "portfolios": [
+    {
+      "name": "60/40 SPY TLT",
+      "stocks": [
+        {"ticker": "SPY", "allocation": 0.6, "include_dividends": true},
+        {"ticker": "TLT", "allocation": 0.4, "include_dividends": true}
+      ],
+      "benchmark_ticker": "^GSPC",
+      "initial_value": 10000,
+      "added_amount": 1000,
+      "added_frequency": "Monthly",
+      "rebalancing_frequency": "Quarterly",
+      "use_momentum": false
+    },
+    {
+      "name": "QQQ no divs",
+      "stocks": [
+        {"ticker": "QQQ", "allocation": 1.0, "include_dividends": false}
+      ],
+      "benchmark_ticker": "SPY",
+      "initial_value": 50000,
+      "added_amount": 0,
+      "added_frequency": "Never",
+      "rebalancing_frequency": "Never",
+      "use_momentum": false
+    }
+  ]
+}

@@ -16,3 +16,10 @@
 @media (min-width: 768px) {
   .main { padding: 2rem 2rem 4rem; }
 }
+
+/* Data-dense pages (backtester, allocations) opt into the full viewport width. */
+.main:has([data-wide]) { max-width: 2400px; }
+
+@media (min-width: 1600px) {
+  .main:has([data-wide]) { padding-left: 2.5rem; padding-right: 2.5rem; }
+}

@@ -48,8 +48,22 @@ export async function GET(request: NextRequest) {
             AND column_name = 'twr_daily'
         ) AS has_twr_daily,
         to_regclass('public.twr_series') AS twr_series_tbl,
-        to_regclass('public.nav_series') AS nav_series_tbl`,
+        to_regclass('public.nav_series') AS nav_series_tbl,
+        to_regclass('public.backtest_runs') AS backtest_runs_tbl,
+        to_regclass('public.backtest_portfolios') AS backtest_portfolios_tbl,
+        EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'user_settings'
+            AND column_name = 'engine_cloud_url'
+        ) AS has_engine_settings,
+        EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'backtest-results') AS has_results_bucket`,
     );
+    const hasBacktester =
+      Boolean(check.rows[0]?.backtest_runs_tbl) &&
+      Boolean(check.rows[0]?.backtest_portfolios_tbl) &&
+      Boolean(check.rows[0]?.has_engine_settings) &&
+      Boolean(check.rows[0]?.has_results_bucket);
     const hasAccounts = Boolean(check.rows[0]?.accounts_tbl);
     const hasStatements = Boolean(check.rows[0]?.statements_tbl);
     const hasDailyEvents = Boolean(check.rows[0]?.has_daily_events);
@@ -63,7 +77,7 @@ export async function GET(request: NextRequest) {
       'utf8',
     );
 
-    if (!hasAccounts || !hasStatements || !hasDailyEvents || !hasPortfolioAccountId || !hasNavSeries || !hasTwrDaily || !hasTwrSeries) {
+    if (!hasAccounts || !hasStatements || !hasDailyEvents || !hasPortfolioAccountId || !hasNavSeries || !hasTwrDaily || !hasTwrSeries || !hasBacktester) {
       await client.query(sql);
       return NextResponse.json({
         ok: true,
@@ -79,7 +93,9 @@ export async function GET(request: NextRequest) {
                   ? 'Migration nav_series appliquée ✓'
                   : !hasTwrDaily
                     ? 'Migration twr_daily appliquée ✓'
-                    : 'Migration twr_series appliquée ✓',
+                    : !hasTwrSeries
+                      ? 'Migration twr_series appliquée ✓'
+                      : 'Migration backtester appliquée ✓',
       });
     }
 

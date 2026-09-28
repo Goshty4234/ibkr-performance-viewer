@@ -4,11 +4,24 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import EngineStatus from './backtest/EngineStatus';
 import styles from './Header.module.css';
 
 interface Props {
   email?: string | null;
 }
+
+const NO_ACCOUNT = '00000000-0000-0000-0000-000000000000';
+const WARM_ROUTES = [
+  '/',
+  '/ibkr',
+  '/settings',
+  `/ibkr/compte/${NO_ACCOUNT}`,
+  '/api/accounts',
+  `/api/statements?portfolioAccountId=${NO_ACCOUNT}`,
+  `/api/nav-series?portfolioAccountId=${NO_ACCOUNT}`,
+  `/api/twr-series?portfolioAccountId=${NO_ACCOUNT}`,
+];
 
 function initials(email?: string | null): string {
   if (!email) return '?';
@@ -31,35 +44,66 @@ export default function Header({ email }: Props) {
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
 
+  // Dev only: next dev compiles a route on first visit; compile the sections in the background
+  // (with the session cookie) and keep them warm so switching sections is instant.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return;
+    let stopped = false;
+    const warm = async () => {
+      for (const route of WARM_ROUTES) {
+        if (stopped) return;
+        try {
+          await fetch(route, { headers: { RSC: '1' }, cache: 'no-store' });
+        } catch {
+          /* dev server restarting */
+        }
+      }
+    };
+    const first = setTimeout(warm, 2500);
+    const keepAlive = setInterval(warm, 10 * 60_000);
+    return () => {
+      stopped = true;
+      clearTimeout(first);
+      clearInterval(keepAlive);
+    };
+  }, []);
+
   async function handleSignOut() {
     await createClient().auth.signOut();
     router.push('/login');
     router.refresh();
   }
 
-  const isDashboard = pathname === '/' || pathname.startsWith('/compte');
+  const isBacktester = pathname === '/' || pathname.startsWith('/backtest');
+  const isIbkr = pathname.startsWith('/ibkr');
+  const isSettings = pathname === '/settings';
 
   return (
     <header className={styles.header}>
       <div className={styles.left}>
         <Link href="/" className={styles.brand}>
           <span className={styles.logo}>📈</span>
-          <span className={styles.brandText}>IBKR Performance</span>
+          <span className={styles.brandText}>Momentum Backtester</span>
         </Link>
-        <nav className={styles.nav} aria-label="Navigation principale">
-          <Link href="/" className={`${styles.navLink} ${isDashboard ? styles.navLinkActive : ''}`}>
-            Mes comptes IBKR
+        <nav className={styles.switcher} aria-label="Section">
+          <Link href="/" prefetch className={`${styles.switchItem} ${isBacktester ? styles.switchItemActive : ''}`}>
+            Backtester
           </Link>
-          <Link href="/settings" className={`${styles.navLink} ${pathname === '/settings' ? styles.navLinkActive : ''}`}>
+          <Link href="/ibkr" prefetch className={`${styles.switchItem} ${isIbkr ? styles.switchItemActive : ''}`}>
+            Comptes IBKR
+          </Link>
+        </nav>
+        <nav className={styles.nav} aria-label="Navigation principale">
+          <Link href="/settings" prefetch className={`${styles.navLink} ${isSettings ? styles.navLinkActive : ''}`}>
             Paramètres
           </Link>
         </nav>
       </div>
 
       <div className={styles.right}>
+        <EngineStatus />
         <nav className={styles.mobileNav} aria-label="Navigation mobile">
-          <Link href="/" className={`${styles.navLink} ${isDashboard ? styles.navLinkActive : ''}`}>📊</Link>
-          <Link href="/settings" className={`${styles.navLink} ${pathname === '/settings' ? styles.navLinkActive : ''}`}>⚙️</Link>
+          <Link href="/settings" className={`${styles.navLink} ${isSettings ? styles.navLinkActive : ''}`}>⚙️</Link>
         </nav>
 
         <div className={styles.menuWrap} ref={menuRef}>

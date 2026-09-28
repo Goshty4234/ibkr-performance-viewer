@@ -1,0 +1,50 @@
+name: Backtest
+
+# Plan B: run a long backtest on a GitHub runner (up to 6 h) without any server.
+# Input = a JSON exported from the site (or Streamlit "export all portfolios").
+on:
+  workflow_dispatch:
+    inputs:
+      request_path:
+        description: "Chemin du JSON dans le dépôt (export du site ou de Streamlit)"
+        required: true
+        default: "backtests/request.json"
+      label:
+        description: "Nom du résultat"
+        required: false
+        default: "backtest"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: engine/requirements.txt
+
+      - name: Install engine
+        run: pip install -r engine/requirements.txt
+
+      - name: Restore price cache
+        uses: actions/cache@v4
+        with:
+          path: engine/.streamlit
+          key: prices-${{ github.run_id }}
+          restore-keys: prices-
+
+      - name: Run backtest
+        working-directory: engine
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python -m backtest_engine run "../${{ inputs.request_path }}" -o ../result.json.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backtest-result-${{ inputs.label }}
+          path: result.json.gz
+          retention-days: 30

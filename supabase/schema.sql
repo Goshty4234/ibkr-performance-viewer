@@ -200,3 +200,105 @@ create unique index if not exists twr_series_portfolio_idx
 create index if not exists twr_series_user_id_idx on public.twr_series(user_id);
 
 alter table public.accounts add column if not exists analysis_start_lock date;
+
+-- ---------------------------------------------------------------------------
+-- Backtester
+-- ---------------------------------------------------------------------------
+
+-- Engine selection (auto = this PC when the local engine answers, else cloud)
+alter table public.user_settings add column if not exists engine_preference text not null default 'auto';
+alter table public.user_settings add column if not exists engine_cloud_url text not null default '';
+
+-- Saved portfolio configurations (Streamlit JSON format, one portfolio per row)
+create table if not exists public.backtest_portfolios (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  folder text not null default '',
+  config jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Run history; results live in Storage: backtest-results/<user_id>/<run_id>/summary.json.gz
+-- + portfolio/<index>.json.gz (older runs: a single <run_id>.json.gz file)
+create table if not exists public.backtest_runs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  label text not null default '',
+  request jsonb not null,
+  engine text not null default 'local',
+  engine_version text not null default '',
+  duration_s double precision,
+  simulation_start date,
+  simulation_end date,
+  summary jsonb not null default '[]'::jsonb,
+  warnings jsonb not null default '[]'::jsonb,
+  result_path text,
+  result_size bigint,
+  pinned boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+alter table public.backtest_portfolios enable row level security;
+alter table public.backtest_runs enable row level security;
+
+drop policy if exists "Users can view own backtest_portfolios" on public.backtest_portfolios;
+create policy "Users can view own backtest_portfolios"
+  on public.backtest_portfolios for select using (auth.uid() = user_id);
+
+drop policy if exists "Users can insert own backtest_portfolios" on public.backtest_portfolios;
+create policy "Users can insert own backtest_portfolios"
+  on public.backtest_portfolios for insert with check (auth.uid() = user_id);
+
+drop policy if exists "Users can update own backtest_portfolios" on public.backtest_portfolios;
+create policy "Users can update own backtest_portfolios"
+  on public.backtest_portfolios for update using (auth.uid() = user_id);
+
+drop policy if exists "Users can delete own backtest_portfolios" on public.backtest_portfolios;
+create policy "Users can delete own backtest_portfolios"
+  on public.backtest_portfolios for delete using (auth.uid() = user_id);
+
+drop policy if exists "Users can view own backtest_runs" on public.backtest_runs;
+create policy "Users can view own backtest_runs"
+  on public.backtest_runs for select using (auth.uid() = user_id);
+
+drop policy if exists "Users can insert own backtest_runs" on public.backtest_runs;
+create policy "Users can insert own backtest_runs"
+  on public.backtest_runs for insert with check (auth.uid() = user_id);
+
+drop policy if exists "Users can update own backtest_runs" on public.backtest_runs;
+create policy "Users can update own backtest_runs"
+  on public.backtest_runs for update using (auth.uid() = user_id);
+
+drop policy if exists "Users can delete own backtest_runs" on public.backtest_runs;
+create policy "Users can delete own backtest_runs"
+  on public.backtest_runs for delete using (auth.uid() = user_id);
+
+create index if not exists backtest_portfolios_user_idx on public.backtest_portfolios(user_id, updated_at desc);
+create index if not exists backtest_runs_user_idx on public.backtest_runs(user_id, created_at desc);
+
+-- Private bucket for result payloads (gzip JSON), one folder per user
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('backtest-results', 'backtest-results', false, 104857600)
+on conflict (id) do nothing;
+
+drop policy if exists "Users can read own backtest results" on storage.objects;
+create policy "Users can read own backtest results"
+  on storage.objects for select
+  using (bucket_id = 'backtest-results' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "Users can upload own backtest results" on storage.objects;
+create policy "Users can upload own backtest results"
+  on storage.objects for insert
+  with check (bucket_id = 'backtest-results' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "Users can update own backtest results" on storage.objects;
+create policy "Users can update own backtest results"
+  on storage.objects for update
+  using (bucket_id = 'backtest-results' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "Users can delete own backtest results" on storage.objects;
+create policy "Users can delete own backtest results"
+  on storage.objects for delete
+  using (bucket_id = 'backtest-results' and (storage.foldername(name))[1] = auth.uid()::text);

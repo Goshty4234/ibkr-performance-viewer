@@ -15,9 +15,9 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'IBKR Performance Viewer',
-  description: 'Suivez la performance TWRR de vos comptes Interactive Brokers',
-  applicationName: 'IBKR Performance',
+  title: 'Momentum Backtester',
+  description: 'Backtests multi-portfolios (momentum, filtres MA, fusion) et suivi de performance des comptes Interactive Brokers',
+  applicationName: 'Momentum Backtester',
   icons: {
     icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
     apple: [{ url: '/apple-icon.svg', type: 'image/svg+xml' }],

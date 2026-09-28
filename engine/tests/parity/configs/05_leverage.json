@@ -1,0 +1,18 @@
+{
+  "options": {"start_with": "all", "first_rebalance_strategy": "rebalancing_date", "start_date": "2000-01-01", "end_date": "2024-12-31"},
+  "portfolios": [
+    {
+      "name": "HFEA-like",
+      "stocks": [
+        {"ticker": "SPY?L=3", "allocation": 0.55, "include_dividends": true},
+        {"ticker": "TLT?L=3", "allocation": 0.45, "include_dividends": true}
+      ],
+      "benchmark_ticker": "^GSPC",
+      "initial_value": 10000,
+      "added_amount": 0,
+      "added_frequency": "Never",
+      "rebalancing_frequency": "Quarterly",
+      "use_momentum": false
+    }
+  ]
+}
