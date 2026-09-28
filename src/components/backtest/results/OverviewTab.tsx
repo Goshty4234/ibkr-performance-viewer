@@ -144,7 +144,7 @@ export default function OverviewTab({
     <>
       <StatsTable portfolios={portfolios} colors={colors} hidden={hidden} onToggle={onToggle} selected={selected} onSelect={onSelect} />
       {charts ? (
-        <>
+        <div className={styles.chartStack}>
           <PerformanceChart
             series={charts.defs}
             data={charts.pctData}
@@ -159,22 +159,20 @@ export default function OverviewTab({
             subtitle="Série « no_additions » du moteur · base 0 % au début · benchmarks en pointillés"
             hint="Cliquez-glissez pour mesurer une sous-période · simple clic ou Échap pour effacer."
           />
-        </>
+          <DrawdownChart series={charts.defs} data={charts.pctData} hidden={hidden} loading={false} show stacked />
+        </div>
       ) : (
         <div className={`card ${styles.loadingCard}`}>{pct.error ?? 'Préparation des graphiques…'}</div>
       )}
-      <div className={styles.wideGrid}>
-        {charts && <DrawdownChart series={charts.defs} data={charts.pctData} hidden={hidden} loading={false} show stacked />}
-        {withAdd.data && (
-          <ValueChart
-            data={withAdd.data.charts.valueData}
-            series={withAdd.data.charts.defs}
-            hidden={hidden}
-            title={hasAdditions ? 'Valeur du portefeuille (avec ajouts)' : 'Valeur du portefeuille'}
-            subtitle={hasAdditions ? 'Série « with_additions » : capital initial + versements périodiques' : 'Capital initial, sans versements'}
-          />
-        )}
-      </div>
+      {withAdd.data && (
+        <ValueChart
+          data={withAdd.data.charts.valueData}
+          series={withAdd.data.charts.defs}
+          hidden={hidden}
+          title={hasAdditions ? 'Valeur du portefeuille (avec ajouts)' : 'Valeur du portefeuille'}
+          subtitle={hasAdditions ? 'Série « with_additions » : capital initial + versements périodiques' : 'Capital initial, sans versements'}
+        />
+      )}
       {overview.data && (
         <>
           <VariationChart data={overview.data.variation} hidden={hidden} />

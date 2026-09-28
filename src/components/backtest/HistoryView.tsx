@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { deleteRun, getRunRow, listRuns, loadRun, renameRun, setPinned, type BacktestRunRow } from '@/lib/backtest/history';
 import { normalizeImported } from '@/lib/backtest/portfolio';
 import { useBacktestStore } from '@/lib/backtest/store';
+import HistorySetup from './HistorySetup';
 import styles from './Results.module.css';
 import bt from './Backtester.module.css';
 
@@ -33,6 +34,26 @@ export default function HistoryView() {
   const [busy, setBusy] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const [editing, setEditing] = useState<{ id: string; label: string } | null>(null);
+  const [setups, setSetups] = useState<Record<string, NonNullable<BacktestRunRow['request']> | null>>({});
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+
+  const toggleSetup = (row: BacktestRunRow) => {
+    const open = !expanded.has(row.id);
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (open) next.add(row.id); else next.delete(row.id);
+      return next;
+    });
+    if (open && !(row.id in setups)) {
+      void act(row.id, async () => {
+        const full = await getRunRow(row.id).catch((e: unknown) => {
+          setSetups((s) => ({ ...s, [row.id]: null }));
+          throw e;
+        });
+        setSetups((s) => ({ ...s, [row.id]: full.request?.portfolios?.length ? full.request : null }));
+      });
+    }
+  };
 
   const refresh = useCallback(async () => {
     setError('');
@@ -142,8 +163,10 @@ export default function HistoryView() {
           {filtered.map((row) => {
             const ok = row.summary.filter((s) => s.ok);
             const isCurrent = row.id === currentRunId;
+            const isOpen = expanded.has(row.id);
+            const setup = setups[row.id];
             return (
-              <div key={row.id} className={`card ${styles.historyItem} ${isCurrent ? styles.historyCurrent : ''}`}>
+              <div key={row.id} className={`card ${styles.historyItem} ${isCurrent ? styles.historyCurrent : ''} ${isOpen ? styles.historyExpanded : ''}`}>
                 <div className={styles.historyHead}>
                   <div className={styles.historyTitleWrap}>
                     {row.pinned && <span title="Épinglé">📌</span>}
@@ -209,7 +232,19 @@ export default function HistoryView() {
                   <button type="button" className="btn btn-secondary btn-sm" disabled={busy === row.id} onClick={() => void restore(row)} title="Recharger ces portfolios dans le constructeur">
                     Restaurer la config
                   </button>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => toggleSetup(row)} aria-expanded={isOpen}>
+                    {isOpen ? '▾ Masquer le setup' : '▸ Voir le setup'}
+                  </button>
                 </div>
+                {isOpen && (
+                  setup === undefined ? (
+                    <div className={styles.historyMore}>Chargement du setup…</div>
+                  ) : setup === null ? (
+                    <div className={styles.historyMore}>Configuration non enregistrée pour ce run.</div>
+                  ) : (
+                    <HistorySetup portfolios={setup.portfolios} options={setup.options ?? {}} simulationEnd={row.simulation_end} />
+                  )
+                )}
               </div>
             );
           })}

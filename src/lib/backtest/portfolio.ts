@@ -327,16 +327,24 @@ export function normalizeWeights<T extends Record<string, number>>(allocations: 
 }
 
 /** Export compatible with the Streamlit "paste all portfolios" import. */
-export function exportJson(portfolios: EditablePortfolio[], options: RunOptions): string {
-  const list = portfolios.map((p) => ({
+function withGlobalOptions(p: EditablePortfolio, options: RunOptions): Record<string, unknown> {
+  return {
     ...toEngineConfig(p),
     start_with: options.start_with === 'oldest' ? 'first' : 'all',
     first_rebalance_strategy: options.first_rebalance_strategy,
     auto_adjust_momentum_start: options.auto_adjust_momentum_start,
     start_date_user: options.start_date,
     end_date_user: options.end_date,
-  }));
-  return JSON.stringify(list, null, 2);
+  };
+}
+
+export function exportJson(portfolios: EditablePortfolio[], options: RunOptions): string {
+  return JSON.stringify(portfolios.map((p) => withGlobalOptions(p, options)), null, 2);
+}
+
+/** Single-portfolio object, the format of Streamlit's per-portfolio JSON box. */
+export function exportPortfolioJson(p: EditablePortfolio, options: RunOptions): string {
+  return JSON.stringify(withGlobalOptions(p, options), null, 2);
 }
 
 export function totalAllocation(p: PortfolioConfig): number {

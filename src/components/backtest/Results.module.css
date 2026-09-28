@@ -283,7 +283,26 @@
 .historyTitleWrap { display: flex; align-items: center; gap: 0.4rem; min-width: 0; flex: 1; }
 .historyTitle { font-weight: 700; font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
 .historyActions { display: flex; gap: 0.35rem; align-items: center; flex-shrink: 0; }
-.historyFooter { display: flex; gap: 0.4rem; margin-top: auto; }
+.historyFooter { display: flex; gap: 0.4rem; margin-top: auto; flex-wrap: wrap; }
+.historyExpanded { grid-column: 1 / -1; }
+/* Performance + drawdown read as one card: same plot width, dates aligned. */
+.chartStack { display: flex; flex-direction: column; }
+.chartStack > :first-child { margin-top: 0; }
+.setupBox { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-sm); background: rgba(8, 11, 18, 0.45); font-size: 0.78rem; }
+.setupOptions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; padding: 0.5rem 0.7rem; font-size: 0.72rem; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+.setupFlash { margin-left: auto; color: var(--green); }
+.setupEndBtn { margin-left: auto; }
+.setupFlash + .setupEndBtn { margin-left: 0; }
+.setupRow { display: flex; align-items: center; gap: 0.75rem; padding: 0.45rem 0.7rem; border-top: 1px solid rgba(255, 255, 255, 0.04); }
+.setupRow:first-of-type { border-top: none; }
+.setupMain { display: grid; grid-template-columns: minmax(140px, 0.9fr) minmax(0, 1.6fr) minmax(0, 1.4fr); gap: 0.75rem; align-items: baseline; flex: 1; min-width: 0; }
+.setupName { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setupAssets { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.setupRules { color: var(--text-faint); font-size: 0.72rem; }
+.setupActions { display: flex; gap: 0.3rem; flex-shrink: 0; }
+@media (max-width: 900px) {
+  .setupMain { grid-template-columns: 1fr; gap: 0.15rem; }
+}
 .historyStats {
   display: flex;
   flex-direction: column;

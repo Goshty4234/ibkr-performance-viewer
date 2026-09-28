@@ -13,6 +13,10 @@ function fmtElapsed(ms: number): string {
   return `${s}s`;
 }
 
+function reusedText(n: number | undefined): string {
+  return n ? ` · ${n} déjà calculé${n > 1 ? 's' : ''} (réutilisé${n > 1 ? 's' : ''})` : '';
+}
+
 function statusText(run: RunState): string {
   const job = run.job;
   switch (run.phase) {
@@ -20,10 +24,10 @@ function statusText(run: RunState): string {
     case 'queued': return `En file d'attente${job?.queue_position ? ` (position ${job.queue_position})` : ''}…`;
     case 'running': {
       const tasks = job?.tasks_total ? ` · ${job.tasks_done ?? 0}/${job.tasks_total} tâches` : '';
-      return `${job?.message || 'Calcul en cours…'}${tasks}`;
+      return `${job?.message || 'Calcul en cours…'}${tasks}${reusedText(job?.tasks_reused)}`;
     }
     case 'fetching': return 'Réception des résultats…';
-    case 'done': return `Terminé en ${fmtElapsed((run.finishedAt ?? 0) - (run.startedAt ?? 0))}`;
+    case 'done': return `Terminé en ${fmtElapsed((run.finishedAt ?? 0) - (run.startedAt ?? 0))}${reusedText(job?.summary?.reused)}`;
     case 'cancelled': return 'Annulé';
     case 'error': return run.error ?? 'Erreur';
     default: return '';

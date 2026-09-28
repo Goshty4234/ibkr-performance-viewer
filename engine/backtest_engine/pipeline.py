@@ -16,6 +16,8 @@ a local process pool. Workers keep a small per-job cache of loaded frames.
 from __future__ import annotations
 
 import dataclasses
+import gzip
+import json
 import os
 import pickle
 import sys
@@ -28,11 +30,11 @@ from typing import Any, Callable
 
 import pandas as pd
 
-from . import analytics, engine_home
+from . import analytics, engine_home, result_cache
 from .context import RunContext
 from .results import Axis, build_summary, dump_gz, load_gz, portfolio_detail, portfolio_summary
-from .runner import (BacktestRun, PreparedRun, _reindex, assemble, install_session, isolate_frames, ma_seed, prepare,
-                     run_one, tickers_for)
+from .runner import (BacktestRun, PreparedRun, _reindex, assemble, install_session, isolate_frames, is_fusion, ma_seed,
+                     prepare, run_one, tickers_for)
 
 _DROP_COLUMNS = {"Open", "High", "Low", "Volume", "Adj Close", "Stock Splits", "Capital Gains"}
 _MAX_FRAMES = int(os.environ.get("ENGINE_WORKER_FRAMES", "800"))
@@ -151,6 +153,19 @@ class _JobEntry:
         self.raw: dict[str, Any] = {}
         self.reindexed: "OrderedDict[str, Any]" = OrderedDict()
         self._axis: Axis | None = None
+        self._digests: dict[str, str] = {}
+        self._session_digest: str | None = None
+
+    def digest(self, key: str) -> str:
+        d = self._digests.get(key)
+        if d is None:
+            d = self._digests[key] = result_cache.frame_digest(self._raw(key))
+        return d
+
+    def session_digest(self) -> str:
+        if self._session_digest is None:
+            self._session_digest = result_cache.object_digest(self.prep.session)
+        return self._session_digest
 
     @property
     def axis(self) -> Axis:
@@ -230,20 +245,69 @@ def task_prepare(job_dir: Path, portfolios: Any, options: Any, progress: Callabl
     }
 
 
+def _reuse_key(entry: _JobEntry, index: int, keys: list[str], seed: list) -> str | None:
+    prep = entry.prep
+    cfg = prep.configs[index]
+    group = [cfg]
+    if is_fusion(cfg):
+        group += [c for c in prep.configs if not is_fusion(c)]
+    sim = prep.simulation_index
+    return result_cache.task_key({
+        "configs": group,
+        "options": prep.options.to_dict(),
+        "axis": [str(sim[0]) if len(sim) else None, str(sim[-1]) if len(sim) else None, len(sim)],
+        "display_start": str(prep.display_start),
+        "ma_seed": seed,
+        "session": entry.session_digest(),
+        # The snapshot order comes from a set (varies per process); fresh runs already see either order.
+        "data": sorted([k, entry.digest(k)] for k in keys if k in entry.files),
+    })
+
+
+def _write_reused(job_dir: Path, index: int, rec: dict[str, Any]) -> int:
+    piece = rec["piece"]
+    detail_gz: bytes = rec["detail_gz"]
+    if rec.get("index") != index:
+        piece = dict(piece, index=index)
+        detail = json.loads(gzip.decompress(detail_gz))
+        detail["index"] = index
+        size = dump_gz(detail, job_dir / "portfolio" / f"{index}.json.gz")
+    else:
+        path = job_dir / "portfolio" / f"{index}.json.gz"
+        tmp = path.with_name(path.name + ".part")
+        tmp.write_bytes(detail_gz)
+        tmp.replace(path)
+        size = len(detail_gz)
+    _dump({"piece": piece, "messages": rec.get("messages", []), "detail_bytes": size}, job_dir / "pieces" / f"{index}.pkl")
+    return size
+
+
 def task_portfolio(job_dir: Path, index: int) -> dict[str, Any]:
     t0 = time.perf_counter()
     entry = CACHE.get(job_dir)
     prep = entry.prep
     cfg = prep.configs[index]
-    raw, reindexed = entry.frames(tickers_for(prep, index))
-    reindexed = isolate_frames(reindexed, ma_seed(prep, index))
+    keys = tickers_for(prep, index)
+    seed = ma_seed(prep, index)
+    key = _reuse_key(entry, index, keys, seed) if result_cache.ENABLED and not entry.keep_raw else None
+    if key:
+        rec = result_cache.load(key)
+        if rec is not None:
+            _write_reused(job_dir, index, rec)
+            return {"ok": bool(rec["piece"].get("ok")), "name": cfg["name"], "reused": True,
+                    "seconds": round(time.perf_counter() - t0, 3)}
+    raw, reindexed = entry.frames(keys)
+    reindexed = isolate_frames(reindexed, seed)
     install_session(prep, raw)
     outcome = run_one(prep, index, reindexed, raw)
     s_extra, d_extra = analytics.portfolio_extras(prep, cfg, outcome, raw, reindexed)
     piece = portfolio_summary(cfg, outcome, entry.axis, s_extra)
-    size = dump_gz(portfolio_detail(outcome, d_extra), job_dir / "portfolio" / f"{index}.json.gz")
-    _dump({"piece": piece, "messages": outcome.get("messages", []), "detail_bytes": size},
-          job_dir / "pieces" / f"{index}.pkl")
+    detail_path = job_dir / "portfolio" / f"{index}.json.gz"
+    size = dump_gz(portfolio_detail(outcome, d_extra), detail_path)
+    messages = outcome.get("messages", [])
+    _dump({"piece": piece, "messages": messages, "detail_bytes": size}, job_dir / "pieces" / f"{index}.pkl")
+    if key and outcome["success"]:
+        result_cache.save(key, {"index": index, "piece": piece, "messages": messages, "detail_gz": detail_path.read_bytes()})
     if entry.keep_raw:
         (job_dir / "raw").mkdir(exist_ok=True)
         _dump(outcome, job_dir / "raw" / f"{index}.pkl")

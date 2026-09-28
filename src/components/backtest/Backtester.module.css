@@ -271,7 +271,10 @@
 .listFoot > :nth-child(3) { grid-column: 1 / -1; }
 
 .pickBar { display: flex; flex-wrap: wrap; gap: 0.3rem; }
-.syncBar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; font-size: 0.72rem; color: var(--text-faint); }
+.syncBar { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.45rem 0.5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: rgba(255, 255, 255, 0.02); }
+.syncLabel { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint); }
+.syncButtons { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; }
+.syncButtons > button { width: 100%; justify-content: center; white-space: nowrap; }
 .notice { font-size: 0.76rem; color: var(--green); background: rgba(46, 204, 113, 0.08); border-radius: var(--radius-sm); padding: 0.35rem 0.55rem; }
 .warnBox { font-size: 0.78rem; color: var(--orange); background: rgba(255, 159, 67, 0.08); border: 1px solid rgba(255, 159, 67, 0.3); border-radius: var(--radius-sm); padding: 0.45rem 0.65rem; }
 .hint { font-size: 0.74rem; color: var(--text-faint); line-height: 1.45; }

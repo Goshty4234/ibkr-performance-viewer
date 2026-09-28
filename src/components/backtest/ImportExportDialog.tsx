@@ -1,11 +1,24 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { exportJson } from '@/lib/backtest/portfolio';
+import { exportJson, exportPortfolioJson } from '@/lib/backtest/portfolio';
 import { useBacktestStore } from '@/lib/backtest/store';
 import styles from './Backtester.module.css';
 
-export default function ImportExportDialog({ mode, onClose }: { mode: 'import' | 'export'; onClose: () => void }) {
+function fileSlug(name: string): string {
+  return name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'portfolio';
+}
+
+export default function ImportExportDialog({
+  mode,
+  portfolioId,
+  onClose,
+}: {
+  mode: 'import' | 'export';
+  /** Export only this portfolio (single JSON object) instead of the whole list. */
+  portfolioId?: string;
+  onClose: () => void;
+}) {
   const portfolios = useBacktestStore((s) => s.portfolios);
   const options = useBacktestStore((s) => s.options);
   const importJson = useBacktestStore((s) => s.importJson);
@@ -14,7 +27,11 @@ export default function ImportExportDialog({ mode, onClose }: { mode: 'import' |
   const [copied, setCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const exported = useMemo(() => (mode === 'export' ? exportJson(portfolios, options) : ''), [mode, portfolios, options]);
+  const single = portfolioId ? portfolios.find((p) => p._id === portfolioId) ?? null : null;
+  const exported = useMemo(() => {
+    if (mode !== 'export') return '';
+    return single ? exportPortfolioJson(single, options) : exportJson(portfolios, options);
+  }, [mode, single, portfolios, options]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -38,18 +55,19 @@ export default function ImportExportDialog({ mode, onClose }: { mode: 'import' |
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `portfolios-${new Date().toISOString().slice(0, 10)}.json`;
+    const day = new Date().toISOString().slice(0, 10);
+    a.download = single ? `${fileSlug(single.name)}-${day}.json` : `portfolios-${day}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
+
+  const exportTitle = single ? `JSON de « ${single.name} »` : `Exporter ${portfolios.length} portfolios`;
 
   return (
     <div className={styles.overlay} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={styles.dialog} role="dialog" aria-modal="true">
         <div className={styles.dialogHead}>
-          <span className={styles.dialogTitle}>
-            {mode === 'import' ? 'Importer des portfolios' : `Exporter ${portfolios.length} portfolios`}
-          </span>
+          <span className={styles.dialogTitle}>{mode === 'import' ? 'Importer des portfolios' : exportTitle}</span>
           <button type="button" className={styles.iconBtn} onClick={onClose} aria-label="Fermer">✕</button>
         </div>
 
@@ -89,7 +107,11 @@ export default function ImportExportDialog({ mode, onClose }: { mode: 'import' |
           </>
         ) : (
           <>
-            <p className={styles.sectionSub}>Format compatible avec l&apos;import « paste all » de Streamlit.</p>
+            <p className={styles.sectionSub}>
+              {single
+                ? 'Format du JSON individuel de Streamlit (options globales incluses). Il se réimporte avec « Ajouter » ou « Mettre à jour le portfolio actif ».'
+                : 'Format compatible avec l’import « paste all » de Streamlit.'}
+            </p>
             <textarea value={exported} readOnly />
             <div className={styles.dialogActions}>
               <button type="button" className="btn btn-ghost" onClick={download}>Télécharger .json</button>

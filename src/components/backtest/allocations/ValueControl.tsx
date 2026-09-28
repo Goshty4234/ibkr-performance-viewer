@@ -1,25 +1,25 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { readMyValue, VALUES_EVENT, writeMyValue } from '@/lib/backtest/cloud-sync';
 import type { AllocationTable, FundamentalsReport } from '@/lib/engine/types';
 import { money } from '../results/format';
 import styles from './Allocations.module.css';
 
 const CURRENCIES = ['CAD', 'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CHF'] as const;
-const storageKey = (name: string) => `alloc-value:${name}`;
 
-/** Real portfolio value typed by the user (per portfolio name, kept in localStorage); null = backtest value. */
+/** Real portfolio value typed by the user (per portfolio name, synced to the account); null = backtest value. */
 export function useMyValue(name: string): [number | null, (v: number | null) => void] {
   const [value, setValue] = useState<number | null>(null);
   useEffect(() => {
-    const raw = typeof window === 'undefined' ? null : window.localStorage.getItem(storageKey(name));
-    const n = raw === null ? NaN : Number(raw);
-    setValue(Number.isFinite(n) && n > 0 ? n : null);
+    const read = () => setValue(readMyValue(name));
+    read();
+    window.addEventListener(VALUES_EVENT, read);
+    return () => window.removeEventListener(VALUES_EVENT, read);
   }, [name]);
   const update = useCallback((v: number | null) => {
     setValue(v);
-    if (v === null) window.localStorage.removeItem(storageKey(name));
-    else window.localStorage.setItem(storageKey(name), String(v));
+    writeMyValue(name, v);
   }, [name]);
   return [value, update];
 }
@@ -142,7 +142,7 @@ export default function ValueControl({ value, backtestValue, onChange }: { value
         <div className={styles.valueHint}>
           {value === null
             ? <>Actions calculées sur la valeur simulée du backtest ({money(backtestValue, 0)}). Saisis ta vraie valeur pour savoir combien d’actions détenir.</>
-            : <>Actions calculées sur ta valeur, dans la devise de cotation de chaque titre. Mémorisée pour ce portfolio sur cet appareil.</>}
+            : <>Actions calculées sur ta valeur, dans la devise de cotation de chaque titre. Mémorisée pour ce portfolio dans ton compte (tous tes appareils).</>}
         </div>
       </div>
       {showFx && <CurrencyConverter onUse={(v) => { onChange(v); setShowFx(false); }} />}

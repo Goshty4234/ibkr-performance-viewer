@@ -209,6 +209,12 @@ alter table public.accounts add column if not exists analysis_start_lock date;
 alter table public.user_settings add column if not exists engine_preference text not null default 'auto';
 alter table public.user_settings add column if not exists engine_cloud_url text not null default '';
 
+-- Builder draft (portfolios + global options) and real portfolio values typed in Allocations,
+-- synced across devices (last writer wins on the client timestamp).
+alter table public.user_settings add column if not exists backtest_workspace jsonb;
+alter table public.user_settings add column if not exists backtest_workspace_at timestamptz;
+alter table public.user_settings add column if not exists allocation_values jsonb;
+
 -- Saved portfolio configurations (Streamlit JSON format, one portfolio per row)
 create table if not exists public.backtest_portfolios (
   id uuid primary key default gen_random_uuid(),
@@ -302,3 +308,6 @@ drop policy if exists "Users can delete own backtest results" on storage.objects
 create policy "Users can delete own backtest results"
   on storage.objects for delete
   using (bucket_id = 'backtest-results' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- New columns are visible to the API right away
+notify pgrst, 'reload schema';

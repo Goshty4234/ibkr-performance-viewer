@@ -30,6 +30,7 @@ export interface JobSummary {
   simulation: SimulationInfo;
   size_bytes: number;
   summary_bytes?: number;
+  reused?: number;
 }
 
 export interface EngineJob {
@@ -49,6 +50,8 @@ export interface EngineJob {
   tasks_total?: number;
   tasks_done?: number;
   tasks_running?: number;
+  /** Portfolios whose identical inputs were already computed: output reused, no backtest. */
+  tasks_reused?: number;
 }
 
 /** Series on the run-wide `dates` axis (offset) or with explicit dates. */

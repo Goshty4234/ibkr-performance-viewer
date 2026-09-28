@@ -16,6 +16,7 @@ import { useBacktestStore } from '@/lib/backtest/store';
 import { DEFAULT_WINDOWS } from '@/lib/backtest/variants';
 import type { MomentumWindow, TargetedSetting } from '@/lib/engine/types';
 import { Check, NumField, NumInput, SelectField, TextField, Toggle } from './fields';
+import ImportExportDialog from './ImportExportDialog';
 import StocksTable from './StocksTable';
 import VariantGenerator from './VariantGenerator';
 import styles from './Backtester.module.css';
@@ -43,6 +44,7 @@ export default function PortfolioEditor() {
   const commitName = useBacktestStore((s) => s.commitName);
   const createFusion = useBacktestStore((s) => s.createFusion);
   const importJson = useBacktestStore((s) => s.importJson);
+  const [jsonOpen, setJsonOpen] = useState(false);
 
   if (!p) {
     return (
@@ -143,6 +145,7 @@ export default function PortfolioEditor() {
         <button type="button" className={styles.iconBtn} disabled={idx <= 0} onClick={() => move(p._id, -1)} title="Monter">↑</button>
         <button type="button" className={styles.iconBtn} disabled={idx >= portfolios.length - 1} onClick={() => move(p._id, 1)} title="Descendre">↓</button>
         <button type="button" className={styles.iconBtn} onClick={() => duplicate(p._id)} title="Dupliquer">⧉</button>
+        <button type="button" className={styles.iconBtn} onClick={() => setJsonOpen(true)} title="JSON de ce portfolio (copier / télécharger)">{'{}'}</button>
         <button
           type="button"
           className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
@@ -152,6 +155,7 @@ export default function PortfolioEditor() {
           ✕
         </button>
       </div>
+      {jsonOpen && <ImportExportDialog mode="export" portfolioId={p._id} onClose={() => setJsonOpen(false)} />}
 
       <div className={`${styles.editorCols} ${fusion ? styles.editorColsSingle : ''}`}>
       <div className={styles.editorCol}>

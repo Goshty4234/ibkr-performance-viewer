@@ -29,11 +29,13 @@ export default function StocksTable({ portfolio: p }: { portfolio: EditablePortf
   const [suggestHidden, setSuggestHidden] = useState(false);
 
   const showCap = p.use_momentum;
+  // With momentum the engine starts at 0 % and only uses momentum weights: typed allocations are never read.
+  const showAlloc = !p.use_momentum;
   const showMa = p.use_sma_filter;
   const showMaRef = Boolean(p.use_sma_filter) && !(p.use_global_ma_reference && String(p.global_ma_reference_ticker ?? '').trim());
   const columns = [
     'minmax(90px, 1.3fr)',
-    'minmax(90px, 1fr)',
+    ...(showAlloc ? ['minmax(90px, 1fr)'] : []),
     ...(showCap ? ['minmax(70px, 0.8fr)'] : []),
     ...(showMaRef ? ['minmax(80px, 1fr)'] : []),
     '70px',
@@ -103,17 +105,21 @@ export default function StocksTable({ portfolio: p }: { portfolio: EditablePortf
           Actifs <span className={styles.listCount}>{p.stocks.length}</span>
         </span>
         <div className={styles.allocBar}>
-          <span>
-            Total{' '}
-            <b className={allocOk ? styles.allocOk : styles.allocBad}>{(total * 100).toFixed(2)} %</b>
-            {p.use_momentum && <span> (ignoré : momentum actif)</span>}
-          </span>
-          <button type="button" className="btn btn-ghost btn-sm" disabled={!p.stocks.length || total <= 0} onClick={normalize} title="Ramène le total à 100 % en gardant les proportions">
-            Normaliser
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" disabled={!p.stocks.length} onClick={() => equalize(p._id)}>
-            Poids égaux
-          </button>
+          {showAlloc ? (
+            <>
+              <span>
+                Total <b className={allocOk ? styles.allocOk : styles.allocBad}>{(total * 100).toFixed(2)} %</b>
+              </span>
+              <button type="button" className="btn btn-ghost btn-sm" disabled={!p.stocks.length || total <= 0} onClick={normalize} title="Ramène le total à 100 % en gardant les proportions">
+                Normaliser
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" disabled={!p.stocks.length} onClick={() => equalize(p._id)}>
+                Poids égaux
+              </button>
+            </>
+          ) : (
+            <span>Poids décidés par le momentum</span>
+          )}
           <button
             type="button"
             className="btn btn-ghost btn-sm"
@@ -179,7 +185,7 @@ export default function StocksTable({ portfolio: p }: { portfolio: EditablePortf
         <div>
           <div className={styles.stocksHead} style={{ gridTemplateColumns: columns }}>
             <span>Ticker</span>
-            <span>Allocation</span>
+            {showAlloc && <span>Allocation</span>}
             {showCap && <span title="Plafond individuel appliqué par le momentum (0 = aucun)">Max Cap %</span>}
             {showMaRef && <span title="Ticker dont la moyenne mobile décide pour cet actif (vide = lui-même)">Réf. MA</span>}
             <span style={{ textAlign: 'center' }}>Dividendes</span>
@@ -208,15 +214,17 @@ export default function StocksTable({ portfolio: p }: { portfolio: EditablePortf
                         });
                       }}
                     />
-                    <NumInput
-                      value={s.allocation}
-                      scale={100}
-                      suffix="%"
-                      min={0}
-                      max={100}
-                      step={1}
-                      onChange={(x) => updateStock(p._id, v.index, { allocation: x })}
-                    />
+                    {showAlloc && (
+                      <NumInput
+                        value={s.allocation}
+                        scale={100}
+                        suffix="%"
+                        min={0}
+                        max={100}
+                        step={1}
+                        onChange={(x) => updateStock(p._id, v.index, { allocation: x })}
+                      />
+                    )}
                     {showCap && (
                       <NumInput
                         value={s.max_allocation_percent ?? 0}

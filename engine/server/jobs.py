@@ -65,6 +65,7 @@ class Job:
     total: int = 0
     done: int = 0
     failed: int = 0
+    reused: int = 0
 
     def next_task(self) -> tuple[str, int] | None:
         if self.status != "running":
@@ -98,6 +99,7 @@ class Job:
             "tasks_total": self.total,
             "tasks_done": self.done,
             "tasks_running": len(self.running),
+            "tasks_reused": self.reused,
         }
 
 
@@ -340,6 +342,8 @@ class JobManager:
         elif kind == "portfolio":
             job.running.discard(index)
             job.done += 1
+            if info.get("reused"):
+                job.reused += 1
             if not info.get("ok"):
                 job.failed += 1
             if job.done >= job.total and not job.pending and not job.running:
@@ -349,7 +353,7 @@ class JobManager:
             shutil.rmtree(job.dir / "data", ignore_errors=True)
             shutil.rmtree(job.dir / "pieces", ignore_errors=True)
             (job.dir / "meta.pkl").unlink(missing_ok=True)
-            self._finish(job, "done", message="Backtest complete", summary=info)
+            self._finish(job, "done", message="Backtest complete", summary=dict(info, reused=job.reused))
             return
         self._update_progress(job)
 

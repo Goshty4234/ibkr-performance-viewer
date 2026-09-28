@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { startCloudSync } from '@/lib/backtest/cloud-sync';
 import { useBacktestStore, type BacktestView } from '@/lib/backtest/store';
 import { useEngineStore } from '@/lib/engine/store';
 import AllocationsView from './allocations/AllocationsView';
@@ -50,6 +51,7 @@ export default function BacktesterApp() {
   useEffect(() => {
     initEngine();
     resumeRun();
+    startCloudSync();
   }, [initEngine, resumeRun]);
 
   return (
