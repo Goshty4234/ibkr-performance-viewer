@@ -265,7 +265,10 @@ def _reuse_key(entry: _JobEntry, index: int, keys: list[str], seed: list) -> str
     })
 
 
-_NOT_IDENTITY = ("end_date", "align_start")
+# The requested dates only act through the effective range (runner._simulation_range): the
+# start is covered by "start"/"display_start" below, the end is compared by the app.
+_NOT_IDENTITY = ("end_date", "align_start", "start_date")
+_NOT_IDENTITY_CFG = ("end_date_user", "start_date_user")
 
 
 def history_key(prep: PreparedRun, index: int) -> str | None:
@@ -284,7 +287,7 @@ def history_key(prep: PreparedRun, index: int) -> str | None:
     sim = prep.simulation_index
     return result_cache.task_key({
         "kind": "history",
-        "configs": [{k: v for k, v in c.items() if k != "end_date_user"} for c in group],
+        "configs": [{k: v for k, v in c.items() if k not in _NOT_IDENTITY_CFG} for c in group],
         "options": {k: v for k, v in prep.options.to_dict().items() if k not in _NOT_IDENTITY},
         "start": str(sim[0]) if len(sim) else None,
         "display_start": str(prep.display_start),

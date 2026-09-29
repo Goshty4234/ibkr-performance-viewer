@@ -32,17 +32,17 @@ async function sha256(text: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-const NOT_IDENTITY_OPTIONS = new Set(['end_date', 'align_start']);
+const NOT_IDENTITY_OPTIONS = new Set(['end_date', 'align_start', 'start_date']);
 
 /**
- * Per portfolio: its config (fusion members included) + the run options, the end date aside.
- * Cheap pre-filter computed without the engine; the engine's history_key then confirms
- * (it also covers the common start, which depends on the other portfolios of the run).
+ * Per portfolio: its config (fusion members included) + the run options, requested dates aside.
+ * Cheap pre-filter computed without the engine; the engine's history_key then confirms with the
+ * effective start (a requested start before the data begins changes nothing).
  */
 export async function configKeys(req: RunRequest): Promise<string[]> {
   const options = Object.fromEntries(Object.entries(req.options).filter(([k]) => !NOT_IDENTITY_OPTIONS.has(k)));
   const strip = (p: PortfolioConfig) => {
-    const { end_date_user: _end, ...rest } = p as PortfolioConfig & { end_date_user?: unknown };
+    const { end_date_user: _end, start_date_user: _start, ...rest } = p as PortfolioConfig & { end_date_user?: unknown; start_date_user?: unknown };
     return rest;
   };
   return Promise.all(req.portfolios.map((p) => {
