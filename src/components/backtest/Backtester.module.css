@@ -299,20 +299,49 @@
 .warnBox { font-size: 0.78rem; color: var(--orange); background: rgba(255, 159, 67, 0.08); border: 1px solid rgba(255, 159, 67, 0.3); border-radius: var(--radius-sm); padding: 0.45rem 0.65rem; }
 .hint { font-size: 0.74rem; color: var(--text-faint); line-height: 1.45; }
 
-.sectorDefs {
+.infoTip { position: relative; display: inline-flex; vertical-align: middle; }
+.infoBtn {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  font: italic 700 10px/1 Georgia, serif;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.infoBtn:hover, .infoBtnOn { color: var(--text); border-color: var(--accent, #4d8dff); background: rgba(77, 141, 255, 0.15); }
+.infoPop {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 6px);
+  left: -8px;
+  width: min(380px, 80vw);
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  padding: 0.6rem 0.75rem;
-  border-left: 2px solid var(--accent, #4d8dff);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  background: rgba(77, 141, 255, 0.05);
+  gap: 0.35rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: #121a29;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
   font-size: 0.76rem;
+  font-weight: 400;
+  font-style: normal;
   color: var(--text-muted);
   line-height: 1.45;
+  white-space: normal;
+  text-align: left;
 }
-.sectorDefs p { margin: 0; }
-.sectorDefs strong { color: var(--text); }
+/* .card's backdrop-filter makes each card its own stacking context: lift the one holding an open popover above its siblings. */
+:global(.card):has(.infoPop) { position: relative; z-index: 30; }
+.infoPop p { margin: 0; }
+.infoPop strong { color: var(--text); }
+.labelWithInfo { display: inline-flex; align-items: center; gap: 0.35rem; }
 .btnRow { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
 
 /* ---- collapsible sub-panels (ticker tools, variants) ------------------- */

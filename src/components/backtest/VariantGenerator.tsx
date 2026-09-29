@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   FREQUENCIES,
   FREQUENCY_LABELS,
@@ -19,6 +19,7 @@ import {
   type WindowConfig,
 } from '@/lib/backtest/variants';
 import type { MomentumWindow } from '@/lib/engine/types';
+import { TIPS } from './tips';
 import styles from './Backtester.module.css';
 
 const toggleIn = <T,>(list: T[], v: T, on: boolean): T[] => (on ? (list.includes(v) ? list : [...list, v]) : list.filter((x) => x !== v));
@@ -135,6 +136,23 @@ const NEG_OPTS = NEGATIVE_STRATEGIES.map((m) => ({
 }));
 const BOOL_OPTS = [{ value: true, label: 'Avec' }, { value: false, label: 'Sans' }] as const;
 
+/** "Same as the portfolio" reminder for the options Streamlit's generator did not cover. */
+function Inherit({ show, current }: { show: boolean; current: string }) {
+  if (!show) return null;
+  return <span className={styles.hint}>Aucune case = comme le portfolio ({current})</span>;
+}
+
+function Row({ label, tip, children }: { label: string; tip?: string; children: ReactNode }) {
+  return (
+    <div className={styles.axisRow}>
+      <span className={styles.axisLabel} title={tip}>{label}</span>
+      <div className={styles.axisBody}>{children}</div>
+    </div>
+  );
+}
+
+const onOff = (on: boolean, detail = '') => (on ? `activé${detail}` : 'désactivé');
+
 /** Streamlit "Generate Portfolio Variants": cartesian product of the chosen options, named like Streamlit. */
 export default function VariantGenerator({ p }: { p: EditablePortfolio }) {
   const portfolios = useBacktestStore((s) => s.portfolios);
@@ -167,14 +185,14 @@ export default function VariantGenerator({ p }: { p: EditablePortfolio }) {
         </summary>
         <div className={styles.detailsBody} style={{ padding: '0.75rem 0 0' }}>
           <div className={styles.axisRow}>
-            <span className={styles.axisLabel}>Rebalancement</span>
+            <span className={styles.axisLabel} title={TIPS.rebalancing}>Rebalancement</span>
             <div className={styles.axisBody}>
               <Checks options={FREQ_OPTS} value={spec.rebalance} onChange={(v) => patch({ rebalance: v })} />
             </div>
           </div>
 
           <div className={styles.axisRow}>
-            <span className={styles.axisLabel}>Momentum</span>
+            <span className={styles.axisLabel} title={TIPS.momentum}>Momentum</span>
             <div className={styles.axisBody}>
               <label className={styles.checkRow}>
                 <input type="checkbox" checked={spec.useMomentum} onChange={(e) => patch({ useMomentum: e.target.checked })} />
@@ -186,39 +204,39 @@ export default function VariantGenerator({ p }: { p: EditablePortfolio }) {
           {spec.useMomentum && (
             <>
               <div className={styles.axisRow}>
-                <span className={styles.axisLabel}>Stratégie</span>
+                <span className={styles.axisLabel} title={TIPS.strategy}>Stratégie</span>
                 <div className={styles.axisBody}><Checks options={MOM_OPTS} value={spec.momentumStrategies} onChange={(v) => patch({ momentumStrategies: v })} /></div>
               </div>
               <div className={styles.axisRow}>
-                <span className={styles.axisLabel}>Si tout est négatif</span>
+                <span className={styles.axisLabel} title={TIPS.negative}>Si tout est négatif</span>
                 <div className={styles.axisBody}><Checks options={NEG_OPTS} value={spec.negativeStrategies} onChange={(v) => patch({ negativeStrategies: v })} /></div>
               </div>
               <div className={styles.axisRow}>
-                <span className={styles.axisLabel}>Bêta</span>
+                <span className={styles.axisLabel} title={TIPS.betaWeighting}>Pondération ÷ bêta</span>
                 <div className={styles.axisBody}><Checks options={BOOL_OPTS} value={spec.beta} onChange={(v) => patch({ beta: v })} /></div>
               </div>
               <div className={styles.axisRow}>
-                <span className={styles.axisLabel}>Volatilité</span>
+                <span className={styles.axisLabel} title={TIPS.volWeighting}>Pondération ÷ volatilité</span>
                 <div className={styles.axisBody}><Checks options={BOOL_OPTS} value={spec.volatility} onChange={(v) => patch({ volatility: v })} /></div>
               </div>
               <div className={styles.axisRow}>
-                <span className={styles.axisLabel}>Seuil minimal</span>
+                <span className={styles.axisLabel} title={TIPS.minThreshold}>Seuil minimal</span>
                 <div className={styles.axisBody}><AxisValues axis={spec.threshold} unit="%" onChange={(a) => patch({ threshold: a })} /></div>
               </div>
               <div className={styles.axisRow}>
-                <span className={styles.axisLabel}>Allocation max</span>
+                <span className={styles.axisLabel} title={TIPS.maxAllocation}>Allocation max</span>
                 <div className={styles.axisBody}><AxisValues axis={spec.maxAllocation} unit="%" onChange={(a) => patch({ maxAllocation: a })} /></div>
               </div>
               <div className={styles.axisRow}>
-                <span className={styles.axisLabel}>Poids égaux (N)</span>
+                <span className={styles.axisLabel} title={TIPS.equalWeight}>Poids égaux (N)</span>
                 <div className={styles.axisBody}><AxisValues axis={spec.equalWeight} unit="tickers" onChange={(a) => patch({ equalWeight: a })} /></div>
               </div>
               <div className={styles.axisRow}>
-                <span className={styles.axisLabel}>Limiter aux N</span>
+                <span className={styles.axisLabel} title={TIPS.limitTopN}>Limiter aux N</span>
                 <div className={styles.axisBody}><AxisValues axis={spec.limitTopN} unit="tickers" onChange={(a) => patch({ limitTopN: a })} /></div>
               </div>
               <div className={styles.axisRow}>
-                <span className={styles.axisLabel}>Fenêtres momentum</span>
+                <span className={styles.axisLabel} title={`${TIPS.lookback} ${TIPS.exclude}`}>Fenêtres momentum</span>
                 <div className={styles.axisBody} style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                   <span className={styles.hint}>Format « lookback/exclusion/poids% » séparés par des virgules. Une ligne = une configuration testée.</span>
                   {spec.momentumConfigs.map((c, i) => (
@@ -264,18 +282,18 @@ export default function VariantGenerator({ p }: { p: EditablePortfolio }) {
                 </div>
               </div>
               <div className={styles.axisRow}>
-                <span className={styles.axisLabel}>Fenêtres bêta</span>
+                <span className={styles.axisLabel} title={TIPS.betaWindow}>Fenêtres bêta</span>
                 <div className={styles.axisBody}><WindowConfigs list={spec.betaConfigs} label="Bêta" onChange={(l) => patch({ betaConfigs: l })} /></div>
               </div>
               <div className={styles.axisRow}>
-                <span className={styles.axisLabel}>Fenêtres volatilité</span>
+                <span className={styles.axisLabel} title={TIPS.volWindow}>Fenêtres volatilité</span>
                 <div className={styles.axisBody}><WindowConfigs list={spec.volatilityConfigs} label="Volatilité" onChange={(l) => patch({ volatilityConfigs: l })} /></div>
               </div>
             </>
           )}
 
           <div className={styles.axisRow}>
-            <span className={styles.axisLabel}>Filtre MA</span>
+            <span className={styles.axisLabel} title={TIPS.ma}>Filtre MA</span>
             <div className={styles.axisBody}>
               <label className={styles.checkRow}>
                 <input type="checkbox" checked={spec.maDisabled} onChange={(e) => patch({ maDisabled: e.target.checked })} />
@@ -295,8 +313,15 @@ export default function VariantGenerator({ p }: { p: EditablePortfolio }) {
           </div>
 
           {anyMa && (
+            <Row label="Multiplicateur MA" tip={TIPS.maMultiplier}>
+              <LazyInput value={spec.maMultipliers.join(', ')} width={140} placeholder="ex. 1.48, 2" onCommit={(t) => patch({ maMultipliers: parseNums(t).filter((n) => n > 0) })} />
+              <span className={styles.hint}>une variante par valeur</span>
+            </Row>
+          )}
+
+          {anyMa && (
             <div className={styles.axisRow}>
-              <span className={styles.axisLabel}>Croisement MA</span>
+              <span className={styles.axisLabel} title={TIPS.maCross}>Croisement MA</span>
               <div className={styles.axisBody}>
                 <label className={styles.checkRow}>
                   <input type="checkbox" checked={spec.maCross.off} onChange={(e) => patch({ maCross: { ...spec.maCross, off: e.target.checked } })} />
@@ -317,6 +342,35 @@ export default function VariantGenerator({ p }: { p: EditablePortfolio }) {
               </div>
             </div>
           )}
+
+          <p className={styles.hint} style={{ margin: '0.6rem 0 0.2rem' }}>
+            Options en plus de Streamlit — si aucune case n’est cochée, chaque variante garde le réglage du portfolio de base.
+          </p>
+
+          <Row label="Max par secteur" tip={TIPS.sectorCap}>
+            <AxisValues axis={spec.sectorCap} onChange={(a) => patch({ sectorCap: a })} unit="tickers" />
+            <Inherit show={!spec.sectorCap.off && !spec.sectorCap.on} current={onOff(!!p.use_sector_concentration_limit, ` (${p.max_tickers_per_sector})`)} />
+          </Row>
+          <Row label="Max par industrie" tip={TIPS.industryCap}>
+            <AxisValues axis={spec.industryCap} onChange={(a) => patch({ industryCap: a })} unit="tickers" />
+            <Inherit show={!spec.industryCap.off && !spec.industryCap.on} current={onOff(!!p.use_industry_concentration_limit, ` (${p.max_tickers_per_industry})`)} />
+          </Row>
+          <Row label="Capitalisation min" tip={TIPS.minCap}>
+            <AxisValues axis={spec.minMarketCap} onChange={(a) => patch({ minMarketCap: a })} unit="G$" />
+            <Inherit show={!spec.minMarketCap.off && !spec.minMarketCap.on} current={onOff(!!p.use_min_market_cap_filter, ` (${p.min_market_cap_billions} G$)`)} />
+          </Row>
+          <Row label="Exclure avant S&P 500" tip={TIPS.sp500Entry}>
+            <Checks options={BOOL_OPTS} value={spec.sp500Entry} onChange={(v) => patch({ sp500Entry: v })} />
+            <Inherit show={!spec.sp500Entry.length} current={onOff(!!p.exclude_before_sp500_entry)} />
+          </Row>
+          <Row label="Cash rémunéré (^IRX)" tip={TIPS.idleCash}>
+            <Checks options={BOOL_OPTS} value={spec.idleCash} onChange={(v) => patch({ idleCash: v })} />
+            <Inherit show={!spec.idleCash.length} current={onOff(!!p.idle_cash_earns_treasury_yield)} />
+          </Row>
+          <Row label="Dividendes en cash" tip={TIPS.dividendsCash}>
+            <Checks options={BOOL_OPTS} value={spec.dividendsCash} onChange={(v) => patch({ dividendsCash: v })} />
+            <Inherit show={!spec.dividendsCash.length} current={onOff(!!p.collect_dividends_as_cash)} />
+          </Row>
 
           <div className={styles.axisRow}>
             <span className={styles.axisLabel}>Portfolio de base</span>

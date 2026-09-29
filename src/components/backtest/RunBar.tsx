@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { isActive, useBacktestStore } from '@/lib/backtest/store';
 import { useEngineStore } from '@/lib/engine/store';
 import RunHelp from './RunHelp';
+import { TIPS } from './tips';
 import styles from './Backtester.module.css';
 
 export default function RunBar() {
@@ -30,7 +31,7 @@ export default function RunBar() {
   return (
     <section className={`card ${styles.runBar}`}>
       <div className={styles.optionsGrid}>
-        <label className={styles.field}>
+        <label className={styles.field} title={TIPS.startWith}>
           Début de la simulation
           <select
             value={options.start_with}
@@ -40,7 +41,7 @@ export default function RunBar() {
             <option value="oldest">Dès l&apos;actif le plus ancien</option>
           </select>
         </label>
-        <label className={styles.field}>
+        <label className={styles.field} title={TIPS.firstRebalance}>
           Premier rebalancement
           <select
             value={options.first_rebalance_strategy}
@@ -50,7 +51,7 @@ export default function RunBar() {
             <option value="rebalancing_date">Première date de rebalancement</option>
           </select>
         </label>
-        <div className={styles.field}>
+        <div className={styles.field} title={TIPS.customDates}>
           Période
           <label className={styles.checkRow} style={{ minHeight: 36 }}>
             <input
@@ -89,7 +90,7 @@ export default function RunBar() {
         )}
         <div className={styles.field}>
           Momentum
-          <label className={styles.checkRow} style={{ minHeight: 36 }} title="Démarre plus tôt pour remplir les fenêtres momentum, puis coupe l'affichage à la date demandée">
+          <label className={styles.checkRow} style={{ minHeight: 36 }} title={TIPS.preheat}>
             <input
               type="checkbox"
               checked={options.auto_adjust_momentum_start}

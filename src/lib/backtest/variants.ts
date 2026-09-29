@@ -25,6 +25,15 @@ export interface VariantSpec {
   sma: { on: boolean; values: number[] };
   ema: { on: boolean; values: number[] };
   maCross: { off: boolean; on: boolean; tolerances: number[]; delays: number[] };
+  /** MA multipliers tested when an MA filter is on (Streamlit always used 1.48). */
+  maMultipliers: number[];
+  // Options Streamlit's generator lacked. Nothing ticked = the variants keep the base portfolio's setting.
+  sectorCap: ValueAxis<number>;
+  industryCap: ValueAxis<number>;
+  minMarketCap: ValueAxis<number>;
+  sp500Entry: boolean[];
+  idleCash: boolean[];
+  dividendsCash: boolean[];
 }
 
 export const DEFAULT_WINDOWS: MomentumWindow[] = [
@@ -53,8 +62,18 @@ export function defaultVariantSpec(): VariantSpec {
     sma: { on: false, values: [200] },
     ema: { on: false, values: [200] },
     maCross: { off: true, on: false, tolerances: [2], delays: [3] },
+    maMultipliers: [1.48],
+    sectorCap: { off: false, on: false, values: [2] },
+    industryCap: { off: false, on: false, values: [2] },
+    minMarketCap: { off: false, on: false, values: [10] },
+    sp500Entry: [],
+    idleCash: [],
+    dividendsCash: [],
   };
 }
+
+/** Axes that only exist when the user ticked something (otherwise the base setting is inherited). */
+const INHERITABLE_KEYS = ['sector_cap', 'industry_cap', 'min_market_cap', 'sp500_entry', 'idle_cash', 'dividends_cash'] as const;
 
 type Axis = { key: string; values: unknown[] };
 
@@ -94,8 +113,8 @@ function buildAxes(s: VariantSpec): Axis[] {
     ...(s.ema.on ? s.ema.values.map((v) => ['EMA', v]) : []),
   ];
   push('ma_windows', (ma.length ? ma : [null]).map((v, i) => [i, v]));
-  push('ma_multiplier', [1.48]);
   const anyMa = s.sma.on || s.ema.on;
+  push('ma_multiplier', anyMa && s.maMultipliers.length ? s.maMultipliers : [1.48]);
   const cross = anyMa ? [...(s.maCross.off ? [false] : []), ...(s.maCross.on ? [true] : [])] : [false];
   if (cross.length) {
     push('ma_cross_rebalance', cross);
@@ -105,6 +124,14 @@ function buildAxes(s: VariantSpec): Axis[] {
     push('ma_cross_rebalance', [false]);
     push('ma_tolerance_percent', [2]);
     push('ma_confirmation_days', [3]);
+  }
+  // Appended after Streamlit's axes so its product order and names are unchanged.
+  for (const [key, axis] of [['sector_cap', s.sectorCap], ['industry_cap', s.industryCap], ['min_market_cap', s.minMarketCap]] as const) {
+    const v = axisValues(axis);
+    if (v.length) push(key, v);
+  }
+  for (const [key, list] of [['sp500_entry', s.sp500Entry], ['idle_cash', s.idleCash], ['dividends_cash', s.dividendsCash]] as const) {
+    if (list.length) push(key, list);
   }
   return axes;
 }
@@ -131,6 +158,10 @@ export function validateVariantSpec(s: VariantSpec): string[] {
   if ((s.sma.on || s.ema.on) && !s.maCross.off && !s.maCross.on) {
     errors.push('Croisement MA : coche au moins une option (désactivé ou activé).');
   }
+  if ((s.sma.on || s.ema.on) && !s.maMultipliers.length) errors.push('Multiplicateur MA : ajoute au moins une valeur.');
+  if (s.sectorCap.on && !s.sectorCap.values.length) errors.push('Max par secteur : ajoute au moins une valeur.');
+  if (s.industryCap.on && !s.industryCap.values.length) errors.push('Max par industrie : ajoute au moins une valeur.');
+  if (s.minMarketCap.on && !s.minMarketCap.values.length) errors.push('Capitalisation minimale : ajoute au moins une valeur.');
   return errors;
 }
 
@@ -146,7 +177,7 @@ export function pyFixed(v: number, digits: number): string {
   return v < 0 ? `-${out}` : out;
 }
 
-function variantName(v: EditablePortfolio, baseName: string, tags: string): string {
+function variantName(v: EditablePortfolio, baseName: string, tags: string, varied: ReadonlySet<string> = new Set()): string {
   const parts: string[] = [String(v.rebalancing_frequency), '-'];
   if (v.use_momentum) {
     parts.push('Momentum :');
@@ -176,6 +207,13 @@ function variantName(v: EditablePortfolio, baseName: string, tags: string): stri
   if (v.ma_cross_rebalance && v.use_sma_filter) {
     parts.push(`- Cross Band ${pyFixed(Number(v.ma_tolerance_percent ?? 2), 0)}% Days ${v.ma_confirmation_days ?? 3}`);
   }
+  // Suffixes only for the options actually varied here, so Streamlit-style names stay as they were.
+  if (varied.has('sector_cap') && v.use_sector_concentration_limit) parts.push(`- Sector ${v.max_tickers_per_sector}`);
+  if (varied.has('industry_cap') && v.use_industry_concentration_limit) parts.push(`- Industry ${v.max_tickers_per_industry}`);
+  if (varied.has('min_market_cap') && v.use_min_market_cap_filter) parts.push(`- MinCap ${v.min_market_cap_billions}B`);
+  if (varied.has('sp500_entry') && v.exclude_before_sp500_entry) parts.push('- SP500 Entry');
+  if (varied.has('idle_cash') && v.idle_cash_earns_treasury_yield) parts.push('- Cash Yield');
+  if (varied.has('dividends_cash') && v.collect_dividends_as_cash) parts.push('- Div Cash');
   return tags ? `${baseName} ${tags} (${parts.join(' ')})` : `${baseName} (${parts.join(' ')})`;
 }
 
@@ -221,6 +259,21 @@ function applyValue(v: EditablePortfolio, key: string, value: unknown) {
     case 'ma_tolerance_percent': v.ma_tolerance_percent = value as number; break;
     case 'ma_confirmation_days': v.ma_confirmation_days = value as number; break;
     case 'ma_multiplier': v.ma_multiplier = value as number; break;
+    case 'sector_cap':
+      v.use_sector_concentration_limit = value !== null;
+      if (value !== null) v.max_tickers_per_sector = Math.round(value as number);
+      break;
+    case 'industry_cap':
+      v.use_industry_concentration_limit = value !== null;
+      if (value !== null) v.max_tickers_per_industry = Math.round(value as number);
+      break;
+    case 'min_market_cap':
+      v.use_min_market_cap_filter = value !== null;
+      if (value !== null) v.min_market_cap_billions = value as number;
+      break;
+    case 'sp500_entry': v.exclude_before_sp500_entry = value as boolean; break;
+    case 'idle_cash': v.idle_cash_earns_treasury_yield = value as boolean; break;
+    case 'dividends_cash': v.collect_dividends_as_cash = value as boolean; break;
     default: v[key] = value;
   }
 }
@@ -249,6 +302,7 @@ export function generateVariants(base: EditablePortfolio, spec: VariantSpec, tak
   }
 
   const axes = buildAxes(spec);
+  const varied = new Set<string>(axes.map((a) => a.key).filter((k) => (INHERITABLE_KEYS as readonly string[]).includes(k)));
   const total = axes.reduce((n, a) => n * a.values.length, 1);
   const taken = new Set(takenNames);
   const out: EditablePortfolio[] = [];
@@ -273,7 +327,7 @@ export function generateVariants(base: EditablePortfolio, spec: VariantSpec, tak
       .filter((t): t is string => !!t && !!t.trim())
       .map((t) => `[${t}]`)
       .join('');
-    const name = uniqueName(variantName(v, base.name, tags), taken);
+    const name = uniqueName(variantName(v, base.name, tags, varied), taken);
     taken.add(name);
     v.name = name;
     out.push(v);

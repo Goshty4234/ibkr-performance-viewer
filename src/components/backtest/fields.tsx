@@ -1,7 +1,41 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import styles from './Backtester.module.css';
+
+/** Small "i" button opening an explanation bubble (click outside or Escape closes it). */
+export function InfoTip({ children, label = 'Explication' }: { children: React.ReactNode; label?: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <span className={styles.infoTip} ref={ref}>
+      <button
+        type="button"
+        className={`${styles.infoBtn} ${open ? styles.infoBtnOn : ''}`}
+        aria-label={label}
+        aria-expanded={open}
+        title={open ? undefined : label}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((o) => !o); }}
+      >
+        i
+      </button>
+      {open && <span className={styles.infoPop} role="note">{children}</span>}
+    </span>
+  );
+}
 
 interface NumProps {
   label?: string;
@@ -72,13 +106,14 @@ export function NumField(props: NumProps) {
   );
 }
 
-export function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label?: string }) {
+export function Toggle({ on, onChange, label, title }: { on: boolean; onChange: (v: boolean) => void; label?: string; title?: string }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={on}
       aria-label={label}
+      title={title ?? label}
       className={`${styles.toggle} ${on ? styles.toggleOn : ''}`}
       onClick={() => onChange(!on)}
     />

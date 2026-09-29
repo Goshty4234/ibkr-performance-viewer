@@ -15,7 +15,8 @@ import {
 import { useBacktestStore } from '@/lib/backtest/store';
 import { DEFAULT_WINDOWS } from '@/lib/backtest/variants';
 import type { MomentumWindow, TargetedSetting } from '@/lib/engine/types';
-import { Check, NumField, NumInput, SelectField, TextField, Toggle } from './fields';
+import { Check, InfoTip, NumField, NumInput, SelectField, TextField, Toggle } from './fields';
+import { TIPS } from './tips';
 import ImportExportDialog from './ImportExportDialog';
 import StocksTable from './StocksTable';
 import VariantGenerator from './VariantGenerator';
@@ -142,8 +143,8 @@ export default function PortfolioEditor() {
             <optgroup label="Momentum">
               <option value="normalize-windows">Normaliser les poids des fenêtres</option>
               <option value="windows">Réinitialiser les fenêtres (365/180/120)</option>
-              <option value="beta">Réinitialiser le bêta (365/30, activé)</option>
-              <option value="vol">Réinitialiser la volatilité (365/30, activée)</option>
+              <option value="beta">Réinitialiser la pondération bêta (365/30, activée)</option>
+              <option value="vol">Réinitialiser la pondération volatilité (365/30, activée)</option>
             </optgroup>
           )}
         </select>
@@ -169,23 +170,23 @@ export default function PortfolioEditor() {
           <span className={styles.sectionTitle}>Capital et flux</span>
         </div>
         <div className={styles.grid2}>
-          <NumField label="Valeur initiale ($)" value={p.initial_value} min={0} step={1000} onChange={(v) => set({ initial_value: v })} />
-          <NumField label="Ajout périodique ($)" value={p.added_amount} min={0} step={100} onChange={(v) => set({ added_amount: v })} />
-          <SelectField label="Fréquence des ajouts" value={p.added_frequency} options={FREQ_OPTIONS} onChange={(v) => set({ added_frequency: v })} />
-          <SelectField label="Rebalancement" value={p.rebalancing_frequency} options={FREQ_OPTIONS} onChange={(v) => set({ rebalancing_frequency: v })} />
-          <TextField label="Benchmark" value={p.benchmark_ticker} mono onChange={(v) => set({ benchmark_ticker: v.toUpperCase() })} />
+          <NumField label="Valeur initiale ($)" value={p.initial_value} min={0} step={1000} title={TIPS.initialValue} onChange={(v) => set({ initial_value: v })} />
+          <NumField label="Ajout périodique ($)" value={p.added_amount} min={0} step={100} title={TIPS.addedAmount} onChange={(v) => set({ added_amount: v })} />
+          <SelectField label="Fréquence des ajouts" value={p.added_frequency} options={FREQ_OPTIONS} title={TIPS.addedFrequency} onChange={(v) => set({ added_frequency: v })} />
+          <SelectField label="Rebalancement" value={p.rebalancing_frequency} options={FREQ_OPTIONS} title={TIPS.rebalancing} onChange={(v) => set({ rebalancing_frequency: v })} />
+          <TextField label="Benchmark" value={p.benchmark_ticker} mono title={TIPS.benchmark} onChange={(v) => set({ benchmark_ticker: v.toUpperCase() })} />
         </div>
         <div className={styles.grid2}>
-          <Check checked={Boolean(p.collect_dividends_as_cash)} onChange={(v) => set({ collect_dividends_as_cash: v })}>
+          <Check checked={Boolean(p.collect_dividends_as_cash)} onChange={(v) => set({ collect_dividends_as_cash: v })} title={TIPS.dividendsCash}>
             Dividendes gardés en cash
           </Check>
-          <Check checked={Boolean(p.idle_cash_earns_treasury_yield)} onChange={(v) => set({ idle_cash_earns_treasury_yield: v })}>
+          <Check checked={Boolean(p.idle_cash_earns_treasury_yield)} onChange={(v) => set({ idle_cash_earns_treasury_yield: v })} title={TIPS.idleCash}>
             Cash rémunéré (taux T-bill)
           </Check>
           <Check
             checked={fusion}
             onChange={(v) => set({ fusion_portfolio: { enabled: v, selected_portfolios: p.fusion_portfolio?.selected_portfolios ?? [], allocations: p.fusion_portfolio?.allocations ?? {} } })}
-            title="Combine plusieurs portfolios avec leur propre rebalancement"
+            title={TIPS.fusion}
           >
             Portfolio fusion
           </Check>
@@ -195,14 +196,14 @@ export default function PortfolioEditor() {
             <Check
               checked={Boolean(p.exclude_from_cashflow_sync)}
               onChange={(v) => set({ exclude_from_cashflow_sync: v })}
-              title="La synchro « apports » depuis le 1er portfolio ignore ce portfolio"
+              title={TIPS.excludeCashflowSync}
             >
               Exclure de la synchro des apports
             </Check>
             <Check
               checked={Boolean(p.exclude_from_rebalancing_sync)}
               onChange={(v) => set({ exclude_from_rebalancing_sync: v })}
-              title="La synchro « rebalancement » depuis le 1er portfolio ignore ce portfolio"
+              title={TIPS.excludeRebalSync}
             >
               Exclure de la synchro du rebalancement
             </Check>
@@ -246,8 +247,8 @@ function TargetedSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
     <section className={`card ${styles.section}`}>
       <div className={styles.sectionHead}>
         <span className={styles.sectionTitle}>
-          <Toggle on={on} onChange={(v) => set({ use_targeted_rebalancing: v })} label="Activer le rebalancement ciblé" />
-          Rebalancement ciblé
+          <Toggle on={on} onChange={(v) => set({ use_targeted_rebalancing: v })} label="Activer le rebalancement ciblé" title={TIPS.targeted} />
+          <span title={TIPS.targeted}>Rebalancement ciblé</span>
         </span>
         <span className={styles.sectionSub}>Rebalance seulement si un actif sort de sa bande min / max, vérifié aux dates prévues</span>
       </div>
@@ -397,18 +398,19 @@ function MomentumSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
     <section className={`card ${styles.section}`}>
       <div className={styles.sectionHead}>
         <span className={styles.sectionTitle}>
-          <Toggle on={p.use_momentum} onChange={(v) => set({ use_momentum: v })} label="Activer le momentum" />
-          Momentum
+          <Toggle on={p.use_momentum} onChange={(v) => set({ use_momentum: v })} label="Activer le momentum" title={TIPS.momentum} />
+          <span title={TIPS.momentum}>Momentum</span>
         </span>
         <span className={styles.sectionSub}>Les allocations deviennent dynamiques selon le momentum</span>
       </div>
       <div className={p.use_momentum ? undefined : styles.disabledBlock} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
         <div className={styles.grid2}>
-          <SelectField label="Stratégie" value={p.momentum_strategy ?? 'Classic'} options={MOMENTUM_OPTIONS} onChange={(v) => set({ momentum_strategy: v })} />
+          <SelectField label="Stratégie" value={p.momentum_strategy ?? 'Classic'} options={MOMENTUM_OPTIONS} title={TIPS.strategy} onChange={(v) => set({ momentum_strategy: v })} />
           <SelectField
             label="Si tout est négatif"
             value={p.negative_momentum_strategy ?? 'Cash'}
             options={NEGATIVE_OPTIONS}
+            title={TIPS.negative}
             onChange={(v) => set({ negative_momentum_strategy: v })}
           />
         </div>
@@ -427,11 +429,11 @@ function MomentumSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
         </div>
         {windows.map((w, i) => (
           <div key={i} className={styles.winRow}>
-            <NumField label="Lookback" value={w.lookback} min={1} step={5} onChange={(v) => setWin(i, { lookback: Math.round(v) })} />
-            <NumField label="Exclusion" value={w.exclude} min={0} step={5} onChange={(v) => setWin(i, { exclude: Math.round(v) })} />
-            <NumField label="Poids" value={w.weight} scale={100} suffix="%" min={0} max={100} step={5} onChange={(v) => setWin(i, { weight: v })} />
-            <Check checked={Boolean(w.discard_if_negative)} onChange={(v) => setWin(i, { discard_if_negative: v })}>Rejeter si négatif</Check>
-            <Check checked={Boolean(w.discard_unless_recent_positive)} onChange={(v) => setWin(i, { discard_unless_recent_positive: v })}>
+            <NumField label="Lookback" value={w.lookback} min={1} step={5} title={TIPS.lookback} onChange={(v) => setWin(i, { lookback: Math.round(v) })} />
+            <NumField label="Exclusion" value={w.exclude} min={0} step={5} title={TIPS.exclude} onChange={(v) => setWin(i, { exclude: Math.round(v) })} />
+            <NumField label="Poids" value={w.weight} scale={100} suffix="%" min={0} max={100} step={5} title={TIPS.windowWeight} onChange={(v) => setWin(i, { weight: v })} />
+            <Check checked={Boolean(w.discard_if_negative)} onChange={(v) => setWin(i, { discard_if_negative: v })} title={TIPS.discardNegative}>Rejeter si négatif</Check>
+            <Check checked={Boolean(w.discard_unless_recent_positive)} onChange={(v) => setWin(i, { discard_unless_recent_positive: v })} title={TIPS.requireRecentPositive}>
               Exiger récent positif
             </Check>
             <button
@@ -447,20 +449,20 @@ function MomentumSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
 
         <div className={styles.grid2}>
           <div className={styles.field}>
-            <Check checked={Boolean(p.calc_beta)} onChange={(v) => set({ calc_beta: v })}>Pénaliser le bêta</Check>
+            <Check checked={Boolean(p.calc_beta)} onChange={(v) => set({ calc_beta: v })} title={TIPS.betaWeighting}>Pondération inverse au bêta</Check>
             {p.calc_beta && (
               <div className={styles.grid2}>
-                <NumField label="Fenêtre bêta (j)" value={p.beta_window_days} min={1} onChange={(v) => set({ beta_window_days: Math.round(v) })} />
-                <NumField label="Exclusion (j)" value={p.exclude_days_beta} min={0} onChange={(v) => set({ exclude_days_beta: Math.round(v) })} />
+                <NumField label="Fenêtre bêta (j)" value={p.beta_window_days} min={1} title={TIPS.betaWindow} onChange={(v) => set({ beta_window_days: Math.round(v) })} />
+                <NumField label="Exclusion (j)" value={p.exclude_days_beta} min={0} title={TIPS.riskExclude} onChange={(v) => set({ exclude_days_beta: Math.round(v) })} />
               </div>
             )}
           </div>
           <div className={styles.field}>
-            <Check checked={Boolean(p.calc_volatility)} onChange={(v) => set({ calc_volatility: v })}>Pénaliser la volatilité</Check>
+            <Check checked={Boolean(p.calc_volatility)} onChange={(v) => set({ calc_volatility: v })} title={TIPS.volWeighting}>Pondération inverse à la volatilité</Check>
             {p.calc_volatility && (
               <div className={styles.grid2}>
-                <NumField label="Fenêtre vol (j)" value={p.vol_window_days} min={1} onChange={(v) => set({ vol_window_days: Math.round(v) })} />
-                <NumField label="Exclusion (j)" value={p.exclude_days_vol} min={0} onChange={(v) => set({ exclude_days_vol: Math.round(v) })} />
+                <NumField label="Fenêtre vol (j)" value={p.vol_window_days} min={1} title={TIPS.volWindow} onChange={(v) => set({ vol_window_days: Math.round(v) })} />
+                <NumField label="Exclusion (j)" value={p.exclude_days_vol} min={0} title={TIPS.riskExclude} onChange={(v) => set({ exclude_days_vol: Math.round(v) })} />
               </div>
             )}
           </div>
@@ -468,13 +470,13 @@ function MomentumSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
 
         <div className={styles.grid2}>
           <div className={styles.field}>
-            <Check checked={Boolean(p.use_minimal_threshold)} onChange={(v) => set({ use_minimal_threshold: v })}>Seuil minimal d&apos;allocation</Check>
+            <Check checked={Boolean(p.use_minimal_threshold)} onChange={(v) => set({ use_minimal_threshold: v })} title={TIPS.minThreshold}>Seuil minimal d&apos;allocation</Check>
             {p.use_minimal_threshold && (
               <NumInput value={p.minimal_threshold_percent} suffix="%" min={0} max={100} step={0.5} onChange={(v) => set({ minimal_threshold_percent: v })} />
             )}
           </div>
           <div className={styles.field}>
-            <Check checked={Boolean(p.use_max_allocation)} onChange={(v) => set({ use_max_allocation: v })}>Allocation maximale par actif</Check>
+            <Check checked={Boolean(p.use_max_allocation)} onChange={(v) => set({ use_max_allocation: v })} title={TIPS.maxAllocation}>Allocation maximale par actif</Check>
             {p.use_max_allocation && (
               <NumInput value={p.max_allocation_percent} suffix="%" min={0} max={100} step={1} onChange={(v) => set({ max_allocation_percent: v })} />
             )}
@@ -490,8 +492,8 @@ function MaSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
     <section className={`card ${styles.section}`}>
       <div className={styles.sectionHead}>
         <span className={styles.sectionTitle}>
-          <Toggle on={Boolean(p.use_sma_filter)} onChange={(v) => set({ use_sma_filter: v })} label="Activer le filtre MA" />
-          Filtre moyenne mobile
+          <Toggle on={Boolean(p.use_sma_filter)} onChange={(v) => set({ use_sma_filter: v })} label="Activer le filtre MA" title={TIPS.ma} />
+          <span title={TIPS.ma}>Filtre moyenne mobile</span>
         </span>
         <span className={styles.sectionSub}>Exclut les actifs sous leur moyenne mobile</span>
       </div>
@@ -501,20 +503,21 @@ function MaSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
             label="Type"
             value={p.ma_type ?? 'SMA'}
             options={[{ value: 'SMA', label: 'SMA (simple)' }, { value: 'EMA', label: 'EMA (exponentielle)' }]}
+            title={TIPS.maType}
             onChange={(v) => set({ ma_type: v })}
           />
-          <NumField label="Fenêtre (jours)" value={p.sma_window} min={2} step={10} onChange={(v) => set({ sma_window: Math.round(v) })} />
+          <NumField label="Fenêtre (jours)" value={p.sma_window} min={2} step={10} title={TIPS.maWindow} onChange={(v) => set({ sma_window: Math.round(v) })} />
           <NumField
             label={`Multiplicateur ${p.ma_type === 'EMA' ? 'EMA' : 'SMA'}`}
             value={(p.ma_multiplier as number | undefined) ?? 1.48}
             step={0.01}
             min={0}
-            title="Convertit les jours de bourse en jours calendaires (1,48 par défaut)"
+            title={TIPS.maMultiplier}
             onChange={(v) => set({ ma_multiplier: v })}
           />
         </div>
         <div className={styles.grid2}>
-          <Check checked={Boolean(p.use_global_ma_reference)} onChange={(v) => set({ use_global_ma_reference: v })}>
+          <Check checked={Boolean(p.use_global_ma_reference)} onChange={(v) => set({ use_global_ma_reference: v })} title={TIPS.maGlobalRef}>
             Référence MA commune
           </Check>
           {p.use_global_ma_reference && (
@@ -522,23 +525,41 @@ function MaSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
               label="Ticker de référence"
               value={p.global_ma_reference_ticker ?? ''}
               mono
+              title={TIPS.maGlobalRef}
               onChange={(v) => set({ global_ma_reference_ticker: v.toUpperCase().replace(/,/g, '.') })}
             />
           )}
         </div>
         <div className={styles.grid2}>
-          <Check checked={Boolean(p.ma_cross_rebalance)} onChange={(v) => set({ ma_cross_rebalance: v })}>
+          <Check checked={Boolean(p.ma_cross_rebalance)} onChange={(v) => set({ ma_cross_rebalance: v })} title={TIPS.maCross}>
             Rebalancer au croisement de la MA
           </Check>
           {p.ma_cross_rebalance && (
             <>
-              <NumField label="Tolérance" value={p.ma_tolerance_percent} suffix="%" step={0.5} min={0} onChange={(v) => set({ ma_tolerance_percent: v })} />
-              <NumField label="Jours de confirmation" value={p.ma_confirmation_days} min={0} onChange={(v) => set({ ma_confirmation_days: Math.round(v) })} />
+              <NumField label="Tolérance" value={p.ma_tolerance_percent} suffix="%" step={0.5} min={0} title={TIPS.maTolerance} onChange={(v) => set({ ma_tolerance_percent: v })} />
+              <NumField label="Jours de confirmation" value={p.ma_confirmation_days} min={0} title={TIPS.maConfirmation} onChange={(v) => set({ ma_confirmation_days: Math.round(v) })} />
             </>
           )}
         </div>
       </div>
     </section>
+  );
+}
+
+function SectorIndustryInfo() {
+  return (
+    <InfoTip label="Secteur ou industrie ?">
+      <p><strong>Secteur</strong> : grande famille d’activité, une douzaine chez Yahoo (Technology, Healthcare, Financial Services, Energy…).</p>
+      <p><strong>Industrie</strong> : sous-catégorie plus fine d’un secteur, environ 150 (Semiconductors, Software – Infrastructure, Banks – Regional…).</p>
+      <p>
+        Exemple : NVDA et MSFT sont dans le même secteur (Technology) mais pas la même industrie (Semiconductors vs Software – Infrastructure).
+        « Max 2 par secteur » limite toute la tech à 2 titres ; « Max 2 par industrie » permet 2 semi-conducteurs et 2 logiciels.
+      </p>
+      <p>
+        Les titres sont pris dans l’ordre du classement ; ceux qui dépassent la limite sont mis de côté. Avec « N meilleurs » ou « Poids égaux »,
+        ils reviennent seulement s’il manque des titres pour atteindre N.
+      </p>
+    </InfoTip>
   );
 }
 
@@ -551,59 +572,49 @@ function AdvancedSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
         <span className={styles.sectionTitle}>Options avancées (univers, secteurs, capitalisation)</span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-          <div className={styles.grid2}>
-            <div className={styles.field}>
-              <Check checked={b('use_equal_weight')} onChange={(v) => set({ use_equal_weight: v })}>Poids égaux sur les N meilleurs</Check>
-              {b('use_equal_weight') && <NumInput value={n('equal_weight_n_tickers')} min={1} onChange={(v) => set({ equal_weight_n_tickers: Math.round(v) })} />}
-            </div>
-            <div className={styles.field}>
-              <Check checked={b('use_limit_to_top_n')} onChange={(v) => set({ use_limit_to_top_n: v })}>Limiter aux N meilleurs</Check>
-              {b('use_limit_to_top_n') && <NumInput value={n('limit_to_top_n_tickers')} min={1} onChange={(v) => set({ limit_to_top_n_tickers: Math.round(v) })} />}
-            </div>
+        <div className={styles.grid2}>
+          <div className={styles.field}>
+            <Check checked={b('use_equal_weight')} onChange={(v) => set({ use_equal_weight: v })} title={TIPS.equalWeight}>Poids égaux sur les N meilleurs</Check>
+            {b('use_equal_weight') && <NumInput value={n('equal_weight_n_tickers')} min={1} title="Nombre de titres gardés" onChange={(v) => set({ equal_weight_n_tickers: Math.round(v) })} />}
           </div>
-          <div className={styles.grid2}>
-            <div className={styles.field}>
-              <Check checked={b('use_sector_concentration_limit')} onChange={(v) => set({ use_sector_concentration_limit: v })}>Max tickers par secteur</Check>
-              {b('use_sector_concentration_limit') && <NumInput value={n('max_tickers_per_sector')} min={1} onChange={(v) => set({ max_tickers_per_sector: Math.round(v) })} />}
-            </div>
-            <div className={styles.field}>
-              <Check checked={b('use_industry_concentration_limit')} onChange={(v) => set({ use_industry_concentration_limit: v })}>Max tickers par industrie</Check>
-              {b('use_industry_concentration_limit') && <NumInput value={n('max_tickers_per_industry')} min={1} onChange={(v) => set({ max_tickers_per_industry: Math.round(v) })} />}
-            </div>
+          <div className={styles.field}>
+            <Check checked={b('use_limit_to_top_n')} onChange={(v) => set({ use_limit_to_top_n: v })} title={TIPS.limitTopN}>Limiter aux N meilleurs</Check>
+            {b('use_limit_to_top_n') && <NumInput value={n('limit_to_top_n_tickers')} min={1} title="Nombre de titres gardés" onChange={(v) => set({ limit_to_top_n_tickers: Math.round(v) })} />}
           </div>
-          <div className={styles.sectorDefs}>
-            <p>
-              <strong>Secteur</strong> : grande famille d’activité, une douzaine au total selon Yahoo
-              (Technology, Healthcare, Financial Services, Energy…).
-            </p>
-            <p>
-              <strong>Industrie</strong> : sous-catégorie plus fine à l’intérieur d’un secteur, environ 150 au total
-              (Semiconductors, Software – Infrastructure, Banks – Regional…).
-            </p>
-            <p>
-              Exemple : NVDA et MSFT sont dans le même <em>secteur</em> (Technology) mais pas la même <em>industrie</em>
-              (Semiconductors vs Software – Infrastructure). « Max 2 par secteur » limite donc toute la tech à 2 titres ;
-              « Max 2 par industrie » permet 2 semi-conducteurs et 2 logiciels.
-            </p>
-            <p>
-              Les titres sont pris dans l’ordre du classement momentum ; ceux qui dépassent la limite sont mis de côté. Avec « N meilleurs »
-              ou « Poids égaux », ils reviennent seulement s’il manque des titres pour atteindre N.
-            </p>
-          </div>
-          <div className={styles.grid2}>
-            <div className={styles.field}>
-              <Check checked={b('use_min_market_cap_filter')} onChange={(v) => set({ use_min_market_cap_filter: v })}>Capitalisation minimale (G$)</Check>
-              {b('use_min_market_cap_filter') && <NumInput value={n('min_market_cap_billions') ?? 10} min={0} step={1} onChange={(v) => set({ min_market_cap_billions: v })} />}
-            </div>
-            <Check checked={b('exclude_before_sp500_entry')} onChange={(v) => set({ exclude_before_sp500_entry: v })}>
-              Exclure avant l&apos;entrée dans le S&amp;P 500
-            </Check>
-            <span title="Sans secteur ou industrie connus chez Yahoo, un titre est classé « Unknown ». Coché : tous ces titres partagent une même catégorie, soumise à la limite. Décoché : ils ne sont jamais limités.">
-              <Check checked={p.unknown_counts_as_category === undefined ? true : b('unknown_counts_as_category')} onChange={(v) => set({ unknown_counts_as_category: v })}>
-                Secteur / industrie inconnu = une catégorie
+        </div>
+        <div className={styles.grid2}>
+          <div className={styles.field}>
+            <span className={styles.labelWithInfo}>
+              <Check checked={b('use_sector_concentration_limit')} onChange={(v) => set({ use_sector_concentration_limit: v })} title={TIPS.sectorCap}>
+                Max tickers par secteur
               </Check>
+              <SectorIndustryInfo />
             </span>
+            {b('use_sector_concentration_limit') && <NumInput value={n('max_tickers_per_sector')} min={1} title="Titres maximum dans un même secteur" onChange={(v) => set({ max_tickers_per_sector: Math.round(v) })} />}
           </div>
+          <div className={styles.field}>
+            <Check checked={b('use_industry_concentration_limit')} onChange={(v) => set({ use_industry_concentration_limit: v })} title={TIPS.industryCap}>
+              Max tickers par industrie
+            </Check>
+            {b('use_industry_concentration_limit') && <NumInput value={n('max_tickers_per_industry')} min={1} title="Titres maximum dans une même industrie" onChange={(v) => set({ max_tickers_per_industry: Math.round(v) })} />}
+          </div>
+        </div>
+        <div className={styles.grid2}>
+          <div className={styles.field}>
+            <Check checked={b('use_min_market_cap_filter')} onChange={(v) => set({ use_min_market_cap_filter: v })} title={TIPS.minCap}>Capitalisation minimale (G$)</Check>
+            {b('use_min_market_cap_filter') && <NumInput value={n('min_market_cap_billions') ?? 10} min={0} step={1} suffix="G$" title="Seuil en milliards de dollars" onChange={(v) => set({ min_market_cap_billions: v })} />}
+          </div>
+          <Check checked={b('exclude_before_sp500_entry')} onChange={(v) => set({ exclude_before_sp500_entry: v })} title={TIPS.sp500Entry}>
+            Exclure avant l&apos;entrée dans le S&amp;P 500
+          </Check>
+          <Check
+            checked={p.unknown_counts_as_category === undefined ? true : b('unknown_counts_as_category')}
+            onChange={(v) => set({ unknown_counts_as_category: v })}
+            title={TIPS.unknownCategory}
+          >
+            Secteur / industrie inconnu = une catégorie
+          </Check>
+        </div>
       </div>
     </section>
   );
