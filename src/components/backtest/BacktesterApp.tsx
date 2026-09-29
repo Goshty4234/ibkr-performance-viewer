@@ -5,6 +5,7 @@ import { startCloudSync } from '@/lib/backtest/cloud-sync';
 import { cleanupOldRuns } from '@/lib/backtest/history';
 import { useBacktestStore, type BacktestView } from '@/lib/backtest/store';
 import { useEngineStore } from '@/lib/engine/store';
+import AllocRunBar from './allocations/AllocRunBar';
 import AllocationsView from './allocations/AllocationsView';
 import HistoryView from './HistoryView';
 import ImportExportDialog from './ImportExportDialog';
@@ -89,7 +90,7 @@ export default function BacktesterApp() {
         </div>
       </div>
 
-      <RunBar />
+      {view === 'allocations' ? <AllocRunBar /> : <RunBar />}
       <RunsPanel />
       {view === 'results' && <ReuseNoticeBar purpose="backtest" />}
       {view === 'allocations' && <ReuseNoticeBar purpose="allocations" />}

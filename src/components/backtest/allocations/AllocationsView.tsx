@@ -6,7 +6,7 @@ import { isGuest } from '@/lib/guest';
 import { aiContext, downloadJson, useAllocationAnalysis } from '@/lib/backtest/allocations';
 import { latestRun, loadLatestOnce, loadRun } from '@/lib/backtest/history';
 import { okSummaries } from '@/lib/backtest/result-data';
-import { useBacktestStore } from '@/lib/backtest/store';
+import { isActive, useBacktestStore } from '@/lib/backtest/store';
 import { FREQUENCY_LABELS, nextRebalance, rebalanceProgress } from '@/lib/backtest/timer';
 import { usePortfolioDetail } from '@/lib/backtest/use-detail';
 import { SERIES_PALETTE } from '@/lib/chart-series';
@@ -449,8 +449,7 @@ const CANADIAN_STATS_TICKERS: [string, string, string][] = [
 
 const focusOf = (label: string) => label.replace(/^Allocations · /, '');
 
-function EmptyState({ onRun, running }: { onRun: (id: string) => void; running: boolean }) {
-  const portfolios = useBacktestStore((s) => s.portfolios);
+function EmptyState({ running }: { running: boolean }) {
   const showAllocResult = useBacktestStore((s) => s.showAllocResult);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -485,27 +484,22 @@ function EmptyState({ onRun, running }: { onRun: (id: string) => void; running: 
     <div className={styles.emptyCard}>
       <div className={styles.emptyIcon}>◔</div>
       <h2>Analyse d’allocation</h2>
-      <p>
-        Choisis un portfolio : un calcul court (juste l’historique nécessaire aux poids d’aujourd’hui) donne l’allocation cible,
-        puis la page ajoute les fondamentaux, la composition par secteur, le risque et la comparaison aux benchmarks.
-      </p>
-      <p className={styles.emptyHint}>
-        Pas besoin de lancer le backtest complet avant : le portfolio est pris tel qu’il est dans Construire, même modifié à l’instant.
-      </p>
-      <div className={styles.emptyList}>
-        {portfolios.map((p) => (
-          <button key={p._id} type="button" className={styles.emptyItem} disabled={running} onClick={() => onRun(p._id)}>
-            <span className={styles.emptyName}>{p.name}</span>
-            <span className={styles.emptyMeta}>
-              {p.fusion_portfolio?.enabled ? 'Fusion' : `${p.stocks.filter((s) => s.ticker).length} titres`}
-              {p.use_momentum ? ' · momentum' : ''}
-            </span>
-            <span className={styles.emptyGo}>Analyser →</span>
-          </button>
-        ))}
-      </div>
+      {running ? (
+        <p className={styles.emptyHint}>Calcul en cours… la page se remplit dès qu’il est terminé.</p>
+      ) : (
+        <>
+          <p>
+            Choisis un portfolio dans la barre ci-dessus, puis <strong>▶ Lancer l’allocation</strong> : un calcul court
+            (juste l’historique nécessaire aux poids d’aujourd’hui) donne l’allocation cible, puis la page ajoute les fondamentaux,
+            la composition par secteur, le risque et la comparaison aux benchmarks.
+          </p>
+          <p className={styles.emptyHint}>
+            Pas besoin de lancer le backtest complet avant : le portfolio est pris tel qu’il est dans Construire, même modifié à l’instant.
+          </p>
+        </>
+      )}
       <div className={styles.emptyActions}>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={loadLatest} disabled={loading}>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={loadLatest} disabled={loading || running}>
           {loading ? 'Chargement…' : 'Ou utiliser le dernier backtest enregistré'}
         </button>
       </div>
@@ -523,11 +517,8 @@ export default function AllocationsView() {
   const label = alloc?.label ?? '';
   const resultSource = alloc?.source ?? 'run';
   const saveError = alloc?.saveError ?? null;
-  const workspace = useBacktestStore((s) => s.portfolios);
-  const runs = useBacktestStore((s) => s.runs);
-  const startAllocationRun = useBacktestStore((s) => s.startAllocationRun);
+  const running = useBacktestStore((s) => s.runs.some((r) => r.purpose === 'allocations' && isActive(r)));
   const clearAlloc = useBacktestStore((s) => s.clearAlloc);
-  const launchError = useBacktestStore((s) => s.launchError);
   const client = useEngineStore((s) => s.client);
 
   const pfs = useMemo(() => (result ? okSummaries(result.summary) : []), [result]);
@@ -536,17 +527,6 @@ export default function AllocationsView() {
   const p: PortfolioSummaryOk | null = pfs.find((x) => x.index === selected) ?? focused ?? pfs[0] ?? null;
   useEffect(() => setSelected(null), [result]);
 
-  const [pending, setPending] = useState<string | null>(null);
-  const pendingRun = runs.find((r) => r.id === pending) ?? null;
-  useEffect(() => {
-    // The finished run fills the Allocations slot by itself.
-    if (pendingRun && !['submitting', 'queued', 'running', 'fetching'].includes(pendingRun.phase)) setPending(null);
-  }, [pendingRun]);
-
-  const run = async (portfolioId: string) => {
-    const id = await startAllocationRun(portfolioId);
-    if (id) setPending(id);
-  };
   // Stats of a short window say nothing about the strategy: they belong to Résultats.
   const allocRun = label.startsWith('Allocations ·');
   const shortWindow = allocRun && Boolean(result?.summary.options?.start_date);
@@ -559,15 +539,10 @@ export default function AllocationsView() {
   const report = useMemo(() => (myValue ? rescaleReport(baseReport, myValue) : baseReport), [baseReport, myValue]);
   const todayTable = p?.today?.table ?? null;
   const table = useMemo(() => (myValue ? rescaleTable(todayTable, myValue) : todayTable), [todayTable, myValue]);
-  const running = !!pendingRun;
-  const runProgress = pendingRun?.job ? Math.round((pendingRun.job.progress ?? 0) * 100) : 0;
-
   if (!result || !p) {
     return (
       <div className={styles.page}>
-        {running && <div className={styles.progress}><span style={{ width: `${Math.max(4, runProgress)}%` }} />Backtest en cours… {runProgress}%</div>}
-        {launchError && <div className={styles.errorLine}>{launchError}</div>}
-        <EmptyState onRun={(id) => void run(id)} running={running} />
+        <EmptyState running={running} />
       </div>
     );
   }
@@ -582,7 +557,6 @@ export default function AllocationsView() {
     : Object.entries(p.today_weights ?? {}).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, v * 100]);
   const positions = pie.filter(([t]) => t !== 'CASH').length;
   const w = report?.weighted ?? {};
-  const wsMatch = workspace.find((x) => x.name === p.name) ?? null;
   const updated = analysis ? new Date(analysis.created_at) : null;
 
   const exportAi = () => {
@@ -650,27 +624,14 @@ export default function AllocationsView() {
           </div>
         </div>
         <div className={styles.heroActions}>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={refresh} disabled={loading || !client} title={client ? 'Recharger les fondamentaux et les benchmarks' : 'Moteur hors ligne'}>
-            ↻ Actualiser
-          </button>
-          <select
-            className={styles.heroPick}
-            value=""
-            disabled={running}
-            onChange={(e) => e.target.value && void run(e.target.value)}
-            aria-label="Analyser un autre portfolio"
-          >
-            <option value="">Analyser un autre portfolio…</option>
-            {workspace.map((x) => <option key={x._id} value={x._id}>{x.name}</option>)}
-          </select>
           <button
             type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => wsMatch && void run(wsMatch._id)}
-            disabled={!wsMatch || running}
-            title={wsMatch ? 'Recalcule la cible de ce portfolio avec les prix du jour (repris tel quel si rien n’a changé)' : 'Ce portfolio n’est plus dans l’espace de travail'}
+            className="btn btn-ghost btn-sm"
+            onClick={refresh}
+            disabled={loading || !client}
+            title={client ? 'Recharge seulement les fondamentaux et les benchmarks (sans recalculer l’allocation)' : 'Moteur hors ligne'}
           >
-            {running ? `Calcul… ${runProgress}%` : '▶ Mettre à jour'}
+            ↻ Fondamentaux
           </button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={exportAi} disabled={!analysis} title="Paramètres + résultats dans un seul JSON (prêt pour une IA)">
             Export JSON
@@ -689,7 +650,6 @@ export default function AllocationsView() {
       </header>
 
       {error && <div className={styles.errorLine}>{error}</div>}
-      {launchError && <div className={styles.errorLine}>{launchError}</div>}
       {analysis?.errors.fundamentals && analysis.benchmarks && <div className={styles.warnLine}>Fondamentaux : {analysis.errors.fundamentals}</div>}
       {analysis?.errors.benchmarks && analysis.fundamentals && <div className={styles.warnLine}>Benchmarks : {analysis.errors.benchmarks}</div>}
 

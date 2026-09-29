@@ -13,8 +13,8 @@ const ITEMS: { what: string; where: string; does: string; reuse?: string }[] = [
       + 'Avec « Toujours reprendre sans demander », la fenêtre ne s’affiche plus quand tout est déjà à jour.',
   },
   {
-    what: 'Analyser → · Analyser un autre portfolio… · ▶ Mettre à jour',
-    where: 'Onglet Allocations',
+    what: '▶ Lancer l’allocation',
+    where: 'Onglet Allocations · sa barre du haut remplace celle-ci',
     does:
       'Calcul court d’un seul portfolio : juste l’historique nécessaire aux poids d’aujourd’hui (même cible qu’un backtest complet, en plus rapide), '
       + 'puis fondamentaux, secteurs, risque et benchmarks. Pas besoin de lancer le backtest complet avant : la configuration est prise telle qu’elle est dans Construire. '

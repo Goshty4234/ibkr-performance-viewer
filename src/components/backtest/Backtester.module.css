@@ -112,6 +112,12 @@
 
 .runNote { font-size: 0.74rem; color: var(--text-muted); max-width: 280px; line-height: 1.35; }
 
+.allocRunMain { display: grid; grid-template-columns: minmax(220px, 340px) 1fr; gap: 1rem; align-items: end; }
+.allocRunText { margin: 0; font-size: 0.78rem; color: var(--text-muted); line-height: 1.45; }
+.allocRunProgress { height: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.allocRunProgress > span { display: block; height: 100%; background: var(--accent, #4d8dff); transition: width 0.3s ease; }
+@media (max-width: 800px) { .allocRunMain { grid-template-columns: 1fr; } }
+
 .runHelp { grid-column: 1 / -1; font-size: 0.8rem; color: var(--text-muted); }
 .runHelp summary { cursor: pointer; width: fit-content; user-select: none; }
 .runHelp summary:hover { color: var(--text); }
@@ -292,6 +298,21 @@
 .notice { font-size: 0.76rem; color: var(--green); background: rgba(46, 204, 113, 0.08); border-radius: var(--radius-sm); padding: 0.35rem 0.55rem; }
 .warnBox { font-size: 0.78rem; color: var(--orange); background: rgba(255, 159, 67, 0.08); border: 1px solid rgba(255, 159, 67, 0.3); border-radius: var(--radius-sm); padding: 0.45rem 0.65rem; }
 .hint { font-size: 0.74rem; color: var(--text-faint); line-height: 1.45; }
+
+.sectorDefs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.6rem 0.75rem;
+  border-left: 2px solid var(--accent, #4d8dff);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: rgba(77, 141, 255, 0.05);
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.sectorDefs p { margin: 0; }
+.sectorDefs strong { color: var(--text); }
 .btnRow { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
 
 /* ---- collapsible sub-panels (ticker tools, variants) ------------------- */

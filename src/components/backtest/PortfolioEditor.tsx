@@ -543,21 +543,14 @@ function MaSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
 }
 
 function AdvancedSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
-  const [open, setOpen] = useState(false);
   const b = (k: string) => Boolean(p[k]);
   const n = (k: string) => (typeof p[k] === 'number' ? (p[k] as number) : undefined);
   return (
     <section className={`card ${styles.section}`}>
-      <button
-        type="button"
-        className={styles.sectionHead}
-        style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}
-        onClick={() => setOpen(!open)}
-      >
-        <span className={styles.sectionTitle}>{open ? '▾' : '▸'} Options avancées (univers, secteurs, capitalisation)</span>
-      </button>
-      {open && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+      <div className={styles.sectionHead}>
+        <span className={styles.sectionTitle}>Options avancées (univers, secteurs, capitalisation)</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
           <div className={styles.grid2}>
             <div className={styles.field}>
               <Check checked={b('use_equal_weight')} onChange={(v) => set({ use_equal_weight: v })}>Poids égaux sur les N meilleurs</Check>
@@ -578,6 +571,25 @@ function AdvancedSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
               {b('use_industry_concentration_limit') && <NumInput value={n('max_tickers_per_industry')} min={1} onChange={(v) => set({ max_tickers_per_industry: Math.round(v) })} />}
             </div>
           </div>
+          <div className={styles.sectorDefs}>
+            <p>
+              <strong>Secteur</strong> : grande famille d’activité, une douzaine au total selon Yahoo
+              (Technology, Healthcare, Financial Services, Energy…).
+            </p>
+            <p>
+              <strong>Industrie</strong> : sous-catégorie plus fine à l’intérieur d’un secteur, environ 150 au total
+              (Semiconductors, Software – Infrastructure, Banks – Regional…).
+            </p>
+            <p>
+              Exemple : NVDA et MSFT sont dans le même <em>secteur</em> (Technology) mais pas la même <em>industrie</em>
+              (Semiconductors vs Software – Infrastructure). « Max 2 par secteur » limite donc toute la tech à 2 titres ;
+              « Max 2 par industrie » permet 2 semi-conducteurs et 2 logiciels.
+            </p>
+            <p>
+              Les titres sont pris dans l’ordre du classement momentum ; ceux qui dépassent la limite sont mis de côté. Avec « N meilleurs »
+              ou « Poids égaux », ils reviennent seulement s’il manque des titres pour atteindre N.
+            </p>
+          </div>
           <div className={styles.grid2}>
             <div className={styles.field}>
               <Check checked={b('use_min_market_cap_filter')} onChange={(v) => set({ use_min_market_cap_filter: v })}>Capitalisation minimale (G$)</Check>
@@ -586,12 +598,13 @@ function AdvancedSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
             <Check checked={b('exclude_before_sp500_entry')} onChange={(v) => set({ exclude_before_sp500_entry: v })}>
               Exclure avant l&apos;entrée dans le S&amp;P 500
             </Check>
-            <Check checked={p.unknown_counts_as_category === undefined ? true : b('unknown_counts_as_category')} onChange={(v) => set({ unknown_counts_as_category: v })}>
-              Secteur inconnu = une catégorie
-            </Check>
+            <span title="Sans secteur ou industrie connus chez Yahoo, un titre est classé « Unknown ». Coché : tous ces titres partagent une même catégorie, soumise à la limite. Décoché : ils ne sont jamais limités.">
+              <Check checked={p.unknown_counts_as_category === undefined ? true : b('unknown_counts_as_category')} onChange={(v) => set({ unknown_counts_as_category: v })}>
+                Secteur / industrie inconnu = une catégorie
+              </Check>
+            </span>
           </div>
-        </div>
-      )}
+      </div>
     </section>
   );
 }

@@ -13,7 +13,6 @@ export default function RunBar() {
   const launchError = useBacktestStore((s) => s.launchError);
   const startRun = useBacktestStore((s) => s.startRun);
   const count = useBacktestStore((s) => s.portfolios.length);
-  const view = useBacktestStore((s) => s.view);
   const engineStatus = useEngineStore((s) => s.status);
   const engine = useEngineStore((s) => s.engine);
   const [launching, setLaunching] = useState(false);
@@ -111,11 +110,6 @@ export default function RunBar() {
         >
           🚀 Lancer le backtest complet ({count})
         </button>
-        {view === 'allocations' && (
-          <span className={styles.runNote}>
-            Ce bouton et ces options servent au backtest complet (onglet Résultats). Pour l’allocation d’aujourd’hui, utilise les boutons de la page ci-dessous.
-          </span>
-        )}
         {activeCount > 0 && (
           <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
             {activeCount} run{activeCount > 1 ? 's' : ''} en cours — tu peux en lancer d&apos;autres en parallèle.
