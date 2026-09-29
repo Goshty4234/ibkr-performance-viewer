@@ -82,23 +82,29 @@ function Prompt({ offer }: { offer: ReuseOffer }) {
           })}
         </div>
 
-        <div className={styles.reuseEnd}>
-          {late > 0 ? (
-            <>Fin du backtest : <strong>{decision.end}</strong> ({plural(late, 'jour')} avant {offer.targetEnd}), la fin la plus ancienne des résultats repris.</>
-          ) : (
-            <>Fin du backtest : <strong>{decision.end}</strong>, à jour.</>
-          )}
-          <br />
-          {decision.compute.length
-            ? `${plural(decision.reuse.size, 'portfolio')} repris · ${plural(decision.compute.length, 'portfolio')} à calculer.`
-            : 'Rien à calculer : résultat instantané.'}
-        </div>
+        {late > 0 && (
+          <div className={styles.reuseEnd}>
+            En reprenant, le backtest s’arrête au <strong>{decision.end}</strong> ({plural(late, 'jour')} avant {offer.targetEnd}) :
+            c’est la fin la plus ancienne des résultats cochés. Pour aller jusqu’au {offer.targetEnd}, décoche les portfolios en retard
+            ou choisis « Tout recalculer ».
+          </div>
+        )}
 
         <div className={styles.dialogActions}>
           <button type="button" className="btn btn-ghost" onClick={cancel}>Annuler</button>
-          <button type="button" className="btn btn-secondary" onClick={() => resolve({ action: 'fresh' })}>Tout recalculer à jour</button>
-          <button type="button" className="btn btn-primary" autoFocus onClick={accept}>
-            {decision.reuse.size ? 'Reprendre et lancer' : 'Lancer'}
+          {decision.reuse.size > 0 && (
+            <button type="button" className={`btn btn-secondary ${styles.choiceBtn}`} onClick={() => resolve({ action: 'fresh' })}>
+              <span>↻ Tout recalculer jusqu’au {offer.targetEnd}</span>
+              <small>{late > 0 ? 'à jour · tout est recalculé' : 'même résultat · recalcul complet, plus lent'}</small>
+            </button>
+          )}
+          <button type="button" className={`btn btn-primary ${styles.choiceBtn}`} autoFocus onClick={accept}>
+            <span>{decision.reuse.size ? `♻ Reprendre · fin au ${decision.end}` : `Lancer jusqu’au ${decision.end}`}</span>
+            <small>
+              {!decision.compute.length
+                ? `${late > 0 ? `${plural(late, 'jour')} de retard` : 'à jour'} · instantané`
+                : `${decision.reuse.size} repris · ${decision.compute.length} à calculer`}
+            </small>
           </button>
         </div>
       </div>

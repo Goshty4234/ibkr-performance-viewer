@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { RETENTION_DAYS } from '@/lib/backtest/history';
 import { isActive, type RunState, useBacktestStore } from '@/lib/backtest/store';
 import styles from './Backtester.module.css';
 
@@ -29,7 +30,8 @@ function statusText(run: RunState): string {
     case 'fetching': return 'Réception des résultats…';
     case 'done': {
       const fromHistory = run.reusedCount ? ` · ${run.reusedCount} repris de l’historique` : '';
-      return `Terminé en ${fmtElapsed((run.finishedAt ?? 0) - (run.startedAt ?? 0))}${fromHistory}${reusedText(job?.summary?.reused)}`;
+      const saved = run.savedId ? ' · enregistré dans l’Historique' : '';
+      return `Terminé en ${fmtElapsed((run.finishedAt ?? 0) - (run.startedAt ?? 0))}${fromHistory}${reusedText(job?.summary?.reused)}${saved}`;
     }
     case 'cancelled': return 'Annulé';
     case 'error': return run.error ?? 'Erreur';
@@ -87,7 +89,14 @@ function RunRow({ run, now, current }: { run: RunState; now: number; current: bo
             </button>
           )}
           {!active && (
-            <button type="button" className="btn btn-ghost btn-sm" title="Retirer de la liste" onClick={() => dismissRun(run.id)}>✕</button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              title={run.savedId ? 'Retirer de cette liste seulement : le run reste dans l’Historique' : 'Retirer de cette liste'}
+              onClick={() => dismissRun(run.id)}
+            >
+              ✕
+            </button>
           )}
         </span>
       </div>
@@ -106,6 +115,7 @@ export default function RunsPanel() {
   };
   const [now, setNow] = useState(Date.now());
   const [collapsed, setCollapsed] = useState(false);
+  const setView = useBacktestStore((s) => s.setView);
   const activeCount = runs.filter(isActive).length;
 
   useEffect(() => {
@@ -124,16 +134,26 @@ export default function RunsPanel() {
           {collapsed ? '▸' : '▾'} Runs {activeCount > 0 ? `en cours (${activeCount})` : 'récents'}
           {finished.length > 0 && activeCount > 0 && <span style={{ color: 'var(--text-faint)' }}> · {finished.length} terminé{finished.length > 1 ? 's' : ''}</span>}
         </button>
-        {finished.length > 0 && (
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => finished.forEach((r) => useBacktestStore.getState().dismissRun(r.id))}
-          >
-            Effacer les terminés
-          </button>
-        )}
+        <span className={styles.runsHeadActions}>
+          {finished.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              title="Vide cette liste seulement : l’Historique n’est pas touché"
+              onClick={() => finished.forEach((r) => useBacktestStore.getState().dismissRun(r.id))}
+            >
+              Vider la liste
+            </button>
+          )}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setView('history')}>Historique →</button>
+        </span>
       </div>
+      {!collapsed && (
+        <p className={styles.runsNote}>
+          Suivi des runs lancés depuis ce navigateur. Chaque run terminé est aussi enregistré dans l’Historique (compte connecté, gardé {RETENTION_DAYS} jours, ou plus s’il est épinglé).
+          ✕ retire seulement de cette liste, jamais de l’Historique.
+        </p>
+      )}
       {!collapsed && (
         <ul className={styles.runList}>
           {runs.map((r) => (

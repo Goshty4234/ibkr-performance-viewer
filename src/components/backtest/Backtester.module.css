@@ -157,6 +157,8 @@
 
 .runsPanel { padding: 0.6rem 0.9rem; display: flex; flex-direction: column; gap: 0.5rem; }
 .runsHead { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.runsHeadActions { display: flex; gap: 0.3rem; }
+.runsNote { margin: 0.2rem 0 0.4rem; font-size: 0.74rem; color: var(--text-faint); line-height: 1.4; }
 .runsToggle {
   background: none;
   border: 0;
@@ -673,6 +675,9 @@
   font-size: 0.84rem;
   line-height: 1.5;
 }
+
+.dialogActions .choiceBtn { flex-direction: column; align-items: flex-start; gap: 0.1rem; line-height: 1.25; text-align: left; }
+.choiceBtn small { font-size: 0.72rem; font-weight: 400; opacity: 0.8; }
 
 .dupMeta { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .dupMeta span {

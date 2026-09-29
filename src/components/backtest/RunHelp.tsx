@@ -9,8 +9,8 @@ const ITEMS: { what: string; where: string; does: string; reuse?: string }[] = [
       + 'Statistiques, graphiques, périodes et détail par portfolio arrivent dans l’onglet Résultats.',
     reuse:
       'Si un portfolio a déjà tourné avec exactement les mêmes réglages (n’importe quel jour), une fenêtre « Déjà calculé » s’ouvre : '
-      + '« Reprendre et lancer » reprend ces résultats et ne calcule que le reste, « Tout recalculer à jour » relance tout. '
-      + 'La question est posée à chaque fois.',
+      + '« ♻ Reprendre · fin au … » reprend ces résultats (le backtest s’arrête à leur date de fin la plus ancienne) et ne calcule que le reste ; '
+      + '« ↻ Tout recalculer jusqu’au … » relance tout jusqu’à aujourd’hui. Chaque bouton affiche sa date de fin. La question est posée à chaque fois.',
   },
   {
     what: '▶ Lancer l’allocation',
@@ -26,7 +26,9 @@ const ITEMS: { what: string; where: string; does: string; reuse?: string }[] = [
   {
     what: 'Voir',
     where: 'Runs récents',
-    does: 'Réaffiche un run terminé de cette session, sans recalcul.',
+    does:
+      'Réaffiche un run terminé, sans recalcul. Cette liste ne sert qu’au suivi dans ce navigateur : chaque run terminé est aussi dans l’Historique, '
+      + 'et ✕ ne le retire que de la liste, pas de l’Historique.',
   },
   {
     what: 'Charger le dernier run · Ouvrir un fichier résultat · Historique',
