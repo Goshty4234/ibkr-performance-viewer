@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { LoadedResult } from '@/lib/backtest/result-data';
 import { usePortfolioDetail } from '@/lib/backtest/use-detail';
@@ -20,10 +20,32 @@ function asPct(weights: Record<string, number>): Record<string, number> {
   return Object.fromEntries(Object.entries(weights).map(([k, v]) => [k, (Number.isFinite(v) ? v : 0) * factor]));
 }
 
-function buildEvolution(d: PortfolioDetail) {
+interface Evolution {
+  rows: Record<string, number | string>[];
+  keys: string[];
+  dates: string[];
+  weights: Record<string, (number | null)[]>;
+  factor: number;
+}
+
+const EMPTY_EVOLUTION: Evolution = { rows: [], keys: [], dates: [], weights: {}, factor: 100 };
+const TOOLTIP_LINES = 15;
+const GREY = '#5c6d85';
+
+/** Every non-zero position at original date index `i`, largest first (includes those grouped in "Autres"). */
+function compositionAt(ev: Evolution, i: number): [string, number][] {
+  const out: [string, number][] = [];
+  for (const [t, series] of Object.entries(ev.weights)) {
+    const v = (series[i] ?? 0) * ev.factor;
+    if (v > 0.005) out.push([t, v]);
+  }
+  return out.sort((a, b) => b[1] - a[1]);
+}
+
+function buildEvolution(d: PortfolioDetail): Evolution {
   const { dates, weights } = d.allocations ?? { dates: [], weights: {} };
   const tickers = Object.keys(weights);
-  if (!dates.length || !tickers.length) return { rows: [], keys: [] as string[] };
+  if (!dates.length || !tickers.length) return EMPTY_EVOLUTION;
 
   let sample = 0;
   for (const t of tickers) for (const v of weights[t]) if (v !== null && Number.isFinite(v)) sample = Math.max(sample, v);
@@ -41,7 +63,7 @@ function buildEvolution(d: PortfolioDetail) {
   const step = Math.max(1, Math.ceil(dates.length / MAX_AREA_POINTS));
   const rows: Record<string, number | string>[] = [];
   for (let i = 0; i < dates.length; i += step) {
-    const row: Record<string, number | string> = { date: dates[i] };
+    const row: Record<string, number | string> = { date: dates[i], _i: i };
     for (const t of top) row[t] = (weights[t][i] ?? 0) * factor;
     if (rest.length) {
       let o = 0;
@@ -50,7 +72,34 @@ function buildEvolution(d: PortfolioDetail) {
     }
     rows.push(row);
   }
-  return { rows, keys };
+  return { rows, keys, dates, weights, factor };
+}
+
+function EvolutionTooltip({ active, payload, ev, colors }: {
+  active?: boolean;
+  payload?: { payload?: Record<string, number | string> }[];
+  ev: Evolution;
+  colors: Map<string, string>;
+}) {
+  const row = payload?.[0]?.payload;
+  if (!active || !row) return null;
+  const list = compositionAt(ev, Number(row._i));
+  const shown = list.slice(0, TOOLTIP_LINES);
+  const rest = list.slice(TOOLTIP_LINES);
+  const restPct = rest.reduce((a, [, v]) => a + v, 0);
+  return (
+    <div className={styles.evoTip}>
+      <div className={styles.evoTipHead}>{String(row.date)} · {list.length} position{list.length > 1 ? 's' : ''}</div>
+      {shown.map(([t, v]) => (
+        <div key={t} className={styles.evoTipRow}>
+          <i style={{ background: colors.get(t) ?? GREY }} />
+          <span>{t}</span>
+          <strong>{v.toFixed(2)}%</strong>
+        </div>
+      ))}
+      {rest.length > 0 && <div className={styles.evoTipMore}>+{rest.length} autres · {restPct.toFixed(2)}% — clique pour la liste complète</div>}
+    </div>
+  );
 }
 
 export default function AllocationPanel({
@@ -76,7 +125,15 @@ export default function AllocationPanel({
       .sort((a, b) => b[1] - a[1]);
   }, [p]);
 
-  const evolution = useMemo(() => (detail ? buildEvolution(detail) : { rows: [], keys: [] }), [detail]);
+  const evolution = useMemo(() => (detail ? buildEvolution(detail) : EMPTY_EVOLUTION), [detail]);
+  const colors = useMemo(
+    () => new Map(evolution.keys.map((k, i) => [k, k === OTHERS ? GREY : SERIES_PALETTE[i % SERIES_PALETTE.length]])),
+    [evolution],
+  );
+  const [pinned, setPinned] = useState<number | null>(null);
+  const pinnedList = useMemo(() => (pinned === null ? [] : compositionAt(evolution, pinned)), [evolution, pinned]);
+  const pinnedValid = pinned !== null && pinned < evolution.dates.length;
+  useEffect(() => setPinned(null), [evolution]);
 
   if (!p) return null;
   const visible = showAll ? today : today.slice(0, 25);
@@ -131,7 +188,12 @@ export default function AllocationPanel({
         </div>
 
         <div>
-          <div className={styles.subTitle}>Évolution des allocations</div>
+          <div className={styles.subTitle}>
+            Évolution des allocations
+            <span className={styles.muted} style={{ fontWeight: 400, marginLeft: 8 }}>
+              survol : composition du jour · clic : liste complète
+            </span>
+          </div>
           {loading ? (
             <div className={styles.muted}>Chargement du détail…</div>
           ) : error ? (
@@ -139,25 +201,29 @@ export default function AllocationPanel({
           ) : evolution.rows.length < 2 ? (
             <div className={styles.muted}>Pas d&apos;historique d&apos;allocation.</div>
           ) : (
-            <div style={{ height: 320 }}>
+            <>
+            <div style={{ height: 320, cursor: 'pointer' }}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={evolution.rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <AreaChart
+                  data={evolution.rows}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                  onClick={(state) => {
+                    const row = (state as { activePayload?: { payload?: Record<string, number | string> }[] } | null)?.activePayload?.[0]?.payload;
+                    if (row) setPinned(Number(row._i));
+                  }}
+                >
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
                   <XAxis dataKey="date" stroke="#5c6d85" fontSize={11} tickLine={false} minTickGap={48} tickFormatter={(d: string) => d.slice(0, 7)} />
                   <YAxis domain={[0, 100]} allowDataOverflow tickFormatter={(v) => `${v}%`} stroke="#5c6d85" fontSize={11} tickLine={false} axisLine={false} width={44} />
-                  <Tooltip
-                    formatter={(v: number) => `${v.toFixed(2)}%`}
-                    contentStyle={{ background: '#141c2b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
-                    itemSorter={(it) => -(Number(it.value) || 0)}
-                  />
-                  {evolution.keys.map((k, i) => (
+                  <Tooltip content={<EvolutionTooltip ev={evolution} colors={colors} />} />
+                  {evolution.keys.map((k) => (
                     <Area
                       key={k}
                       type="stepAfter"
                       dataKey={k}
                       stackId="1"
-                      stroke={k === OTHERS ? '#5c6d85' : SERIES_PALETTE[i % SERIES_PALETTE.length]}
-                      fill={k === OTHERS ? '#5c6d85' : SERIES_PALETTE[i % SERIES_PALETTE.length]}
+                      stroke={colors.get(k)}
+                      fill={colors.get(k)}
                       fillOpacity={0.55}
                       isAnimationActive={false}
                     />
@@ -165,6 +231,38 @@ export default function AllocationPanel({
                 </AreaChart>
               </ResponsiveContainer>
             </div>
+            {pinnedValid && (
+              <div className={styles.evoPinned}>
+                <div className={styles.evoPinnedHead}>
+                  <span>
+                    Composition au <strong>{evolution.dates[pinned!]}</strong> · {pinnedList.length} position{pinnedList.length > 1 ? 's' : ''}
+                    · total {pinnedList.reduce((a, [, v]) => a + v, 0).toFixed(2)}%
+                  </span>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPinned(null)}>✕ Fermer</button>
+                </div>
+                {pinnedList.some(([t]) => !colors.has(t)) && (
+                  <div className={styles.muted} style={{ fontSize: '0.72rem', marginBottom: '0.4rem' }}>
+                    Gris : titre regroupé dans « Autres » sur le graphique.
+                  </div>
+                )}
+                {pinnedList.length === 0 ? (
+                  <div className={styles.muted}>Tout en cash ce jour-là.</div>
+                ) : (
+                  <div className={`${styles.weightList} ${styles.evoPinnedList}`}>
+                    {pinnedList.map(([t, v]) => (
+                      <div key={t} className={styles.weightRow}>
+                        <span className={styles.weightTicker}>{t}</span>
+                        <span className={styles.weightBarTrack}>
+                          <span className={styles.weightBar} style={{ width: `${Math.min(100, Math.max(0, v))}%`, background: colors.get(t) ?? GREY }} />
+                        </span>
+                        <span className={styles.num}>{v.toFixed(2)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            </>
           )}
         </div>
       </div>

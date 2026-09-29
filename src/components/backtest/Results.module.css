@@ -235,6 +235,32 @@
 .weightBar { display: block; height: 100%; border-radius: 4px; }
 .weightFoot { display: flex; justify-content: space-between; align-items: center; margin-top: 0.6rem; font-size: 0.75rem; color: var(--text-faint); }
 
+.evoTip {
+  background: #141c2b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  font-size: 12px;
+  min-width: 190px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.evoTipHead { font-weight: 700; margin-bottom: 0.35rem; color: var(--text); }
+.evoTipRow { display: grid; grid-template-columns: 10px 1fr auto; gap: 0.45rem; align-items: center; line-height: 1.55; }
+.evoTipRow i { width: 10px; height: 10px; border-radius: 2px; }
+.evoTipRow span { font-family: var(--mono); }
+.evoTipRow strong { font-variant-numeric: tabular-nums; }
+.evoTipMore { margin-top: 0.35rem; color: var(--text-faint); font-size: 11px; }
+
+.evoPinned {
+  margin-top: 0.6rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.evoPinnedHead { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; font-size: 0.8rem; margin-bottom: 0.5rem; }
+.evoPinnedList { max-height: 260px; }
+
 /* ---- history ---------------------------------------------------------- */
 
 .historyList {
