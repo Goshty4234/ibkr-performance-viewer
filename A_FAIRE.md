@@ -38,6 +38,17 @@ But : aller au-delà du S&P 500 et attraper les « rising stars » avant leur en
 - [ ] La mettre à jour au niveau du reste du site (design, tri des tableaux, infobulles, fiabilité, vitesse).
 - [ ] Corriger les bugs trouvés.
 
+## 5. Mettre le site en ligne avec un moteur hébergé (ex. Oracle Cloud)
+
+Aujourd'hui le moteur de calcul ne tourne que sur le PC (`127.0.0.1:8765`) : sans le PC allumé, pas de backtest. Le site sait déjà parler à un moteur « en ligne » (mode avec authentification), il faut l'héberger et le brancher.
+
+- [ ] Choisir l'hébergeur (ex. Oracle Cloud, offre gratuite Ampere ARM) et vérifier CPU / mémoire suffisants pour les gros univers (voir point 1).
+- [ ] Déployer le moteur FastAPI (Python, dépendances, cache disque des prix persistant, redémarrage automatique).
+- [ ] Sécuriser : HTTPS, authentification obligatoire, limite de jobs simultanés, pas d'accès public sans compte.
+- [ ] Brancher le site (Next.js + Supabase) sur ce moteur et garder le choix « Mon PC » / « En ligne ».
+- [ ] Vérifier que Yahoo ne bloque pas l'adresse IP du serveur (les IP de cloud sont souvent plus limitées qu'une IP maison).
+- [ ] Surveiller la consommation : disque du cache, mémoire, nettoyage des résultats et jobs expirés.
+
 ## Rappels de fonctionnement
 
 - Ne jamais lancer `next build` pendant que le serveur de dev tourne : vérifier avec `node node_modules\typescript\bin\tsc --noEmit -p .`.
