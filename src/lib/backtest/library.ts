@@ -28,10 +28,10 @@ export async function listSaved(): Promise<SavedPortfolio[]> {
 
 /** Saves configs; an existing row with the same name + folder is overwritten. */
 export async function savePortfolios(configs: PortfolioConfig[], folder: string): Promise<number> {
-  if (isGuest()) throw new Error('Mode invité : crée un compte pour enregistrer dans ta bibliothèque.');
+  if (isGuest()) throw new Error('Mode invité : crée un compte pour enregistrer tes portfolios.');
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Connecte-toi pour enregistrer dans ta bibliothèque.');
+  if (!user) throw new Error('Connecte-toi pour enregistrer tes portfolios.');
   const dir = folder.trim();
   const { data: existing, error: e1 } = await supabase
     .from('backtest_portfolios')

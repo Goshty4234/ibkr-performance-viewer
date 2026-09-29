@@ -114,7 +114,7 @@ export default function Header({ email, guest = false }: Props) {
       {guest ? (
         <div className={styles.right}>
           <EngineStatus />
-          <span className={styles.guestBadge} title="Rien n’est enregistré : historique, bibliothèque et espace de travail disparaissent en fermant l’onglet.">
+          <span className={styles.guestBadge} title="Rien n’est enregistré : historique, portfolios enregistrés et espace de travail disparaissent en fermant l’onglet.">
             Mode invité · rien n’est enregistré
           </span>
           <button type="button" className={styles.guestCta} onClick={goToLogin}>

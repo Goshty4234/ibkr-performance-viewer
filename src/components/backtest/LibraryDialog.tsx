@@ -17,6 +17,28 @@ function strategyTags(p: SavedPortfolio['config']): string[] {
 }
 
 export default function LibraryDialog({ onClose }: { onClose: () => void }) {
+  const setView = useBacktestStore((s) => s.setView);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className={styles.overlay} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className={`${styles.dialog} ${styles.dialogWide}`} role="dialog" aria-modal="true">
+        <div className={styles.dialogHead}>
+          <span className={styles.dialogTitle}>Mes portfolios enregistrés</span>
+          <button type="button" className={styles.iconBtn} onClick={onClose} aria-label="Fermer">✕</button>
+        </div>
+        <LibraryPanel onLoaded={() => { setView('build'); onClose(); }} />
+      </div>
+    </div>
+  );
+}
+
+/** Saved portfolio configs of the account: save the current ones, load them back into Construire. */
+export function LibraryPanel({ onLoaded }: { onLoaded: (count: number) => void }) {
   const portfolios = useBacktestStore((s) => s.portfolios);
   const selectedId = useBacktestStore((s) => s.selectedId);
   const importJson = useBacktestStore((s) => s.importJson);
@@ -28,6 +50,9 @@ export default function LibraryDialog({ onClose }: { onClose: () => void }) {
   const [folder, setFolder] = useState('');
   const [query, setQuery] = useState('');
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const active = portfolios.find((p) => p._id === selectedId) ?? portfolios[0];
+  const [name, setName] = useState(active?.name ?? '');
+  useEffect(() => setName(active?.name ?? ''), [active?._id, active?.name]);
 
   const refresh = useCallback(async () => {
     try {
@@ -39,12 +64,6 @@ export default function LibraryDialog({ onClose }: { onClose: () => void }) {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
 
   const folders = useMemo(() => [...new Set((rows ?? []).map((r) => r.folder).filter(Boolean))].sort(), [rows]);
 
@@ -74,13 +93,16 @@ export default function LibraryDialog({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const active = portfolios.find((p) => p._id === selectedId) ?? portfolios[0];
   const toSave = scope === 'all' ? portfolios : active ? [active] : [];
 
   function save() {
+    const dir = folder.trim();
+    const configs = toSave.map((p) => (scope === 'selected' ? { ...toEngineConfig(p), name: name.trim() || p.name } : toEngineConfig(p)));
+    const clashes = configs.filter((c) => rows?.some((r) => r.folder === dir && r.name === c.name)).map((c) => c.name);
+    if (clashes.length && !confirm(`Déjà enregistré dans ${dir ? `« ${dir} »` : 'Sans dossier'} : ${clashes.join(', ')}.\nRemplacer par la configuration actuelle ?`)) return;
     run(async () => {
-      const n = await savePortfolios(toSave.map(toEngineConfig), folder);
-      setNotice(`${n} portfolio${n > 1 ? 's' : ''} enregistré${n > 1 ? 's' : ''} dans ${folder.trim() || 'la racine'}.`);
+      const n = await savePortfolios(configs, dir);
+      setNotice(`${n === 1 ? `« ${configs[0].name} » enregistré` : `${n} portfolios enregistrés`} dans ${dir ? `« ${dir} »` : 'Sans dossier'}.`);
       await refresh();
     });
   }
@@ -91,7 +113,7 @@ export default function LibraryDialog({ onClose }: { onClose: () => void }) {
     if (mode === 'replace' && portfolios.length && !confirm(`Remplacer les ${portfolios.length} portfolios actuels ?`)) return;
     try {
       importJson(JSON.stringify(list), mode);
-      onClose();
+      onLoaded(list.length);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -108,26 +130,31 @@ export default function LibraryDialog({ onClose }: { onClose: () => void }) {
   const checkedIds = [...checked].filter((id) => rows?.some((r) => r.id === id));
 
   return (
-    <div className={styles.overlay} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={`${styles.dialog} ${styles.dialogWide}`} role="dialog" aria-modal="true">
-        <div className={styles.dialogHead}>
-          <span className={styles.dialogTitle}>Ma bibliothèque de portfolios</span>
-          <button type="button" className={styles.iconBtn} onClick={onClose} aria-label="Fermer">✕</button>
-        </div>
+    <>
         <p className={styles.sectionSub}>
-          Enregistrés dans ton compte Supabase : retrouvables sur tous tes appareils, et utilisables dans le
-          backtester comme dans la page Allocations.
+          Tes configurations gardées pour plus tard, dans ton compte : sur tous tes appareils, jamais supprimées
+          automatiquement. « Charger » les ajoute dans Construire.
         </p>
 
         <div className={styles.libSave}>
           <div className={styles.segmented}>
-            <button type="button" className={scope === 'selected' ? styles.segActive : ''} onClick={() => setScope('selected')}>
-              {active ? `« ${active.name} »` : 'Portfolio sélectionné'}
+            <button type="button" className={scope === 'selected' ? styles.segActive : ''} onClick={() => setScope('selected')} title="Enregistrer le portfolio ouvert dans Construire">
+              Portfolio ouvert
             </button>
-            <button type="button" className={scope === 'all' ? styles.segActive : ''} onClick={() => setScope('all')}>
+            <button type="button" className={scope === 'all' ? styles.segActive : ''} onClick={() => setScope('all')} title="Enregistrer tous les portfolios de Construire, chacun sous son nom">
               Tous ({portfolios.length})
             </button>
           </div>
+          {scope === 'selected' && (
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={active?.name ?? 'Nom'}
+              className={styles.libFolder}
+              aria-label="Nom de l’enregistrement"
+              title="Nom sous lequel la configuration est enregistrée (par défaut : le nom du portfolio)"
+            />
+          )}
           <input
             list="lib-folders"
             value={folder}
@@ -137,20 +164,20 @@ export default function LibraryDialog({ onClose }: { onClose: () => void }) {
           />
           <datalist id="lib-folders">{folders.map((f) => <option key={f} value={f} />)}</datalist>
           <button type="button" className="btn btn-primary" disabled={busy || !toSave.length} onClick={save}>
-            Enregistrer
+            💾 Enregistrer
           </button>
         </div>
-        <p className={styles.sectionSub}>Un portfolio du même nom dans le même dossier est mis à jour.</p>
+        <p className={styles.sectionSub}>Même nom dans le même dossier : l’ancien est remplacé (confirmation demandée).</p>
 
         {notice && <div className={styles.noticeBox}>{notice}</div>}
         {error && <div className={styles.errorBox}>{error}</div>}
 
         <div className={styles.libToolbar}>
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Chercher un nom, un dossier ou un ticker…" />
-          <button type="button" className="btn btn-secondary btn-sm" disabled={!checkedIds.length} onClick={() => load(checkedIds, 'append')}>
-            Ajouter ({checkedIds.length})
+          <button type="button" className="btn btn-secondary btn-sm" disabled={!checkedIds.length} onClick={() => load(checkedIds, 'append')} title="Ajoute les portfolios cochés à ceux de Construire">
+            Charger la sélection ({checkedIds.length})
           </button>
-          <button type="button" className="btn btn-ghost btn-sm" disabled={!checkedIds.length} onClick={() => load(checkedIds, 'replace')}>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={!checkedIds.length} onClick={() => load(checkedIds, 'replace')} title="Remplace tous les portfolios de Construire par ceux cochés">
             Remplacer tout
           </button>
           <button
@@ -158,7 +185,7 @@ export default function LibraryDialog({ onClose }: { onClose: () => void }) {
             className="btn btn-ghost btn-sm"
             disabled={!checkedIds.length || busy}
             onClick={() => {
-              if (!confirm(`Supprimer ${checkedIds.length} portfolio(s) de la bibliothèque ?`)) return;
+              if (!confirm(`Supprimer ${checkedIds.length} portfolio(s) enregistré(s) ?`)) return;
               run(async () => { await deleteSaved(checkedIds); setChecked(new Set()); await refresh(); });
             }}
           >
@@ -169,7 +196,7 @@ export default function LibraryDialog({ onClose }: { onClose: () => void }) {
         <div className={styles.libList}>
           {rows === null && <div className={styles.sectionSub}>Chargement…</div>}
           {rows !== null && !groups.length && (
-            <div className={styles.sectionSub}>{rows.length ? 'Aucun résultat.' : 'Ta bibliothèque est vide. Enregistre un portfolio ci-dessus.'}</div>
+            <div className={styles.sectionSub}>{rows.length ? 'Aucun résultat.' : 'Rien d’enregistré pour l’instant. Enregistre un portfolio ci-dessus.'}</div>
           )}
           {groups.map(([dir, list]) => (
             <div key={dir || '__root'} className={styles.libGroup}>
@@ -221,7 +248,7 @@ export default function LibraryDialog({ onClose }: { onClose: () => void }) {
                       title="Supprimer"
                       disabled={busy}
                       onClick={() => {
-                        if (confirm(`Supprimer « ${r.name} » de la bibliothèque ?`)) run(async () => { await deleteSaved([r.id]); await refresh(); });
+                        if (confirm(`Supprimer l’enregistrement « ${r.name} » ?`)) run(async () => { await deleteSaved([r.id]); await refresh(); });
                       }}
                     >
                       ✕
@@ -232,7 +259,6 @@ export default function LibraryDialog({ onClose }: { onClose: () => void }) {
             </div>
           ))}
         </div>
-      </div>
-    </div>
+    </>
   );
 }

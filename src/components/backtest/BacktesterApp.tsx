@@ -78,8 +78,8 @@ export default function BacktesterApp() {
           ))}
         </div>
         <div className={styles.topActions}>
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => setDialog('library')}>
-            Bibliothèque
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => setDialog('library')} title="Tes configurations enregistrées : en enregistrer une, ou en charger une dans Construire">
+            📚 Mes portfolios
           </button>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => setDialog('import')}>
             Importer JSON
