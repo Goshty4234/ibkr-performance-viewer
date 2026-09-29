@@ -64,16 +64,8 @@ export interface ReuseNotice {
   exact: boolean;
 }
 
-const AUTO_REUSE_KEY = 'backtester-reuse-auto';
-
-export function autoReuse(): boolean {
-  return typeof window !== 'undefined' && localStorage.getItem(AUTO_REUSE_KEY) === '1';
-}
-
-export function setAutoReuse(on: boolean) {
-  if (on) localStorage.setItem(AUTO_REUSE_KEY, '1');
-  else localStorage.removeItem(AUTO_REUSE_KEY);
-}
+// The "always reuse without asking" option was removed: the reuse dialog always asks. Drop its stale flag.
+if (typeof window !== 'undefined') localStorage.removeItem('backtester-reuse-auto');
 
 export interface RunState {
   id: string;
@@ -711,10 +703,7 @@ export const useBacktestStore = create<BacktestState>()(
           const keys = await configKeys(request).catch(() => [] as string[]);
           const offer = opts?.force ? null : await findOffer(engine, request, keys);
           if (offer) {
-            const available = offer.items.filter((i) => i.sources.length).map((i) => i.position);
-            const upToDate = offer.items.every((i) => !i.sources.length || i.sources[0].end === offer.targetEnd);
-            // "Toujours reprendre" stays silent only when taking the saved results changes nothing.
-            const choice: ReuseChoice = autoReuse() && upToDate ? { action: 'reuse', accepted: available } : await askReuse(offer);
+            const choice: ReuseChoice = await askReuse(offer);
             if (choice.action === 'cancel') return null;
             if (choice.action === 'reuse') {
               const decision = decide(offer, choice.accepted);

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { daysBetween, decide, type ReuseOffer } from '@/lib/backtest/reuse';
-import { setAutoReuse, useBacktestStore } from '@/lib/backtest/store';
+import { useBacktestStore } from '@/lib/backtest/store';
 import styles from './Backtester.module.css';
 
 function when(iso: string): string {
@@ -25,7 +25,6 @@ function Prompt({ offer }: { offer: ReuseOffer }) {
   const resolve = useBacktestStore((s) => s.resolveReuse);
   const available = offer.items.filter((i) => i.sources.length);
   const [checked, setChecked] = useState(() => new Set(available.map((i) => i.position)));
-  const [remember, setRemember] = useState(false);
   const decision = useMemo(() => decide(offer, checked), [offer, checked]);
   const late = daysBetween(decision.end, offer.targetEnd);
 
@@ -36,10 +35,7 @@ function Prompt({ offer }: { offer: ReuseOffer }) {
       return next;
     });
   const cancel = () => resolve({ action: 'cancel' });
-  const accept = () => {
-    if (remember) setAutoReuse(true);
-    resolve({ action: 'reuse', accepted: [...checked] });
-  };
+  const accept = () => resolve({ action: 'reuse', accepted: [...checked] });
 
   return (
     <div className={styles.overlay} onMouseDown={(e) => { if (e.target === e.currentTarget) cancel(); }}>
@@ -98,10 +94,6 @@ function Prompt({ offer }: { offer: ReuseOffer }) {
             : 'Rien à calculer : résultat instantané.'}
         </div>
 
-        <label className={styles.checkRow}>
-          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-          Toujours reprendre sans demander quand tout est à jour
-        </label>
         <div className={styles.dialogActions}>
           <button type="button" className="btn btn-ghost" onClick={cancel}>Annuler</button>
           <button type="button" className="btn btn-secondary" onClick={() => resolve({ action: 'fresh' })}>Tout recalculer à jour</button>

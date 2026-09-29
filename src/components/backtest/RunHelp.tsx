@@ -10,7 +10,7 @@ const ITEMS: { what: string; where: string; does: string; reuse?: string }[] = [
     reuse:
       'Si un portfolio a déjà tourné avec exactement les mêmes réglages (n’importe quel jour), une fenêtre « Déjà calculé » s’ouvre : '
       + '« Reprendre et lancer » reprend ces résultats et ne calcule que le reste, « Tout recalculer à jour » relance tout. '
-      + 'Avec « Toujours reprendre sans demander », la fenêtre ne s’affiche plus quand tout est déjà à jour.',
+      + 'La question est posée à chaque fois.',
   },
   {
     what: '▶ Lancer l’allocation',
