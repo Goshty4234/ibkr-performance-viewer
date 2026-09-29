@@ -156,7 +156,9 @@ export default function DataGrid<T>({
                   onClick={() => toggleSort(c)}
                 >
                   <span className={styles.headLabel}>{c.label}</span>
-                  {sort?.key === c.key && <span className={styles.sortMark}>{sort.dir === 'desc' ? '▼' : '▲'}</span>}
+                  {sort?.key === c.key
+                    ? <span className={styles.sortMark}>{sort.dir === 'desc' ? '▼' : '▲'}</span>
+                    : c.sortable !== false && <span className={styles.sortHint} aria-hidden>⇅</span>}
                 </div>
               ))}
             </div>

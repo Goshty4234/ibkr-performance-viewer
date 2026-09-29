@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { MONEY_COLUMNS, STAT_COLUMNS, fmtMoney } from '@/lib/backtest/chart-data';
 import type { PortfolioSummaryOk as PortfolioResultOk } from '@/lib/engine/types';
 import styles from './Results.module.css';
+import sortStyles from './SortableTh.module.css';
 
 type SortKey = string;
 
@@ -51,7 +52,9 @@ export default function StatsTable({
     });
   }
 
-  const arrow = (key: SortKey) => (sort?.key === key ? (sort.dir === -1 ? ' ↓' : ' ↑') : '');
+  const arrow = (key: SortKey) => (sort?.key === key
+    ? <span className={sortStyles.mark} style={{ opacity: 1, color: 'var(--accent)' }}>{sort.dir === -1 ? '▼' : '▲'}</span>
+    : <span className={sortStyles.mark} aria-hidden>⇅</span>);
   const columns = [...STAT_COLUMNS, ...MONEY_COLUMNS];
 
   return (
@@ -69,9 +72,9 @@ export default function StatsTable({
         <table className={styles.table}>
           <thead>
             <tr>
-              <th className={styles.stickyCol} onClick={() => clickSort('__name')}>Portfolio{arrow('__name')}</th>
+              <th className={`${styles.stickyCol} ${sortStyles.th}`} onClick={() => clickSort('__name')}>Portfolio{arrow('__name')}</th>
               {columns.map((c) => (
-                <th key={c.key} title={c.title} onClick={() => clickSort(c.key)}>
+                <th key={c.key} className={sortStyles.th} title={c.title} onClick={() => clickSort(c.key)}>
                   {c.label}{arrow(c.key)}
                 </th>
               ))}

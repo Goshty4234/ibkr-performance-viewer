@@ -7,6 +7,7 @@ import { usePortfolioDetail } from '@/lib/backtest/use-detail';
 import { SERIES_PALETTE } from '@/lib/chart-series';
 import type { AllocationTable, PieSlices, PortfolioSummaryOk } from '@/lib/engine/types';
 import EChart from '../charts/EChart';
+import { SortableTh, type SortValue, useTableSort } from '../SortableTh';
 import { money, pct, qty } from './format';
 import styles from '../Results.module.css';
 
@@ -31,23 +32,36 @@ export function Pie({ slices, height = 300, labels = true }: { slices: PieSlices
   return <EChart option={option} height={height} />;
 }
 
+type AllocRow = AllocationTable['rows'][number];
+const NO_ROWS: AllocRow[] = [];
+const ALLOC_SORT: Record<string, (r: AllocRow) => SortValue> = {
+  ticker: (r) => r.ticker,
+  alloc: (r) => r.alloc_pct,
+  price: (r) => r.price,
+  shares: (r) => (r.ticker === 'CASH' ? null : r.shares),
+  value: (r) => r.value,
+  pct: (r) => r.pct,
+};
+
 export function AllocTable({ table }: { table: AllocationTable | null }) {
+  const { sorted, sort, toggle } = useTableSort(table?.rows ?? NO_ROWS, ALLOC_SORT);
   if (!table) return <div className={styles.muted}>Tableau indisponible.</div>;
+  const th = { sort, onSort: toggle };
   return (
     <div className={styles.tableScroll} style={{ maxHeight: 360 }}>
       <table className={styles.table}>
         <thead>
           <tr>
-            <th className={styles.stickyCol}>Ticker</th>
-            <th>Allocation %</th>
-            <th>Prix</th>
-            <th>Actions</th>
-            <th>Valeur</th>
-            <th>% du portefeuille</th>
+            <SortableTh k="ticker" text className={styles.stickyCol} {...th}>Ticker</SortableTh>
+            <SortableTh k="alloc" {...th}>Allocation %</SortableTh>
+            <SortableTh k="price" {...th}>Prix</SortableTh>
+            <SortableTh k="shares" {...th}>Actions</SortableTh>
+            <SortableTh k="value" {...th}>Valeur</SortableTh>
+            <SortableTh k="pct" {...th}>% du portefeuille</SortableTh>
           </tr>
         </thead>
         <tbody>
-          {table.rows.map((r) => (
+          {sorted.map((r) => (
             <tr key={r.ticker}>
               <td className={styles.stickyCol}><strong>{r.ticker}</strong></td>
               <td className={styles.num}>{pct(r.alloc_pct)}</td>
@@ -91,18 +105,30 @@ function Countdown({ frequency, last }: { frequency: string; last: string }) {
   );
 }
 
+interface BuyRow { t: string; w: number; price: number | null; value: number; shares: number | null; spent: number | null }
+const BUY_SORT: Record<string, (r: BuyRow) => SortValue> = {
+  ticker: (r) => r.t,
+  w: (r) => r.w,
+  price: (r) => r.price,
+  value: (r) => r.value,
+  shares: (r) => r.shares,
+  spent: (r) => r.spent,
+};
+
 export function PurchaseCalculator({ weights, prices }: { weights: Record<string, number>; prices: Record<string, number | null> }) {
   const [amount, setAmount] = useState(10000);
-  const rows = Object.entries(weights)
+  const rows = useMemo(() => Object.entries(weights)
     .filter(([, w]) => w > 0)
     .sort((a, b) => b[1] - a[1])
-    .map(([t, w]) => {
+    .map(([t, w]): BuyRow => {
       const price = t === 'CASH' ? null : prices[t] ?? null;
       const value = amount * w;
       const shares = price && price > 0 ? Math.floor(value / price) : null;
       return { t, w, price, value, shares, spent: shares !== null && price ? shares * price : t === 'CASH' ? value : null };
-    });
+    }), [weights, prices, amount]);
   const spent = rows.reduce((a, r) => a + (r.spent ?? 0), 0);
+  const { sorted, sort, toggle } = useTableSort(rows, BUY_SORT);
+  const th = { sort, onSort: toggle };
   return (
     <div className="card">
       <div className={styles.cardHead}>
@@ -120,10 +146,17 @@ export function PurchaseCalculator({ weights, prices }: { weights: Record<string
         <div className={styles.tableScroll} style={{ maxHeight: 360 }}>
           <table className={styles.table}>
             <thead>
-              <tr><th className={styles.stickyCol}>Ticker</th><th>Poids</th><th>Prix</th><th>Montant cible</th><th>Actions à acheter</th><th>Coût réel</th></tr>
+              <tr>
+                <SortableTh k="ticker" text className={styles.stickyCol} {...th}>Ticker</SortableTh>
+                <SortableTh k="w" {...th}>Poids</SortableTh>
+                <SortableTh k="price" {...th}>Prix</SortableTh>
+                <SortableTh k="value" {...th}>Montant cible</SortableTh>
+                <SortableTh k="shares" {...th}>Actions à acheter</SortableTh>
+                <SortableTh k="spent" {...th}>Coût réel</SortableTh>
+              </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {sorted.map((r) => (
                 <tr key={r.t}>
                   <td className={styles.stickyCol}><strong>{r.t}</strong></td>
                   <td className={styles.num}>{pct(r.w * 100)}</td>

@@ -13,6 +13,7 @@ import { SERIES_PALETTE } from '@/lib/chart-series';
 import { useEngineStore } from '@/lib/engine/store';
 import type { BenchmarkRow, FundamentalsReport, PieSlices, PortfolioSummaryOk, ReturnsRow, TimerInfo } from '@/lib/engine/types';
 import DataGrid from '../grid/DataGrid';
+import { SortableTh, type SortValue, useTableSort } from '../SortableTh';
 import { AllocationHistorySection } from '../results/PortfolioTab';
 import { AllocTable, Pie, PurchaseCalculator } from '../results/TodayTab';
 import { money, num, pct } from '../results/format';
@@ -325,7 +326,22 @@ function signed(v: number | null) {
   return <span style={{ color: v > 0 ? 'var(--green)' : v < 0 ? 'var(--red)' : undefined }}>{`${v > 0 ? '+' : ''}${v.toFixed(2)}%`}</span>;
 }
 
+const periodGetters = <R,>(): Record<string, (r: R) => SortValue> =>
+  Object.fromEntries(PERIOD_COLS.map(([k]) => [k, (r: R) => (r as Record<string, unknown>)[k] as SortValue]));
+const BENCH_SORT: Record<string, (r: BenchmarkRow) => SortValue> = {
+  ticker: (r) => r.ticker, pe: (r) => r.pe, volatility: (r) => r.volatility, beta: (r) => r.beta, ...periodGetters<BenchmarkRow>(),
+};
+const benchPinned = (r: BenchmarkRow) => r.ticker === 'PORTFOLIO';
+const RETURNS_SORT: Record<string, (r: ReturnsRow) => SortValue> = {
+  ticker: (r) => r.ticker, weight: (r) => r.weight, momentum: (r) => r.momentum, beta: (r) => r.beta, volatility: (r) => r.volatility, ...periodGetters<ReturnsRow>(),
+};
+const returnsPinned = (r: ReturnsRow) => !!r.portfolio;
+const NO_BENCH: BenchmarkRow[] = [];
+const NO_RETURNS: ReturnsRow[] = [];
+
 function BenchmarksSection({ rows, loading, name }: { rows: BenchmarkRow[] | null; loading: boolean; name: string }) {
+  const { sorted, sort, toggle } = useTableSort(rows ?? NO_BENCH, BENCH_SORT, benchPinned);
+  const th = { sort, onSort: toggle };
   return (
     <Section id="alloc-benchmarks" title="Comparaison aux benchmarks" sub="Rendements de prix approximatifs sur des périodes calendaires · volatilité annualisée sur 365 jours · bêta vs SPY (portefeuille : vs son benchmark)">
       {!rows && loading ? (
@@ -335,15 +351,15 @@ function BenchmarksSection({ rows, loading, name }: { rows: BenchmarkRow[] | nul
           <table className={styles.table}>
             <thead>
               <tr>
-                <th>Ticker</th>
-                <th>P/E</th>
-                {PERIOD_COLS.map(([, l]) => <th key={l}>{l}</th>)}
-                <th>Volatilité</th>
-                <th>Bêta</th>
+                <SortableTh k="ticker" text {...th}>Ticker</SortableTh>
+                <SortableTh k="pe" {...th}>P/E</SortableTh>
+                {PERIOD_COLS.map(([k, l]) => <SortableTh key={l} k={k} {...th}>{l}</SortableTh>)}
+                <SortableTh k="volatility" {...th}>Volatilité</SortableTh>
+                <SortableTh k="beta" {...th}>Bêta</SortableTh>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {sorted.map((r) => (
                 <tr key={r.ticker} className={r.ticker === 'PORTFOLIO' ? styles.rowHighlight : ''}>
                   <td className={styles.tickerCell}>{r.ticker === 'PORTFOLIO' ? <>★ {name}</> : r.ticker}</td>
                   <td style={peColor(r.pe)}>{finite(r.pe) ? r.pe.toFixed(2) : <span className={styles.faint}>N/A</span>}</td>
@@ -364,6 +380,8 @@ function BenchmarksSection({ rows, loading, name }: { rows: BenchmarkRow[] | nul
 
 function ReturnsSection({ rows, loading, stale, name }: { rows: ReturnsRow[] | null; loading: boolean; stale: boolean; name: string }) {
   const na = <span className={styles.faint}>N/A</span>;
+  const { sorted, sort, toggle } = useTableSort(rows ?? NO_RETURNS, RETURNS_SORT, returnsPinned);
+  const th = { sort, onSort: toggle };
   return (
     <Section
       id="alloc-returns"
@@ -377,16 +395,16 @@ function ReturnsSection({ rows, loading, stale, name }: { rows: ReturnsRow[] | n
           <table className={styles.table}>
             <thead>
               <tr>
-                <th>Ticker</th>
-                <th>Poids</th>
-                <th>Momentum</th>
-                <th>Bêta</th>
-                <th>Volatilité</th>
-                {PERIOD_COLS.map(([, l]) => <th key={l}>{l}</th>)}
+                <SortableTh k="ticker" text {...th}>Ticker</SortableTh>
+                <SortableTh k="weight" {...th}>Poids</SortableTh>
+                <SortableTh k="momentum" {...th}>Momentum</SortableTh>
+                <SortableTh k="beta" {...th}>Bêta</SortableTh>
+                <SortableTh k="volatility" {...th}>Volatilité</SortableTh>
+                {PERIOD_COLS.map(([k, l]) => <SortableTh key={l} k={k} {...th}>{l}</SortableTh>)}
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {sorted.map((r) => (
                 <tr key={r.ticker} className={r.portfolio ? styles.rowHighlight : r.weight <= 0.0001 ? styles.rowMuted : ''}>
                   <td className={styles.tickerCell}>{r.portfolio ? <>★ {name}</> : r.ticker}</td>
                   <td>{r.portfolio ? '' : `${(r.weight * 100).toFixed(1)}%`}</td>
