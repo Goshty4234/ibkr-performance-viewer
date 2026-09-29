@@ -110,6 +110,20 @@
 
 .runBtn { min-width: 240px; }
 
+.runNote { font-size: 0.74rem; color: var(--text-muted); max-width: 280px; line-height: 1.35; }
+
+.runHelp { grid-column: 1 / -1; font-size: 0.8rem; color: var(--text-muted); }
+.runHelp summary { cursor: pointer; width: fit-content; user-select: none; }
+.runHelp summary:hover { color: var(--text); }
+.runHelp dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.6rem; margin: 0.6rem 0 0; }
+.runHelp dl > div { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.55rem 0.7rem; background: rgba(255, 255, 255, 0.02); }
+.runHelp dt { display: flex; flex-direction: column; gap: 0.1rem; margin-bottom: 0.3rem; }
+.runHelp dt strong { color: var(--text); font-size: 0.82rem; }
+.runHelp dt span { font-size: 0.72rem; }
+.runHelp dd { margin: 0; line-height: 1.45; }
+.runHelp dd.runHelpReuse { margin-top: 0.4rem; padding-top: 0.4rem; border-top: 1px dashed var(--border); }
+.runHelpFoot { margin: 0.6rem 0 0; font-size: 0.74rem; }
+
 .progress {
   display: flex;
   flex-direction: column;

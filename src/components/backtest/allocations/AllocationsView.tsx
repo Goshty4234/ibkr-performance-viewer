@@ -489,6 +489,9 @@ function EmptyState({ onRun, running }: { onRun: (id: string) => void; running: 
         Choisis un portfolio : un calcul court (juste l’historique nécessaire aux poids d’aujourd’hui) donne l’allocation cible,
         puis la page ajoute les fondamentaux, la composition par secteur, le risque et la comparaison aux benchmarks.
       </p>
+      <p className={styles.emptyHint}>
+        Pas besoin de lancer le backtest complet avant : le portfolio est pris tel qu’il est dans Construire, même modifié à l’instant.
+      </p>
       <div className={styles.emptyList}>
         {portfolios.map((p) => (
           <button key={p._id} type="button" className={styles.emptyItem} disabled={running} onClick={() => onRun(p._id)}>
@@ -523,6 +526,7 @@ export default function AllocationsView() {
   const workspace = useBacktestStore((s) => s.portfolios);
   const runs = useBacktestStore((s) => s.runs);
   const startAllocationRun = useBacktestStore((s) => s.startAllocationRun);
+  const clearAlloc = useBacktestStore((s) => s.clearAlloc);
   const launchError = useBacktestStore((s) => s.launchError);
   const client = useEngineStore((s) => s.client);
 
@@ -672,6 +676,15 @@ export default function AllocationsView() {
             Export JSON
           </button>
           <button type="button" className="btn btn-primary btn-sm" onClick={print}>PDF</button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={clearAlloc}
+            disabled={running}
+            title="Vide la page pour repartir de zéro (le run reste dans l’Historique)"
+          >
+            ✕ Vider la page
+          </button>
         </div>
       </header>
 

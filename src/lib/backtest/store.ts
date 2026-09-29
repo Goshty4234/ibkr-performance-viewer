@@ -155,6 +155,8 @@ interface BacktestState {
   resolveReuse: (choice: ReuseChoice) => void;
   dismissReuseNotice: () => void;
   showAllocResult: (result: LoadedResult, runId: string | null, label: string, focus?: string | null) => void;
+  /** Empties the Allocations page (the saved run stays in the history). */
+  clearAlloc: () => void;
   cancelRun: (id: string) => Promise<void>;
   dismissRun: (id: string) => void;
   openRun: (id: string) => Promise<void>;
@@ -783,6 +785,12 @@ export const useBacktestStore = create<BacktestState>()(
             alloc: { result, runId, label, source: 'history', focus, saveError: null },
             reuseNotice: s.reuseNotice?.purpose === 'allocations' ? null : s.reuseNotice,
             view: s.view === 'history' ? 'allocations' : s.view,
+          })),
+
+        clearAlloc: () =>
+          set((s) => ({
+            alloc: null,
+            reuseNotice: s.reuseNotice?.purpose === 'allocations' ? null : s.reuseNotice,
           })),
 
         async cancelRun(id) {

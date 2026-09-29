@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { isActive, useBacktestStore } from '@/lib/backtest/store';
 import { useEngineStore } from '@/lib/engine/store';
+import RunHelp from './RunHelp';
 import styles from './Backtester.module.css';
 
 export default function RunBar() {
@@ -12,6 +13,7 @@ export default function RunBar() {
   const launchError = useBacktestStore((s) => s.launchError);
   const startRun = useBacktestStore((s) => s.startRun);
   const count = useBacktestStore((s) => s.portfolios.length);
+  const view = useBacktestStore((s) => s.view);
   const engineStatus = useEngineStore((s) => s.status);
   const engine = useEngineStore((s) => s.engine);
   const [launching, setLaunching] = useState(false);
@@ -105,10 +107,15 @@ export default function RunBar() {
           className={`btn btn-primary btn-lg ${styles.runBtn}`}
           disabled={!count || engineStatus === 'detecting' || launching}
           onClick={() => void launch()}
-          title={engine ? `Moteur : ${engine.url}` : undefined}
+          title={`Backtest complet des ${count} portfolio${count > 1 ? 's' : ''} de Construire, résultats dans l’onglet Résultats${engine ? ` · moteur : ${engine.url}` : ''}`}
         >
-          🚀 Lancer le backtest ({count})
+          🚀 Lancer le backtest complet ({count})
         </button>
+        {view === 'allocations' && (
+          <span className={styles.runNote}>
+            Ce bouton et ces options servent au backtest complet (onglet Résultats). Pour l’allocation d’aujourd’hui, utilise les boutons de la page ci-dessous.
+          </span>
+        )}
         {activeCount > 0 && (
           <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
             {activeCount} run{activeCount > 1 ? 's' : ''} en cours — tu peux en lancer d&apos;autres en parallèle.
@@ -121,6 +128,7 @@ export default function RunBar() {
         )}
         {launchError && <div className={styles.errorBox}>{launchError}</div>}
       </div>
+      <RunHelp />
     </section>
   );
 }
