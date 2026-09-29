@@ -9,8 +9,8 @@ export const TIPS = {
   dividendsCash: 'Coché : les dividendes s’accumulent en cash au lieu d’être réinvestis. Décoché : ils sont réinvestis dans le titre qui les verse.',
   idleCash: 'Le cash non investi rapporte le taux des bons du Trésor à 3 mois (^IRX), composé chaque jour. Sinon il rapporte 0 %.',
   fusion: 'Combine plusieurs portfolios existants, chacun avec son propre rebalancement ; la fusion les rééquilibre entre eux.',
-  excludeCashflowSync: 'La synchro « apports » depuis le 1er portfolio ignore ce portfolio.',
-  excludeRebalSync: 'La synchro « rebalancement » depuis le 1er portfolio ignore ce portfolio.',
+  excludeCashflowSync: 'Le bouton « ⇄ Apports » (Copier depuis le 1er portfolio) ne touchera pas ce portfolio : il garde sa valeur initiale, son apport et sa fréquence d’apport. N’a aucun effet sur la simulation elle-même : le portfolio reçoit toujours ses propres apports.',
+  excludeRebalSync: 'Le bouton « ⇄ Rebalancement » (Copier depuis le 1er portfolio) ne touchera pas ce portfolio : il garde sa propre fréquence de rebalancement. N’a aucun effet sur la simulation elle-même : le portfolio rebalance toujours à sa fréquence.',
 
   // Momentum
   momentum: 'Au lieu de poids fixes, chaque rebalancement donne plus de poids aux titres qui ont le plus monté sur les fenêtres choisies.',

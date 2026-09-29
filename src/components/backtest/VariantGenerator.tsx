@@ -82,23 +82,64 @@ function Checks<T extends string | boolean>({ options, value, onChange }: {
   );
 }
 
-function AxisValues({ axis, onChange, unit }: { axis: ValueAxis<number>; onChange: (a: ValueAxis<number>) => void; unit?: string }) {
+type Mode = 'inherit' | 'no' | 'yes' | 'both';
+const MODE_LABEL: Record<Mode, string> = { inherit: 'Comme le portfolio', no: 'Non', yes: 'Oui', both: 'Les deux' };
+const MODE_TIP: Record<Mode, string> = {
+  inherit: 'Chaque variante garde le réglage actuel du portfolio de base.',
+  no: 'Toutes les variantes sans cette option.',
+  yes: 'Toutes les variantes avec cette option.',
+  both: 'Une variante avec et une sans, pour comparer : double le nombre de variantes.',
+};
+
+const axisMode = (a: { off: boolean; on: boolean }): Mode => (a.off && a.on ? 'both' : a.on ? 'yes' : a.off ? 'no' : 'inherit');
+const withMode = <A extends { off: boolean; on: boolean }>(a: A, m: Mode): A => ({ ...a, off: m === 'no' || m === 'both', on: m === 'yes' || m === 'both' });
+const boolMode = (l: boolean[]): Mode => (l.includes(true) && l.includes(false) ? 'both' : l.includes(true) ? 'yes' : l.includes(false) ? 'no' : 'inherit');
+const boolsOf = (m: Mode): boolean[] => (m === 'both' ? [true, false] : m === 'yes' ? [true] : m === 'no' ? [false] : []);
+
+/** One choice per option instead of two independent boxes (which allowed "both" and "neither" silently). */
+function ModeSwitch({ value, onChange, inherit }: { value: Mode; onChange: (m: Mode) => void; inherit?: string }) {
+  const modes: Mode[] = inherit !== undefined ? ['inherit', 'no', 'yes', 'both'] : ['no', 'yes', 'both'];
+  return (
+    <div className={`${styles.segmented} ${styles.segSm}`} role="radiogroup">
+      {modes.map((m) => (
+        <button
+          key={m}
+          type="button"
+          role="radio"
+          aria-checked={value === m}
+          className={value === m ? styles.segActive : ''}
+          title={m === 'inherit' ? `${MODE_TIP.inherit} Actuellement : ${inherit}.` : MODE_TIP[m]}
+          onClick={() => onChange(m)}
+        >
+          {MODE_LABEL[m]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function BoolAxis({ value, onChange, inherit }: { value: boolean[]; onChange: (v: boolean[]) => void; inherit?: string }) {
+  const mode = boolMode(value);
   return (
     <>
-      <label className={styles.checkRow}>
-        <input type="checkbox" checked={axis.off} onChange={(e) => onChange({ ...axis, off: e.target.checked })} />
-        Désactivé
-      </label>
-      <label className={styles.checkRow}>
-        <input type="checkbox" checked={axis.on} onChange={(e) => onChange({ ...axis, on: e.target.checked })} />
-        Activé
-      </label>
+      <ModeSwitch value={mode} inherit={inherit} onChange={(m) => onChange(boolsOf(m))} />
+      {mode === 'inherit' && <span className={styles.hint}>portfolio : {inherit}</span>}
+    </>
+  );
+}
+
+function AxisValues({ axis, onChange, unit, inherit }: { axis: ValueAxis<number>; onChange: (a: ValueAxis<number>) => void; unit?: string; inherit?: string }) {
+  const mode = axisMode(axis);
+  return (
+    <>
+      <ModeSwitch value={mode} inherit={inherit} onChange={(m) => onChange(withMode(axis, m))} />
       {axis.on && (
         <>
-          <LazyInput value={axis.values.join(', ')} onCommit={(t) => onChange({ ...axis, values: parseNums(t) })} placeholder="ex. 2, 5, 10" width={180} />
-          {unit && <span className={styles.hint}>{unit}</span>}
+          <LazyInput value={axis.values.join(', ')} onCommit={(t) => onChange({ ...axis, values: parseNums(t) })} placeholder="ex. 2, 5, 10" width={140} />
+          <span className={styles.hint}>{unit ? `${unit} · ` : ''}une variante par valeur</span>
         </>
       )}
+      {mode === 'inherit' && <span className={styles.hint}>portfolio : {inherit}</span>}
     </>
   );
 }
@@ -134,14 +175,6 @@ const NEG_OPTS = NEGATIVE_STRATEGIES.map((m) => ({
   value: m as string,
   label: m === 'Cash' ? 'Cash' : m === 'Equal weight' ? 'Poids égaux' : m === 'Relative momentum' ? 'Relatif' : 'NZS',
 }));
-const BOOL_OPTS = [{ value: true, label: 'Avec' }, { value: false, label: 'Sans' }] as const;
-
-/** "Same as the portfolio" reminder for the options Streamlit's generator did not cover. */
-function Inherit({ show, current }: { show: boolean; current: string }) {
-  if (!show) return null;
-  return <span className={styles.hint}>Aucune case = comme le portfolio ({current})</span>;
-}
-
 function Row({ label, tip, children }: { label: string; tip?: string; children: ReactNode }) {
   return (
     <div className={styles.axisRow}>
@@ -184,6 +217,9 @@ export default function VariantGenerator({ p }: { p: EditablePortfolio }) {
           <span className={styles.sectionSub}>Toutes les combinaisons des options cochées, à partir de ce portfolio</span>
         </summary>
         <div className={styles.detailsBody} style={{ padding: '0.75rem 0 0' }}>
+          <p className={styles.hint} style={{ margin: 0 }}>
+            Cases à cocher : plusieurs choix possibles, une variante par case cochée. Non / Oui / Les deux : « Les deux » crée une version avec et une sans, pour comparer.
+          </p>
           <div className={styles.axisRow}>
             <span className={styles.axisLabel} title={TIPS.rebalancing}>Rebalancement</span>
             <div className={styles.axisBody}>
@@ -213,11 +249,11 @@ export default function VariantGenerator({ p }: { p: EditablePortfolio }) {
               </div>
               <div className={styles.axisRow}>
                 <span className={styles.axisLabel} title={TIPS.betaWeighting}>Pondération ÷ bêta</span>
-                <div className={styles.axisBody}><Checks options={BOOL_OPTS} value={spec.beta} onChange={(v) => patch({ beta: v })} /></div>
+                <div className={styles.axisBody}><BoolAxis value={spec.beta} onChange={(v) => patch({ beta: v })} /></div>
               </div>
               <div className={styles.axisRow}>
                 <span className={styles.axisLabel} title={TIPS.volWeighting}>Pondération ÷ volatilité</span>
-                <div className={styles.axisBody}><Checks options={BOOL_OPTS} value={spec.volatility} onChange={(v) => patch({ volatility: v })} /></div>
+                <div className={styles.axisBody}><BoolAxis value={spec.volatility} onChange={(v) => patch({ volatility: v })} /></div>
               </div>
               <div className={styles.axisRow}>
                 <span className={styles.axisLabel} title={TIPS.minThreshold}>Seuil minimal</span>
@@ -323,14 +359,7 @@ export default function VariantGenerator({ p }: { p: EditablePortfolio }) {
             <div className={styles.axisRow}>
               <span className={styles.axisLabel} title={TIPS.maCross}>Croisement MA</span>
               <div className={styles.axisBody}>
-                <label className={styles.checkRow}>
-                  <input type="checkbox" checked={spec.maCross.off} onChange={(e) => patch({ maCross: { ...spec.maCross, off: e.target.checked } })} />
-                  Désactivé
-                </label>
-                <label className={styles.checkRow}>
-                  <input type="checkbox" checked={spec.maCross.on} onChange={(e) => patch({ maCross: { ...spec.maCross, on: e.target.checked } })} />
-                  Activé
-                </label>
+                <ModeSwitch value={axisMode(spec.maCross)} onChange={(m) => patch({ maCross: withMode(spec.maCross, m) })} />
                 {spec.maCross.on && (
                   <>
                     <span className={styles.hint}>Tolérance %</span>
@@ -344,32 +373,26 @@ export default function VariantGenerator({ p }: { p: EditablePortfolio }) {
           )}
 
           <p className={styles.hint} style={{ margin: '0.6rem 0 0.2rem' }}>
-            Options en plus de Streamlit — si aucune case n’est cochée, chaque variante garde le réglage du portfolio de base.
+            Options en plus de Streamlit — « Comme le portfolio » garde le réglage actuel du portfolio de base dans chaque variante.
           </p>
 
           <Row label="Max par secteur" tip={TIPS.sectorCap}>
-            <AxisValues axis={spec.sectorCap} onChange={(a) => patch({ sectorCap: a })} unit="tickers" />
-            <Inherit show={!spec.sectorCap.off && !spec.sectorCap.on} current={onOff(!!p.use_sector_concentration_limit, ` (${p.max_tickers_per_sector})`)} />
+            <AxisValues axis={spec.sectorCap} onChange={(a) => patch({ sectorCap: a })} unit="tickers" inherit={onOff(!!p.use_sector_concentration_limit, `, ${p.max_tickers_per_sector} max`)} />
           </Row>
           <Row label="Max par industrie" tip={TIPS.industryCap}>
-            <AxisValues axis={spec.industryCap} onChange={(a) => patch({ industryCap: a })} unit="tickers" />
-            <Inherit show={!spec.industryCap.off && !spec.industryCap.on} current={onOff(!!p.use_industry_concentration_limit, ` (${p.max_tickers_per_industry})`)} />
+            <AxisValues axis={spec.industryCap} onChange={(a) => patch({ industryCap: a })} unit="tickers" inherit={onOff(!!p.use_industry_concentration_limit, `, ${p.max_tickers_per_industry} max`)} />
           </Row>
           <Row label="Capitalisation min" tip={TIPS.minCap}>
-            <AxisValues axis={spec.minMarketCap} onChange={(a) => patch({ minMarketCap: a })} unit="G$" />
-            <Inherit show={!spec.minMarketCap.off && !spec.minMarketCap.on} current={onOff(!!p.use_min_market_cap_filter, ` (${p.min_market_cap_billions} G$)`)} />
+            <AxisValues axis={spec.minMarketCap} onChange={(a) => patch({ minMarketCap: a })} unit="G$" inherit={onOff(!!p.use_min_market_cap_filter, `, ${p.min_market_cap_billions} G$`)} />
           </Row>
           <Row label="Exclure avant S&P 500" tip={TIPS.sp500Entry}>
-            <Checks options={BOOL_OPTS} value={spec.sp500Entry} onChange={(v) => patch({ sp500Entry: v })} />
-            <Inherit show={!spec.sp500Entry.length} current={onOff(!!p.exclude_before_sp500_entry)} />
+            <BoolAxis value={spec.sp500Entry} onChange={(v) => patch({ sp500Entry: v })} inherit={onOff(!!p.exclude_before_sp500_entry)} />
           </Row>
           <Row label="Cash rémunéré (^IRX)" tip={TIPS.idleCash}>
-            <Checks options={BOOL_OPTS} value={spec.idleCash} onChange={(v) => patch({ idleCash: v })} />
-            <Inherit show={!spec.idleCash.length} current={onOff(!!p.idle_cash_earns_treasury_yield)} />
+            <BoolAxis value={spec.idleCash} onChange={(v) => patch({ idleCash: v })} inherit={onOff(!!p.idle_cash_earns_treasury_yield)} />
           </Row>
           <Row label="Dividendes en cash" tip={TIPS.dividendsCash}>
-            <Checks options={BOOL_OPTS} value={spec.dividendsCash} onChange={(v) => patch({ dividendsCash: v })} />
-            <Inherit show={!spec.dividendsCash.length} current={onOff(!!p.collect_dividends_as_cash)} />
+            <BoolAxis value={spec.dividendsCash} onChange={(v) => patch({ dividendsCash: v })} inherit={onOff(!!p.collect_dividends_as_cash)} />
           </Row>
 
           <div className={styles.axisRow}>

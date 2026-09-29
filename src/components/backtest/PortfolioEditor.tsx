@@ -198,14 +198,14 @@ export default function PortfolioEditor() {
               onChange={(v) => set({ exclude_from_cashflow_sync: v })}
               title={TIPS.excludeCashflowSync}
             >
-              Exclure de la synchro des apports
+              Ne pas écraser par « ⇄ Apports »
             </Check>
             <Check
               checked={Boolean(p.exclude_from_rebalancing_sync)}
               onChange={(v) => set({ exclude_from_rebalancing_sync: v })}
               title={TIPS.excludeRebalSync}
             >
-              Exclure de la synchro du rebalancement
+              Ne pas écraser par « ⇄ Rebalancement »
             </Check>
           </div>
         )}

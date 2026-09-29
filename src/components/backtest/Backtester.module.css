@@ -728,6 +728,9 @@
   white-space: nowrap;
 }
 .segmented button.segActive { background: var(--surface-3); color: var(--text); }
+.segSm { padding: 2px; flex-wrap: wrap; }
+.segSm button { padding: 0.25rem 0.6rem; font-size: 0.76rem; }
+.segSm button.segActive { background: var(--accent); color: #fff; }
 
 /* ---- library ---------------------------------------------------------- */
 

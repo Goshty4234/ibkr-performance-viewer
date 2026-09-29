@@ -151,10 +151,10 @@ export default function PortfolioList() {
         <div className={styles.syncBar}>
           <span className={styles.syncLabel}>Copier depuis le 1er portfolio</span>
           <div className={styles.syncButtons}>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => sync('cashflow')} title="Copie valeur initiale, ajouts et fréquence des ajouts (sauf portfolios exclus)">
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => sync('cashflow')} title="Copie la valeur initiale, l’apport et la fréquence d’apport du 1er portfolio dans tous les autres, sauf ceux cochés « Ne pas écraser par ⇄ Apports »">
               ⇄ Apports
             </button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => sync('rebalancing')} title="Copie la fréquence de rebalancement (sauf portfolios exclus)">
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => sync('rebalancing')} title="Copie la fréquence de rebalancement du 1er portfolio dans tous les autres, sauf ceux cochés « Ne pas écraser par ⇄ Rebalancement »">
               ⇄ Rebalancement
             </button>
           </div>
