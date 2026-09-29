@@ -37,6 +37,9 @@ But : aller au-delà du S&P 500 et attraper les « rising stars » avant leur en
 - [ ] Tester toute la section Comptes IBKR (import des relevés, performance, affichage).
 - [ ] La mettre à jour au niveau du reste du site (design, tri des tableaux, infobulles, fiabilité, vitesse).
 - [ ] Corriger les bugs trouvés.
+- [ ] Vérifier le terminal du serveur de dev, qui affiche souvent en rafale :
+  `GET /ibkr/compte/00000000-0000-0000-0000-000000000000`, puis `/api/accounts`, `/api/statements`, `/api/nav-series`, `/api/twr-series` avec `portfolioAccountId=00000000-…`.
+  L'identifiant tout à zéro ressemble à un compte factice (valeur par défaut) : vérifier d'où viennent ces appels (préchargement des liens, rechargement en boucle, onglet ouvert), s'ils sont normaux, et les supprimer s'ils sont inutiles (charge Supabase et serveur).
 
 ## 5. Mettre le site en ligne avec un moteur hébergé (ex. Oracle Cloud)
 
