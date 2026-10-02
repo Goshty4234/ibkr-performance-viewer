@@ -400,6 +400,71 @@ def _reindex(data: dict, simulation_index: pd.DatetimeIndex) -> dict:
     return out
 
 
+_MCAP_CHUNK = 200
+_MCAP_BACKOFF_S = (5.0, 15.0, 45.0, 90.0)
+
+
+def _market_cap_scales(tickers: list[str], ctx: RunContext) -> dict:
+    """Same map as legacy fetch_yahoo_quote_market_caps (key -> marketCap / price, 24h cache, same
+    cache entries), but each quote chunk is retried with a back-off when Yahoo refuses it, and the
+    run stops when caps stay unavailable: the legacy function returned an empty map and the
+    "minimum market cap" portfolio then ran unfiltered."""
+    import diskcache
+
+    cache = diskcache.Cache(".streamlit/ticker_info_cache")
+    keys = list(dict.fromkeys(k for k in (L._mcap_symbol_key(t) for t in tickers) if k and k != "CASH"))
+    scales: dict[str, float] = {}
+    missing = []
+    for key in keys:
+        hit = cache.get(f"yahoo_mcap_quote_v1_{key}")
+        if isinstance(hit, dict) and hit.get("scale"):
+            scales[key] = float(hit["scale"])
+        else:
+            missing.append(key)
+    for i in range(0, len(missing), _MCAP_CHUNK):
+        ctx.check_cancelled()
+        chunk = missing[i:i + _MCAP_CHUNK]
+        ctx.progress(0.33, f"Loading market caps ({len(scales)} known, {i}/{len(missing)} requested)...")
+        rows = None
+        last_error: Exception | None = None
+        for delay in (0.0, *_MCAP_BACKOFF_S):
+            if delay:
+                ctx.progress(0.33, f"Yahoo refused the market caps: retrying in {delay:.0f}s...")
+                time.sleep(delay)
+            try:
+                rows = Y.quotes(chunk, ["marketCap", "netAssets", "regularMarketPrice"])
+                break
+            except Exception as exc:  # noqa: BLE001 - HTTP 429 and friends
+                last_error = exc
+        if rows is None:
+            raise BacktestError(
+                f"Yahoo refuses the market caps right now ({last_error}). The minimum market cap filter cannot be "
+                "applied, so the run is stopped instead of returning an unfiltered result. Try again in a few minutes."
+            )
+        by_symbol = {s.upper(): r for s, r in rows.items()}
+        for key in chunk:
+            row = by_symbol.get(key) or by_symbol.get(key.replace("-", "."))
+            if not row:
+                continue
+            cap = row.get("marketCap") if row.get("marketCap") is not None else row.get("netAssets")
+            try:
+                cap, price = float(cap), float(row.get("regularMarketPrice"))
+            except (TypeError, ValueError):
+                continue
+            if not (np.isfinite(cap) and np.isfinite(price)) or cap <= 0 or price <= 0:
+                continue
+            scales[key] = cap / price
+            cache.set(f"yahoo_mcap_quote_v1_{key}", {"scale": cap / price, "market_cap": cap, "price": price}, expire=86400)
+        if i + _MCAP_CHUNK < len(missing):
+            time.sleep(1.0)
+    if not scales:
+        raise BacktestError("Yahoo returned no market cap for these tickers: the minimum market cap filter cannot be applied.")
+    unknown = len(keys) - len(scales)
+    if unknown:
+        ctx.warn(f"No Yahoo market cap for {unknown} of {len(keys)} tickers: the market-cap filter always excludes them.")
+    return scales
+
+
 def _prefetch_universe_maps(configs: list[dict], ctx: RunContext) -> None:
     if any(cfg.get("use_sector_concentration_limit") or cfg.get("use_industry_concentration_limit") for cfg in configs):
         sector_tickers = sorted({s["ticker"] for cfg in configs for s in cfg.get("stocks", []) if s.get("ticker")})
@@ -428,10 +493,7 @@ def _prefetch_universe_maps(configs: list[dict], ctx: RunContext) -> None:
             {s["ticker"] for cfg in configs if cfg.get("use_min_market_cap_filter") for s in cfg.get("stocks", []) if s.get("ticker")}
         )
         ctx.progress(0.33, f"Loading market caps for {len(mcap_tickers)} tickers...")
-        scale_map, err = L.fetch_yahoo_quote_market_caps(mcap_tickers)
-        if err and not scale_map:
-            ctx.warn(f"Could not load Yahoo market caps ({err}). The market-cap filter is skipped for this run.")
-            scale_map = {}
+        scale_map = _market_cap_scales(mcap_tickers, ctx)
         st.session_state.multi_backtest_mcap_price_scale = scale_map
         for cfg in configs:
             if cfg.get("use_min_market_cap_filter"):

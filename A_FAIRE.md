@@ -2,6 +2,20 @@
 
 État au 29 septembre 2026 : le portage Streamlit → Next.js + Supabase + moteur FastAPI est commité et poussé sur `main` (dernier commit : cb3a49e).
 
+## 0. PRIORITÉ — Base de tickers permanente + section Tickers
+
+Idée : chaque ticker appelé une fois est gardé en entier (historique complet), sans expiration. Un run reprend les tickers déjà en base ; s'ils ne sont pas à jour, le site demande : utiliser tel quel (fin du backtest au dernier jour disponible), compléter seulement les jours manquants sur Yahoo, ou tout retélécharger. Nouvelle section du site pour parcourir tous les tickers en base, même hors ligne : graphique dans le temps, moyennes mobiles, etc.
+
+- [ ] Stockage permanent par ticker (historique complet + date du dernier jour confirmé par Yahoo).
+- [ ] Complément des jours manquants avec contrôle de fiabilité (chevauchement de quelques jours, détection des splits / corrections → retéléchargement complet du ticker).
+- [ ] Fenêtre au lancement : utiliser tel quel / compléter / tout retélécharger.
+- [ ] Section Tickers : liste, recherche, graphique, moyennes mobiles.
+- [ ] Tests : complément = téléchargement complet (même résultat), coût en requêtes Yahoo vs téléchargement complet, splits, dividendes, hors ligne, 6 000 tickers.
+
+## 0 bis. BUG — Filtre market cap ignoré quand Yahoo refuse
+
+Constaté le 2 octobre 2026 sur un run « tout le marché US, 10 G$ minimum » : la récupération des market caps a reçu « 429 Too Many Requests » et le moteur a lancé le backtest **sans filtre** (simple avertissement). Il faut réessayer avec attente, et sinon arrêter le run avec un message clair au lieu de donner un résultat faux.
+
 ## 1. Test de charge « tout le marché américain »
 
 Le code gère les milliers de tickers (paquets de 80, pause entre paquets, attente progressive en cas de refus Yahoo, pas de repli ticker par ticker, cache disque partagé), mais ce n'a **jamais été testé à cette échelle** (le cache ne contenait que 58 tickers).
