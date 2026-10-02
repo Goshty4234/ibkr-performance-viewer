@@ -2,8 +2,10 @@
 
 import { useState } from 'react';
 import { isActive, useBacktestStore } from '@/lib/backtest/store';
+import { engineOutdated } from '@/lib/engine/client';
 import { useEngineStore } from '@/lib/engine/store';
 import EngineSetup from './EngineSetup';
+import EngineUpdate from './EngineUpdate';
 import RunHelp from './RunHelp';
 import { TIPS } from './tips';
 import styles from './Backtester.module.css';
@@ -106,7 +108,7 @@ export default function RunBar() {
         <button
           type="button"
           className={`btn btn-primary btn-lg ${styles.runBtn}`}
-          disabled={!count || engineStatus === 'detecting' || launching}
+          disabled={!count || engineStatus === 'detecting' || launching || engineOutdated(engine?.health)}
           onClick={() => void launch()}
           title={`Backtest complet des ${count} portfolio${count > 1 ? 's' : ''} de Construire, résultats dans l’onglet Résultats${engine ? ` · moteur : ${engine.url}` : ''}`}
         >
@@ -118,6 +120,7 @@ export default function RunBar() {
           </span>
         )}
         {engineStatus === 'offline' && <EngineSetup />}
+        {engineStatus === 'ready' && <EngineUpdate />}
         {launchError && <div className={styles.errorBox}>{launchError}</div>}
       </div>
       <RunHelp />

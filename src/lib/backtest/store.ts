@@ -3,7 +3,14 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { clientStorage } from '@/lib/guest';
-import { EngineClient, type EngineKind, type PriceUpdate, type ResolvedEngine, type StoreStatus } from '@/lib/engine/client';
+import {
+  EngineClient,
+  engineOutdated,
+  type EngineKind,
+  type PriceUpdate,
+  type ResolvedEngine,
+  type StoreStatus,
+} from '@/lib/engine/client';
 import { useEngineStore } from '@/lib/engine/store';
 import type { EngineJob, PortfolioConfig, ResultSummary, RunOptions, StockConfig } from '@/lib/engine/types';
 import { alignToCycle, allocationOptions, allocationWindow, needsCycleAnchor } from './allocation-window';
@@ -175,6 +182,7 @@ function requestTickers(request: RunRequest): string[] {
 }
 
 const NO_ENGINE = 'Aucun moteur disponible. Lance le moteur sur ton PC ou configure le moteur en ligne.';
+const OUTDATED_ENGINE = 'Ton moteur est trop ancien pour cette version du site : mets-le à jour (bouton sous « Lancer »).';
 
 /** Saved results matching portfolios of this request exactly (engine-confirmed), or null. */
 async function findOffer(engine: ResolvedEngine, request: RunRequest, keys: string[]): Promise<ReuseOffer | null> {
@@ -729,6 +737,10 @@ export const useBacktestStore = create<BacktestState>()(
             set({ launchError: NO_ENGINE });
             return null;
           }
+          if (engineOutdated(engine.health)) {
+            set({ launchError: OUTDATED_ENGINE });
+            return null;
+          }
           const keys = await configKeys(request).catch(() => [] as string[]);
           const offer = opts?.force ? null : await findOffer(engine, request, keys);
           if (offer) {
@@ -785,6 +797,10 @@ export const useBacktestStore = create<BacktestState>()(
           }
           if (!engine) {
             set({ launchError: NO_ENGINE });
+            return null;
+          }
+          if (engineOutdated(engine.health)) {
+            set({ launchError: OUTDATED_ENGINE });
             return null;
           }
           const keys = await configKeys(request).catch(() => [] as string[]);

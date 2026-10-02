@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { isActive, useBacktestStore } from '@/lib/backtest/store';
+import { engineOutdated } from '@/lib/engine/client';
 import { useEngineStore } from '@/lib/engine/store';
 import EngineSetup from '../EngineSetup';
+import EngineUpdate from '../EngineUpdate';
 import styles from '../Backtester.module.css';
 
 /** Allocations' own launcher: one portfolio at a time, none of the full-backtest options. */
@@ -14,6 +16,7 @@ export default function AllocRunBar() {
   const launchError = useBacktestStore((s) => s.launchError);
   const activeRun = useBacktestStore((s) => s.runs.find((r) => r.purpose === 'allocations' && isActive(r)) ?? null);
   const engineStatus = useEngineStore((s) => s.status);
+  const outdated = useEngineStore((s) => engineOutdated(s.engine?.health));
   const [selectedId, setSelectedId] = useState<string>('');
   const [launching, setLaunching] = useState(false);
 
@@ -63,7 +66,7 @@ export default function AllocRunBar() {
         <button
           type="button"
           className={`btn btn-primary btn-lg ${styles.runBtn}`}
-          disabled={!selected || busy || engineStatus === 'detecting'}
+          disabled={!selected || busy || engineStatus === 'detecting' || outdated}
           onClick={() => void launch()}
           title={selected ? `Allocation du jour de « ${selected.name} »` : 'Crée d’abord un portfolio dans Construire'}
         >
@@ -73,6 +76,7 @@ export default function AllocRunBar() {
           <div className={styles.allocRunProgress}><span style={{ width: `${Math.max(4, progress)}%` }} /></div>
         )}
         {engineStatus === 'offline' && <EngineSetup />}
+        {engineStatus === 'ready' && <EngineUpdate />}
         {!portfolios.length && <span className={styles.runNote}>Aucun portfolio : crée-en un dans Construire.</span>}
         {launchError && <div className={styles.errorBox}>{launchError}</div>}
       </div>

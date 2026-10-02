@@ -4,8 +4,13 @@ export interface EngineHealth {
   status: 'ok';
   engine: 'momentum-backtest';
   version: string;
+  /** Site/engine contract number (absent before the first portable release): see ENGINE_API. */
+  api?: number;
   /** Hash of the engine code + static series: two runs from the same code and data are identical. */
   code?: string;
+  /** Self-updating portable package (update below), as opposed to a dev or cloud engine. */
+  portable?: boolean;
+  update?: EngineUpdateStatus;
   mode: 'local' | 'cloud';
   auth_required: boolean;
   cpu_count: number | null;
@@ -17,6 +22,17 @@ export interface EngineHealth {
   workers_busy?: number;
   max_workers?: number;
   tasks_queued?: number;
+}
+
+export interface EngineUpdateStatus {
+  state: 'idle' | 'disabled' | 'checking' | 'current' | 'downloading' | 'verifying' | 'ready' | 'error';
+  current: string;
+  latest?: string;
+  latest_api?: number | null;
+  /** code: a few MB; runtime: the whole package (Python or a library changed). */
+  kind?: 'code' | 'runtime';
+  progress?: number;
+  error?: string;
 }
 
 export type JobStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';

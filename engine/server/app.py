@@ -13,6 +13,8 @@
     POST   /fundamentals/pe      {tickers} -> trailing PE per ticker
     GET    /universe/{name}      sp500 | us ticker lists
     GET    /prices?ticker=&job=  close history (from the job snapshot when possible)
+    POST   /update/check         portable engine: look for a newer release, download it in the background
+    POST   /update/apply         portable engine: switch to the downloaded release and restart
 """
 
 from __future__ import annotations
@@ -35,7 +37,7 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import Response  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
-from backtest_engine import __version__  # noqa: E402
+from backtest_engine import API_VERSION, __version__, updater  # noqa: E402
 from backtest_engine.certs import ensure_system_ca_bundle  # noqa: E402
 
 from .auth import current_user, is_guest  # noqa: E402
@@ -143,17 +145,47 @@ def _manager(request: Request) -> JobManager:
 def health(request: Request) -> dict:
     from backtest_engine.result_cache import static_fingerprint
 
+    portable = updater.root() is not None
     return {
         "status": "ok",
         "engine": "momentum-backtest",
-        "version": __version__,
+        "version": updater.build_info().get("version", __version__) if portable else __version__,
+        "api": API_VERSION,
         "code": static_fingerprint()[:16],
         "mode": settings.mode,
         "auth_required": settings.auth != "none",
         "cpu_count": os.cpu_count(),
         "uptime_s": round(time.time() - STARTED_AT, 1),
+        "portable": portable,
+        **({"update": updater.status()} if portable else {}),
         **_manager(request).stats(),
     }
+
+
+@app.post("/update/check")
+def update_check(user: str = Depends(current_user)) -> dict:
+    """Looks for a newer published engine now and downloads it in the background."""
+    if not updater.enabled():
+        raise HTTPException(400, "Mise à jour automatique indisponible pour ce moteur.")
+    return updater.check_async()
+
+
+@app.post("/update/apply")
+def update_apply(request: Request, user: str = Depends(current_user)) -> dict:
+    """Switches to the downloaded version and restarts the engine (a few seconds)."""
+    if not updater.enabled():
+        raise HTTPException(400, "Mise à jour automatique indisponible pour ce moteur.")
+    if updater.status().get("state") != "ready":
+        raise HTTPException(409, "Aucune mise à jour prête.")
+    stats = _manager(request).stats()
+    if stats.get("running") or stats.get("queued"):
+        raise HTTPException(409, "Des backtests sont en cours : réessaie quand ils sont terminés.")
+    try:
+        updater.apply()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(500, f"Mise à jour impossible : {exc}") from exc
+    threading.Timer(0.3, updater.request_restart).start()
+    return {"restarting": True, **updater.status()}
 
 
 _plan_lock = threading.Lock()

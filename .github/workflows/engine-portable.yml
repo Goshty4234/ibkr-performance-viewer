@@ -1,59 +1,104 @@
 name: Portable engine (Windows)
 
-# Builds MomentumBacktesterEngine-win64.zip (embedded Python + libraries + engine) and publishes it
-# as a GitHub Release. The site's download button points at releases/latest, so pushing a tag
-# engine-vX.Y.Z ships a new engine to everyone; running engines show an update notice.
+# Every push touching engine/ builds the portable engine, runs the regression gate with the exact
+# Python + libraries that ship, and publishes a release only when the shipped code or runtime
+# differs from the latest one. Installed engines compare their build with the release manifest
+# at startup and update themselves (backtest_engine/updater.py).
 on:
   push:
-    tags: ["engine-v*"]
+    branches: [main]
+    paths: ["engine/**", ".github/workflows/engine-portable.yml"]
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: engine-portable
+  cancel-in-progress: false
+
 jobs:
-  build:
+  release:
     runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          # Pinned: the runtime folder is named after the exact version, a new patch would make
+          # every installed engine download the whole runtime again.
+          python-version: "3.13.5"
+
+      - name: Version
+        id: ver
+        run: |
+          "version=engine-$(Get-Date -Format yyyy.MM.dd)-${{ github.run_number }}" >> $env:GITHUB_OUTPUT
 
       - name: Build
-        run: python engine/tools/build_portable.py --out dist --version "${{ github.ref_name }}"
+        run: python engine/tools/build_portable.py --out dist --version "${{ steps.ver.outputs.version }}"
 
-      - name: Smoke test (server answers /health and rejects unknown origins)
-        shell: pwsh
+      - name: Regression gate (packaged runtime, frozen prices, offline)
+        working-directory: engine
+        run: |
+          $rt = Get-Content ..\dist\MomentumBacktesterEngine\runtime.txt
+          $py = "..\dist\MomentumBacktesterEngine\runtimes\$rt\python.exe"
+          $env:PYTHONIOENCODING = "utf-8"
+          & $py -c "import sys, runpy; sys.path.insert(0, '.'); sys.argv = ['run_regression']; runpy.run_module('tests.regression.run_regression', run_name='__main__')"
+          if ($LASTEXITCODE -ne 0) { throw "regression gate failed: results differ from engine/tests/regression/baseline" }
+
+      - name: Smoke test (launcher starts, /health answers, unknown origins refused)
         run: |
           $env:ENGINE_ORIGINS_URL = ""
+          $env:ENGINE_UPDATE_URL = ""
+          $pkg = Resolve-Path dist\MomentumBacktesterEngine
+          $rt = Get-Content "$pkg\runtime.txt"
           $data = Join-Path $env:RUNNER_TEMP "engine-data"
-          $p = Start-Process -FilePath "dist\MomentumBacktesterEngine\python\python.exe" `
-            -ArgumentList "-m","backtest_engine.portable","--port","8799","--data",$data,"--no-browser" `
-            -WorkingDirectory "dist\MomentumBacktesterEngine" -PassThru
-          $ok = $false
-          for ($i = 0; $i -lt 60 -and -not $ok; $i++) {
+          $p = Start-Process -FilePath "$pkg\runtimes\$rt\python.exe" `
+            -ArgumentList "-m","mbt_launcher","--port","8799","--data",$data,"--no-browser" `
+            -WorkingDirectory $pkg -PassThru
+          $health = $null
+          for ($i = 0; $i -lt 60 -and -not $health; $i++) {
             Start-Sleep 2
-            try { $ok = (Invoke-WebRequest http://127.0.0.1:8799/health -UseBasicParsing).StatusCode -eq 200 } catch {}
+            try { $health = Invoke-RestMethod http://127.0.0.1:8799/health } catch {}
           }
-          if (-not $ok) { throw "engine did not start" }
+          if (-not $health) { throw "engine did not start" }
+          "health: version $($health.version), api $($health.api), portable $($health.portable)"
+          if ($health.version -ne "${{ steps.ver.outputs.version }}") { throw "unexpected version $($health.version)" }
           $code = try { (Invoke-WebRequest http://127.0.0.1:8799/health -Headers @{Origin = "https://evil.example"} -UseBasicParsing).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }
           Stop-Process -Id $p.Id -Force
           if ($code -ne 403) { throw "unknown origin got $code" }
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: MomentumBacktesterEngine-win64
-          path: dist/MomentumBacktesterEngine-win64.zip
+      - name: Compare with the latest release
+        id: cmp
+        run: |
+          $new = Get-Content dist\manifest.json -Raw | ConvertFrom-Json
+          try {
+            $old = Invoke-RestMethod "https://github.com/${{ github.repository }}/releases/latest/download/manifest.json"
+          } catch { $old = $null }
+          if ($old -and $old.code_sha -eq $new.code_sha -and $old.runtime -eq $new.runtime) {
+            "Identical to $($old.version): nothing to publish."
+            "publish=false" >> $env:GITHUB_OUTPUT
+          } else {
+            "Publishing $($new.version) (code $($new.code_sha.Substring(0,12)), runtime $($new.runtime))."
+            "publish=true" >> $env:GITHUB_OUTPUT
+          }
 
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/engine-v')
+        if: steps.cmp.outputs.publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          name: Moteur ${{ github.ref_name }}
-          files: dist/MomentumBacktesterEngine-win64.zip
+          tag_name: ${{ steps.ver.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: Moteur ${{ steps.ver.outputs.version }}
           make_latest: true
+          files: |
+            dist/MomentumBacktesterEngine-win64.zip
+            dist/engine-code.zip
+            dist/manifest.json
           body: |
             Moteur de calcul portable pour Windows : décompresse le zip, double-clique « Lancer le moteur.cmd ».
-            Rien à installer (Python et les librairies sont inclus). Voir LISEZMOI.txt dans le zip.
+            Rien à installer (Python et les librairies sont inclus). Les moteurs déjà installés se mettent à jour tout seuls.

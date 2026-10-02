@@ -7,6 +7,7 @@ import type {
   ReturnsRow,
   EngineHealth,
   EngineJob,
+  EngineUpdateStatus,
   FundamentalsReport,
   PortfolioConfig,
   PortfolioDetail,
@@ -26,6 +27,14 @@ export class EngineError extends Error {
   constructor(message: string, readonly status?: number) {
     super(message);
   }
+}
+
+/** Contract number this site needs (API_VERSION in engine/backtest_engine/__init__.py): an older
+ * engine could misread a request or a result, so runs are refused until it is updated. */
+export const ENGINE_API = 1;
+
+export function engineOutdated(health: EngineHealth | null | undefined): boolean {
+  return !!health && (health.api ?? 0) < ENGINE_API;
 }
 
 const LOCAL_PROBE_MS = 700;
@@ -264,6 +273,14 @@ export class EngineClient {
 
   storeUpdate(tickers: string[], mode: 'topup' | 'full'): Promise<StoreReport> {
     return this.request('/store/update', { method: 'POST', body: JSON.stringify({ tickers, mode }) });
+  }
+
+  updateCheck(): Promise<EngineUpdateStatus> {
+    return this.request('/update/check', { method: 'POST' });
+  }
+
+  updateApply(): Promise<EngineUpdateStatus & { restarting: boolean }> {
+    return this.request('/update/apply', { method: 'POST' });
   }
 }
 
