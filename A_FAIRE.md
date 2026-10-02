@@ -16,12 +16,14 @@ Idée : chaque ticker appelé une fois est gardé en entier (historique complet)
 - [ ] Après redémarrage du moteur : vérifier la section Tickers dans le navigateur et un run complet (les 6 075 tickers déjà en cache seront retéléchargés une fois en entier pour compléter les barres).
 - [ ] Mesurer `/store/tickers` et `/store/status` sur 6 000 tickers (première lecture = migration des anciennes entrées).
 
-## 0 ter. Fondamentaux détaillés (pas gratuits : 1+ requête par ticker)
+## 0 ter. Données détaillées : décision (2 octobre 2026)
 
-États financiers, historique du nombre d'actions, profil (secteur, industrie), détenteurs… Une tâche de fond lente (ex. la nuit, quelques centaines de tickers par heure) pour ne pas se faire bloquer par Yahoo.
+Pas de téléchargement de masse des fiches détaillées Yahoo (1 requête par ticker = spam pour peu de valeur).
 
-- [ ] Priorité : historique du nombre d'actions (`get_shares_full`) → vrai market cap historique au lieu de l'estimation « market cap d'aujourd'hui × prix » (fiabilité du filtre 10 G$, voir section 2).
-- [ ] Secteur / industrie, états financiers annuels et trimestriels.
+- [x] Historique du nombre d'actions de **tout le marché** via la SEC (pas Yahoo) : 1 requête = toutes les entreprises pour un trimestre, ~70 requêtes une seule fois (2009 → aujourd'hui), puis ~1 par trimestre — `share_history.py`. Le filtre market cap utilise le vrai nombre d'actions de chaque date (ajusté des splits) ; repli sur l'estimation pour les tickers non couverts (classes multiples comme GOOGL / BRK-B, ETF, sociétés étrangères).
+- [x] L'avenir se remplit tout seul : la fiche Yahoo archivée chaque jour contient `sharesOutstanding`.
+- Fiches détaillées (secteur, PER, rendement…) : seulement pour la sélection finale (Allocations, déjà le cas : 1 appel groupé, gardé 24 h) et à la demande dans la section Tickers.
+- [ ] Optionnel : utiliser les fiches archivées (`quote_store`) pour les indices de référence d'Allocations au lieu d'un nouvel appel.
 
 ## 0 bis. BUG — Filtre market cap ignoré quand Yahoo refuse
 

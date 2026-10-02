@@ -456,12 +456,84 @@ def _prefetch_universe_maps(configs: list[dict], ctx: RunContext) -> None:
         )
         ctx.progress(0.33, f"Loading market caps for {len(mcap_tickers)} tickers...")
         scale_map = _market_cap_scales(mcap_tickers, ctx)
+        ratios = _mcap_share_ratios(mcap_tickers, scale_map, ctx)
         st.session_state.multi_backtest_mcap_price_scale = scale_map
         for cfg in configs:
             if cfg.get("use_min_market_cap_filter"):
                 cfg["_mcap_price_scale"] = scale_map
+                cfg["_mcap_share_ratio"] = ratios
     else:
         st.session_state.multi_backtest_mcap_price_scale = {}
+
+
+def _mcap_share_ratios(tickers: list[str], scale_map: dict, ctx: RunContext) -> dict[str, dict[str, float]]:
+    """{mcap key: {date: shares(date) / shares today}} from the SEC share counts.
+
+    The legacy filter estimates cap(date) = scale x Close(date) with scale = today's cap / price,
+    i.e. today's share count at every date: buybacks and dilution put past caps off by tens of
+    percent. Close is multiplied by this ratio (see _attach_with_share_history) so the same test
+    uses the real share count of each date. Tickers the SEC does not cover (multi-class shares,
+    ETFs, foreign filers), whose split history is not stored, or whose latest SEC count is far
+    from Yahoo's (mapping or share-class mismatch) keep the estimate.
+    """
+    from . import price_store, share_history
+
+    bases: dict[str, str] = {}
+    for t in tickers:
+        key = L._mcap_symbol_key(t)
+        if key and key in scale_map:
+            bases.setdefault(key, L.parse_ticker_parameters(t)[0])
+    if not bases:
+        return {}
+    try:
+        hist = share_history.histories(list(dict.fromkeys(bases.values())), progress=lambda m: ctx.progress(0.34, m))
+    except Exception as exc:  # noqa: BLE001 - SEC unreachable: the estimate still works
+        ctx.warn(f"SEC share counts unavailable ({exc}): market caps use today's share count at every date.")
+        return {}
+    store = Y.open_cache()
+    today = pd.Timestamp.now().normalize()
+    out: dict[str, dict[str, float]] = {}
+    for key, base in bases.items():
+        shares = hist.get(base)
+        meta = store.get(price_store.meta_key(base)) or {}
+        if shares is None or "splits" not in meta:
+            continue
+        ratio = share_history.share_ratio(shares, meta["splits"], float(scale_map[key]), today)
+        if ratio is None:
+            continue
+        out[key] = {d.strftime("%Y-%m-%d"): round(float(v), 6) for d, v in ratio.items()}
+    ctx.progress(0.35, f"Market caps: real SEC share counts for {len(out)} of {len(bases)} tickers, today's count for the rest.")
+    return out
+
+
+_attach_mcap_close_lookup = L.attach_mcap_close_lookup
+
+
+def _attach_with_share_history(config, reindexed_data):
+    """Legacy lookup, then Close x shares(date)/shares(today) for the tickers with SEC counts:
+    the legacy test Close x scale becomes the real market cap of the date."""
+    _attach_mcap_close_lookup(config, reindexed_data)
+    ratios = (config or {}).get("_mcap_share_ratio") or {}
+    closes = (config or {}).get("_mcap_close_series")
+    if not ratios or not closes:
+        return
+    series_cache: dict[str, pd.Series] = {}
+    for t, close in list(closes.items()):
+        key = L._mcap_symbol_key(t)
+        points = ratios.get(key)
+        if points is None or not isinstance(close, pd.Series) or close.empty:
+            continue
+        r = series_cache.get(key)
+        if r is None:
+            r = pd.Series(points, dtype=float)
+            r.index = pd.to_datetime(r.index)
+            series_cache[key] = r
+        idx = close.index.tz_localize(None) if getattr(close.index, "tz", None) is not None else close.index
+        factor = r.reindex(r.index.union(idx)).ffill().bfill().reindex(idx)
+        closes[t] = close * factor.to_numpy()
+
+
+L.attach_mcap_close_lookup = _attach_with_share_history
 
 
 def _redistribute_excluded(today_weights_map: dict, excluded_assets: dict) -> dict:

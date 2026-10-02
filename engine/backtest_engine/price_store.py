@@ -94,15 +94,19 @@ def normalize(df: Any) -> pd.DataFrame:
     return out
 
 
-def _meta(df: pd.DataFrame, checked: float, full: float | None, bars: bool = False) -> dict:
-    return {
+def _meta(df: pd.DataFrame, checked: float, full: float | None, bars: pd.DataFrame | None = None) -> dict:
+    meta = {
         "first": df.index[0].strftime("%Y-%m-%d"),
         "last": df.index[-1].strftime("%Y-%m-%d"),
         "rows": int(len(df)),
         "checked": float(checked),
         "full": float(full) if full else None,
-        "bars": bool(bars),
+        "bars": bars is not None,
     }
+    if bars is not None:
+        sp = bars["Stock Splits"].fillna(0) if "Stock Splits" in bars.columns else pd.Series(dtype=float)
+        meta["splits"] = {d.strftime("%Y-%m-%d"): float(v) for d, v in sp[sp != 0].items()}
+    return meta
 
 
 def describe(store: Any, ticker: str) -> dict | None:
@@ -264,7 +268,7 @@ def update(tickers: dict[str, str], mode: str = "topup", *, lock: Any = None,
     def save(t: str, df: pd.DataFrame, bars: pd.DataFrame, full_at: float | None) -> None:
         store.set(Y.price_key(t), df, expire=None)
         _save_bars(store, t, bars)
-        store.set(meta_key(t), _meta(df, time.time(), full_at, bars=True))
+        store.set(meta_key(t), _meta(df, time.time(), full_at, bars=bars))
 
     topup.sort(key=lambda x: x[1]["last"])
     groups: list[list[tuple[str, dict]]] = []
