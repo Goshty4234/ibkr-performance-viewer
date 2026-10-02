@@ -29,6 +29,36 @@ def venv_python() -> Path:
     return VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 
+def pip_env() -> dict:
+    """Older pip only trusts its bundled certifi; antivirus HTTPS scanning re-signs pypi.org with a
+    root that only exists in the Windows store. Same bundle as backtest_engine/certs.py."""
+    env = dict(os.environ)
+    if sys.platform != "win32" or env.get("PIP_CERT"):
+        return env
+    import ssl
+
+    pems: list[str] = []
+    vendored = VENV / "Lib" / "site-packages" / "pip" / "_vendor" / "certifi" / "cacert.pem"
+    if vendored.exists():
+        pems.append(vendored.read_text(encoding="ascii", errors="ignore"))
+    try:
+        import certifi
+
+        pems.append(Path(certifi.where()).read_text(encoding="ascii", errors="ignore"))
+    except ImportError:
+        pass
+    seen: set[bytes] = set()
+    for store in ("ROOT", "CA"):
+        for der, encoding, _trust in ssl.enum_certificates(store):
+            if encoding == "x509_asn" and der not in seen:
+                seen.add(der)
+                pems.append(ssl.DER_cert_to_PEM_cert(der))
+    bundle = VENV / "pip-ca-bundle.pem"
+    bundle.write_text("\n".join(pems), encoding="ascii", errors="ignore")
+    env["PIP_CERT"] = str(bundle)
+    return env
+
+
 def ensure_venv(reinstall: bool) -> Path:
     if sys.version_info < (3, 10):
         sys.exit(f"Python 3.10+ is required (found {sys.version.split()[0]}).")
@@ -39,8 +69,9 @@ def ensure_venv(reinstall: bool) -> Path:
     digest = hashlib.sha256(REQUIREMENTS.read_bytes()).hexdigest()
     if reinstall or not STAMP.exists() or STAMP.read_text().strip() != digest:
         print("Installing engine dependencies (first run takes a few minutes) ...")
-        subprocess.check_call([str(py), "-m", "pip", "install", "--upgrade", "pip", "-q"])
-        subprocess.check_call([str(py), "-m", "pip", "install", "-r", str(REQUIREMENTS)])
+        env = pip_env()
+        subprocess.check_call([str(py), "-m", "pip", "install", "--upgrade", "pip", "-q"], env=env)
+        subprocess.check_call([str(py), "-m", "pip", "install", "-r", str(REQUIREMENTS)], env=env)
         STAMP.write_text(digest)
     return py
 
