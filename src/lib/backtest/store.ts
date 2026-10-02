@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { clientStorage } from '@/lib/guest';
-import { EngineClient, type EngineKind, type ResolvedEngine } from '@/lib/engine/client';
+import { EngineClient, type EngineKind, type PriceUpdate, type ResolvedEngine, type StoreStatus } from '@/lib/engine/client';
 import { useEngineStore } from '@/lib/engine/store';
 import type { EngineJob, PortfolioConfig, ResultSummary, RunOptions, StockConfig } from '@/lib/engine/types';
 import { alignToCycle, allocationOptions, allocationWindow, needsCycleAnchor } from './allocation-window';
@@ -24,7 +24,7 @@ import {
 import { isInverse, resolveTicker } from './tickers';
 
 export type RunPhase = 'idle' | 'submitting' | 'queued' | 'running' | 'fetching' | 'done' | 'error' | 'cancelled';
-export type BacktestView = 'build' | 'results' | 'allocations' | 'history';
+export type BacktestView = 'build' | 'results' | 'allocations' | 'history' | 'tickers';
 
 /** A backtest result loaded while on the Allocations page waits in Résultats without moving the user. */
 const resultView = (current: BacktestView): BacktestView => (current === 'allocations' ? 'allocations' : 'results');
@@ -113,6 +113,8 @@ interface BacktestState {
   alloc: AllocSlot | null;
   reuseOffer: ReuseOffer | null;
   reuseNotice: ReuseNotice | null;
+  /** Stored tickers of a launch that are not up to date: the user picks where prices come from. */
+  priceOffer: StoreStatus | null;
 
   select: (id: string) => void;
   setView: (v: BacktestView) => void;
@@ -145,6 +147,7 @@ interface BacktestState {
   /** Today's target for one portfolio (+ its fusion members) on the shortest exact window. */
   startAllocationRun: (portfolioId: string, opts?: { force?: boolean }) => Promise<string | null>;
   resolveReuse: (choice: ReuseChoice) => void;
+  resolvePrices: (choice: PriceUpdate | 'cancel') => void;
   dismissReuseNotice: () => void;
   showAllocResult: (result: LoadedResult, runId: string | null, label: string, focus?: string | null) => void;
   /** Empties the Allocations page (the saved run stays in the history). */
@@ -160,6 +163,16 @@ const pollTimers = new Map<string, ReturnType<typeof setTimeout>>();
 /** Finished results kept in memory (not persisted) so any finished run can be reopened instantly. */
 const runResults = new Map<string, LoadedResult>();
 let reuseResolver: ((choice: ReuseChoice) => void) | null = null;
+let priceResolver: ((choice: PriceUpdate | 'cancel') => void) | null = null;
+
+function requestTickers(request: RunRequest): string[] {
+  const out = new Set<string>();
+  for (const p of request.portfolios) {
+    for (const s of p.stocks) if (s.ticker) out.add(s.ticker);
+    if (p.benchmark_ticker) out.add(p.benchmark_ticker);
+  }
+  return [...out];
+}
 
 const NO_ENGINE = 'Aucun moteur disponible. Lance le moteur sur ton PC ou configure le moteur en ligne.';
 
@@ -282,6 +295,21 @@ export const useBacktestStore = create<BacktestState>()(
           reuseResolver = resolve;
           set({ reuseOffer: offer });
         });
+      }
+
+      /** The request with the user's choice of price source, null if cancelled. Asks only when stored tickers are behind. */
+      async function choosePrices(engine: ResolvedEngine, request: RunRequest): Promise<RunRequest | null> {
+        const status = await new EngineClient(engine.url, engine.health.auth_required)
+          .storeStatus(requestTickers(request))
+          .catch(() => null);
+        if (!status?.stale) return request;
+        priceResolver?.('cancel');
+        const choice = await new Promise<PriceUpdate | 'cancel'>((resolve) => {
+          priceResolver = resolve;
+          set({ priceOffer: status });
+        });
+        if (choice === 'cancel') return null;
+        return { ...request, options: { ...request.options, price_update: choice } };
       }
 
       /** Runs only what is missing on the saved runs' date axis, then stitches everything together. */
@@ -478,6 +506,7 @@ export const useBacktestStore = create<BacktestState>()(
         saveError: null,
         alloc: null,
         reuseOffer: null,
+        priceOffer: null,
         reuseNotice: null,
 
         select: (id) => set({ selectedId: id }),
@@ -716,7 +745,9 @@ export const useBacktestStore = create<BacktestState>()(
               }
             }
           }
-          return launch(engine, request, label, { purpose: 'backtest', configKeys: keys });
+          const priced = await choosePrices(engine, request);
+          if (!priced) return null;
+          return launch(engine, priced, label, { purpose: 'backtest', configKeys: keys });
         },
 
         async startAllocationRun(portfolioId, opts) {
@@ -764,6 +795,13 @@ export const useBacktestStore = create<BacktestState>()(
           const resolve = reuseResolver;
           reuseResolver = null;
           set({ reuseOffer: null });
+          resolve?.(choice);
+        },
+
+        resolvePrices(choice) {
+          const resolve = priceResolver;
+          priceResolver = null;
+          set({ priceOffer: null });
           resolve?.(choice);
         },
 

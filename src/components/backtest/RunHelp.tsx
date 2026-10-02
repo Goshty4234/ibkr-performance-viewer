@@ -54,8 +54,8 @@ export default function RunHelp() {
         ))}
       </dl>
       <p className={styles.runHelpFoot}>
-        Dans tous les cas, les prix Yahoo sont en cache par ticker (18 h, et au moins jusqu’à la prochaine ouverture du marché ; « Vider le cache des données » dans le menu du moteur force des prix frais) et partagés entre tous les runs :
-        un recalcul ne retélécharge pas les prix déjà connus.
+        Dans tous les cas, chaque ticker téléchargé est gardé en entier pour toujours dans la base de tickers du moteur (section Tickers), partagée entre tous les runs :
+        un recalcul ne retélécharge pas les prix déjà connus. Si des tickers ne sont pas à jour, le lancement demande : les utiliser tels quels, compléter seulement les jours manquants (quelques jours par ticker, vérifiés contre les splits), ou tout retélécharger.
       </p>
     </details>
   );

@@ -68,6 +68,7 @@ class Job:
     done: int = 0
     failed: int = 0
     reused: int = 0
+    prices: dict | None = None
 
     def next_task(self) -> tuple[str, int] | None:
         if self.status != "running":
@@ -102,6 +103,7 @@ class Job:
             "tasks_done": self.done,
             "tasks_running": len(self.running),
             "tasks_reused": self.reused,
+            "prices": self.prices,
         }
 
 
@@ -341,6 +343,7 @@ class JobManager:
 
     def _on_task_done(self, job: Job, kind: str, index: int, info: dict) -> None:
         if kind == "prepare":
+            job.prices = info.get("prices")
             order = list(info.get("order", []))
             job.total = len(order)
             job.pending = deque(order)

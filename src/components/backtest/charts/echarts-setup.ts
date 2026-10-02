@@ -93,6 +93,7 @@ export function loadECharts(): Promise<EChartsCore> {
       charts.PieChart,
       charts.HeatmapChart,
       charts.ScatterChart,
+      charts.CandlestickChart,
       comps.GridComponent,
       comps.TooltipComponent,
       comps.LegendComponent,

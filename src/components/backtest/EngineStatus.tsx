@@ -159,14 +159,14 @@ export default function EngineStatus() {
                 type="button"
                 className={`btn btn-ghost btn-sm ${styles.retry}`}
                 disabled={clearing}
-                title="Force le re-téléchargement des prix Yahoo au prochain backtest"
+                title="Vide les données temporaires (market caps, PER, tickers introuvables, listes). La base de tickers est gardée : pour des prix frais, « Tout retélécharger » au lancement ou dans la section Tickers."
                 onClick={async () => {
-                  if (!confirm('Vider le cache des données de marché du moteur ?')) return;
+                  if (!confirm('Vider les données temporaires du moteur (market caps, PER, listes) ? La base de tickers est gardée.')) return;
                   setClearing(true);
                   setCacheMsg(null);
                   try {
                     const r = await client.clearCache();
-                    setCacheMsg(`Cache vidé (${r.entries} séries, ${r.pe} PE).`);
+                    setCacheMsg(`Cache vidé (${r.entries} entrées, ${r.pe} PER). Base de tickers gardée${r.kept !== undefined ? ` : ${r.kept} tickers` : ''}.`);
                   } catch (e) {
                     setCacheMsg(e instanceof Error ? e.message : String(e));
                   } finally {

@@ -376,8 +376,44 @@ def get_universe(name: str, user: str = Depends(current_user)) -> dict:
         raise HTTPException(502, str(exc)) from exc
 
 
+class StoreBody(BaseModel):
+    tickers: list[str] = Field(default_factory=list, max_length=20_000)
+    mode: str = "topup"
+
+
+@app.post("/store/status")
+def store_status(body: StoreBody, user: str = Depends(current_user)) -> dict:
+    from backtest_engine.data_api import store_status as status
+
+    return status(body.tickers)
+
+
+@app.get("/store/tickers")
+def store_tickers(user: str = Depends(current_user)) -> list[dict]:
+    from backtest_engine.data_api import store_list
+
+    return store_list()
+
+
+@app.post("/store/update")
+def store_update(body: StoreBody, user: str = Depends(current_user)) -> dict:
+    from backtest_engine.data_api import store_update as update
+
+    if is_guest(user):
+        raise HTTPException(403, "Mode invité : réservé aux comptes.")
+    if len(body.tickers) > 500:
+        raise HTTPException(400, "Au plus 500 tickers par mise à jour (un backtest met à jour les autres).")
+    if body.mode not in ("topup", "full"):
+        raise HTTPException(400, "mode: topup ou full")
+    try:
+        return update(body.tickers, body.mode)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"Update failed: {exc}") from exc
+
+
 @app.get("/prices")
-def get_prices(ticker: str, request: Request, job: str | None = None, user: str = Depends(current_user)) -> Response:
+def get_prices(ticker: str, request: Request, job: str | None = None, mode: str = "stored", bars: bool = False,
+               user: str = Depends(current_user)) -> Response:
     import gzip
     import json
 
@@ -388,7 +424,7 @@ def get_prices(ticker: str, request: Request, job: str | None = None, user: str 
         j = _manager(request).get(job, user)
         job_dir = j.dir if j else None
     try:
-        data = price_history(ticker[:40], job_dir)
+        data = price_history(ticker[:40], job_dir, mode if mode in ("stored", "topup", "full") else "stored", bars)
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
@@ -396,5 +432,18 @@ def get_prices(ticker: str, request: Request, job: str | None = None, user: str 
     return Response(
         content=gzip.compress(json.dumps(data, separators=(",", ":")).encode("utf-8"), compresslevel=5),
         media_type="application/json",
-        headers={"Content-Encoding": "gzip", "Cache-Control": "private, max-age=3600"},
+        # A job snapshot never changes; the ticker store does (top-up, re-download).
+        headers={"Content-Encoding": "gzip", "Cache-Control": "private, max-age=3600" if data["source"] == "job" else "no-store"},
     )
+
+
+@app.get("/store/quote")
+def store_quote(ticker: str, refresh: bool = False, user: str = Depends(current_user)) -> dict:
+    from backtest_engine.data_api import quote_info
+
+    if refresh and is_guest(user):
+        raise HTTPException(403, "Mode invité : réservé aux comptes.")
+    try:
+        return quote_info(ticker[:40], refresh)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"Quote lookup failed: {exc}") from exc

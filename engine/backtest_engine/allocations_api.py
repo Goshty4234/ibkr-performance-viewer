@@ -436,13 +436,12 @@ def returns_summary(
 
 
 def _histories(tickers: list[str]) -> dict[str, pd.Series]:
-    L = _legacy()
-    with _lock, contextlib.redirect_stdout(io.StringIO()):
-        resolved = {t: L.resolve_ticker_alias(t) or t for t in tickers}
-        batch = L.get_multiple_tickers_batch(list(dict.fromkeys(resolved.values())), period="max", auto_adjust=False) or {}
+    from .data_api import price_frames
+
+    frames, _report = price_frames(tickers, "topup")
     out = {}
-    for t, r in resolved.items():
-        s = _close(batch.get(r) if isinstance(batch, dict) else None)
+    for t in tickers:
+        s = _close(frames.get(t))
         if s is not None and len(s):
             out[t] = s
     return out

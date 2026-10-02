@@ -24,7 +24,8 @@ function canonical(value: unknown): unknown {
  */
 export async function requestKey(req: RunRequest): Promise<string> {
   const portfolios = [...req.portfolios].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  return sha256(JSON.stringify(canonical({ portfolios, options: req.options })));
+  const { price_update: _prices, ...options } = req.options;
+  return sha256(JSON.stringify(canonical({ portfolios, options })));
 }
 
 async function sha256(text: string): Promise<string> {
@@ -32,7 +33,7 @@ async function sha256(text: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-const NOT_IDENTITY_OPTIONS = new Set(['end_date', 'align_start', 'start_date']);
+const NOT_IDENTITY_OPTIONS = new Set(['end_date', 'align_start', 'start_date', 'price_update']);
 
 /**
  * Per portfolio: its config (fusion members included) + the run options, requested dates aside.

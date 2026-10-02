@@ -7,33 +7,11 @@ import type { LoadedResult } from '@/lib/backtest/result-data';
 import type { PortfolioSummaryOk } from '@/lib/engine/types';
 import EChart from '../charts/EChart';
 import { CHART_COLORS } from '../charts/echarts-setup';
+import { movingAverage, type MaType } from '../charts/moving-average';
 import DataGrid, { type GridColumn } from '../grid/DataGrid';
 import { money, num } from './format';
 import PeEvolution from './PeEvolution';
 import styles from '../Results.module.css';
-
-type MaType = 'SMA' | 'EMA';
-
-function movingAverage(close: number[], window: number, type: MaType): (number | null)[] {
-  const out: (number | null)[] = new Array(close.length).fill(null);
-  if (window < 1) return out;
-  if (type === 'SMA') {
-    let s = 0;
-    for (let i = 0; i < close.length; i++) {
-      s += close[i];
-      if (i >= window) s -= close[i - window];
-      if (i >= window - 1) out[i] = s / window;
-    }
-  } else {
-    const a = 2 / (window + 1);
-    let e = close[0];
-    for (let i = 0; i < close.length; i++) {
-      e = i === 0 ? close[0] : a * close[i] + (1 - a) * e;
-      if (i >= window - 1) out[i] = e;
-    }
-  }
-  return out;
-}
 
 function jobIdOf(result: LoadedResult): string | undefined {
   return result.key.startsWith('job:') ? result.key.slice(4) : undefined;
@@ -149,7 +127,7 @@ export default function TickersTab({ result, portfolios }: { result: LoadedResul
           <div>
             <div className={styles.cardTitle}>Prix et moyenne mobile</div>
             <div className={styles.cardSub}>
-              {hist ? `${hist.dates[0]} → ${hist.dates[hist.dates.length - 1]} · source ${hist.source === 'job' ? 'données du run' : 'téléchargement'}` : 'Historique de clôture ajustée'}
+              {hist ? `${hist.dates[0]} → ${hist.dates[hist.dates.length - 1]} · source ${hist.source === 'job' ? 'données du run' : hist.source === 'store' ? 'base de tickers' : 'téléchargement'}` : 'Historique de clôture ajustée'}
             </div>
           </div>
           <div className={styles.toolbarInline}>

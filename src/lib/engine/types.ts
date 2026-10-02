@@ -54,6 +54,8 @@ export interface EngineJob {
   tasks_running?: number;
   /** Portfolios whose identical inputs were already computed: output reused, no backtest. */
   tasks_reused?: number;
+  /** Where the prices came from (ticker store report), once the data step is done. */
+  prices?: import('./client').StoreReport | null;
 }
 
 /** Series on the run-wide `dates` axis (offset) or with explicit dates. */
@@ -283,6 +285,8 @@ export interface RunOptions {
   end_date: string | null;
   /** Common start of an earlier run, so portfolios computed to complete it share its axis. */
   align_start?: string | null;
+  /** Ticker store mode for this launch (engine default: topup). Never part of a result's identity. */
+  price_update?: 'stored' | 'topup' | 'full';
 }
 
 /** POST /plan: what a launch would simulate. */

@@ -236,13 +236,15 @@ CACHE = JobCache()
 def task_prepare(job_dir: Path, portfolios: Any, options: Any, progress: Callable[[float, str], None] | None = None,
                  keep_raw: bool = False) -> dict[str, Any]:
     job_dir.mkdir(parents=True, exist_ok=True)
-    prep = prepare(portfolios, options, RunContext(progress_fn=progress), download_lock=download_lock(), with_market=True)
+    ctx = RunContext(progress_fn=progress)
+    prep = prepare(portfolios, options, ctx, download_lock=download_lock(), with_market=True)
     trimmed = write_snapshot(job_dir, prep, keep_raw)
     CACHE.seed(job_dir, trimmed)
     return {
         "order": prep.execution_order(),
         "names": [c["name"] for c in prep.configs],
         "tickers": sum(1 for v in trimmed.values() if not isinstance(v, str)),
+        "prices": ctx.price_report,
     }
 
 
@@ -298,8 +300,11 @@ def history_key(prep: PreparedRun, index: int) -> str | None:
 
 
 def plan(portfolios: Any, options: Any) -> dict[str, Any]:
-    """Simulation range and history keys of a request, without simulating (prices come from cache)."""
-    prep = prepare(portfolios, options, RunContext(), download_lock=download_lock())
+    """Simulation range and history keys of a request, without simulating. Stored prices are
+    taken as they are (no top-up): the keys do not depend on where the data ends."""
+    if isinstance(options, dict):
+        options = {k: v for k, v in options.items() if k != "price_update"}
+    prep = prepare(portfolios, options, RunContext(price_update="stored"), download_lock=download_lock())
     sim = prep.simulation_index
     return {
         "simulation": {

@@ -200,20 +200,102 @@ export class EngineClient {
     return r.resolved;
   }
 
-  clearCache(): Promise<{ entries: number; pe: number }> {
+  clearCache(): Promise<{ entries: number; pe: number; kept?: number }> {
     return this.request('/cache/clear', { method: 'POST' });
   }
 
-  prices(ticker: string, jobId?: string | null): Promise<PriceHistory> {
-    const q = new URLSearchParams({ ticker });
+  prices(ticker: string, jobId?: string | null, mode: PriceUpdate = 'stored', bars = false): Promise<PriceHistory> {
+    const q = new URLSearchParams({ ticker, mode });
     if (jobId) q.set('job', jobId);
+    if (bars) q.set('bars', 'true');
     return this.request(`/prices?${q}`);
   }
+
+  storeQuote(ticker: string, refresh = false): Promise<QuoteInfo> {
+    const q = new URLSearchParams({ ticker });
+    if (refresh) q.set('refresh', 'true');
+    return this.request(`/store/quote?${q}`);
+  }
+
+  storeStatus(tickers: string[]): Promise<StoreStatus> {
+    return this.request('/store/status', { method: 'POST', body: JSON.stringify({ tickers }) });
+  }
+
+  storeTickers(): Promise<StoredTicker[]> {
+    return this.request('/store/tickers');
+  }
+
+  storeUpdate(tickers: string[], mode: 'topup' | 'full'): Promise<StoreReport> {
+    return this.request('/store/update', { method: 'POST', body: JSON.stringify({ tickers, mode }) });
+  }
+}
+
+/** Where a run takes its prices from: stored histories as they are, stored + missing recent days, or everything again. */
+export type PriceUpdate = 'stored' | 'topup' | 'full';
+
+export interface StoreMeta {
+  first: string;
+  last: string;
+  rows: number;
+  /** Epoch seconds of the last time Yahoo confirmed this history (0 = never). */
+  checked: number;
+  full: number | null;
+}
+
+export interface StoredTicker extends StoreMeta {
+  ticker: string;
+  current: boolean;
+  name?: string | null;
+  type?: string | null;
+  market_cap?: number | null;
+  pe?: number | null;
+  /** Day of the last archived Yahoo quote. */
+  quote_day?: string | null;
+}
+
+/** Last archived Yahoo quote (every field Yahoo sent) and the history of the key figures, one point per archived day. */
+export interface QuoteInfo {
+  ticker: string;
+  symbol: string;
+  latest: (Record<string, unknown> & { _day?: string }) | null;
+  history: { dates: string[]; fields: Record<string, (number | null)[]> };
+}
+
+export interface StoreStatus {
+  total: number;
+  current: number;
+  stale: number;
+  missing: number;
+  unknown: number;
+  stale_oldest_last: string | null;
+  stale_newest_last: string | null;
+}
+
+export interface StoreReport {
+  mode: PriceUpdate;
+  stored: number;
+  topped_up: number;
+  refetched: number;
+  downloaded: number;
+  unknown: number;
+  unchanged: number;
+  /** Tickers Yahoo did not answer for at all (network down): kept as stored, still marked not up to date. */
+  failed: number;
+  /** Stored before the full bars were kept: downloaded once in full to complete them. */
+  upgraded?: number;
+  /** Quotes archived today (market cap, PE...). */
+  quotes?: number;
+  yahoo_symbols: number;
+  rows_downloaded: number;
+  rate_limited: boolean;
 }
 
 export interface PriceHistory {
   ticker: string;
-  source: 'job' | 'download';
+  source: 'job' | 'download' | 'store';
+  meta?: StoreMeta | null;
   dates: string[];
   close: number[];
+  dividends?: { dates: string[]; amounts: number[] } | null;
+  bars?: { open: (number | null)[]; high: (number | null)[]; low: (number | null)[]; volume: (number | null)[] } | null;
 }

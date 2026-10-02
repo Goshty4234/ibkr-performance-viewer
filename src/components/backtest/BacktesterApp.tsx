@@ -12,10 +12,12 @@ import ImportExportDialog from './ImportExportDialog';
 import LibraryDialog from './LibraryDialog';
 import PortfolioEditor from './PortfolioEditor';
 import PortfolioList from './PortfolioList';
+import PriceDialog from './PriceDialog';
 import ResultsView from './ResultsView';
 import ReuseDialog, { ReuseNoticeBar } from './ReuseDialog';
 import RunBar from './RunBar';
 import RunsPanel from './RunsPanel';
+import TickersView from './TickersView';
 import styles from './Backtester.module.css';
 
 const HIDDEN = { display: 'none' } as const;
@@ -34,6 +36,7 @@ const TABS: { id: BacktestView; label: string }[] = [
   { id: 'results', label: 'Résultats' },
   { id: 'allocations', label: 'Allocations' },
   { id: 'history', label: 'Historique' },
+  { id: 'tickers', label: 'Tickers' },
 ];
 
 export default function BacktesterApp() {
@@ -112,8 +115,14 @@ export default function BacktesterApp() {
         </div>
       )}
       {view === 'history' && <HistoryView />}
+      {mounted('tickers') && (
+        <div style={view === 'tickers' ? undefined : HIDDEN}>
+          <TickersView />
+        </div>
+      )}
 
       <ReuseDialog />
+      <PriceDialog />
       {dialog === 'library' && <LibraryDialog onClose={() => setDialog(null)} />}
       {(dialog === 'import' || dialog === 'export') && <ImportExportDialog mode={dialog} onClose={() => setDialog(null)} />}
     </div>

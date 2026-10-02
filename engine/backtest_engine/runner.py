@@ -143,109 +143,61 @@ def _collect_tickers(configs: list[dict]) -> list[str]:
 # Local series handled by get_multiple_tickers_batch without Yahoo (its custom_list).
 _LOCAL_SERIES = {"ZEROX", "GOLD_COMPLETE", "ZROZ_COMPLETE", "TLT_COMPLETE", "BTC_COMPLETE", "IEF_COMPLETE",
                  "KMLM_COMPLETE", "DBMF_COMPLETE", "TBILL_COMPLETE", "SPYSIM_COMPLETE", "GOLDSIM_COMPLETE"}
-_YF_CHUNK = 80
-# yfinance still sends one chart request per ticker inside a chunk: space the chunks out.
-_CHUNK_PAUSE_S = 1.5
-
-
-@contextlib.contextmanager
-def _no_single_fallback_when_limited(retry: Any):
-    """The legacy batch retries every ticker missing from a chunk one by one. When the chunk
-    was refused for rate limiting that would send 80 more requests to a server already saying
-    no, so those single requests are skipped (the tickers are simply retried on the next run)."""
-    inner = L.get_ticker_with_cache
-
-    def guarded(*args: Any, **kwargs: Any):
-        if retry.rate_limited:
-            raise RuntimeError("Yahoo rate limit: single-ticker fallback skipped")
-        return inner(*args, **kwargs)
-
-    L.get_ticker_with_cache = guarded
-    try:
-        yield
-    finally:
-        L.get_ticker_with_cache = inner
-
-
-def _derive_leveraged(t: str, base_df: Any, cache: Any) -> pd.DataFrame:
-    """Same frame the legacy batch builds for "BASE?L=x?E=y": leverage applied to the base history."""
+def _derive_leveraged(t: str, base_df: Any) -> pd.DataFrame:
+    """Same frame the legacy batch builds for "BASE?L=x?E=y": leverage applied to the base
+    history. Recomputed each run (cheap), so it always follows the stored base."""
     if not isinstance(base_df, pd.DataFrame) or base_df.empty:
         return pd.DataFrame()
     _base, lev, er = L.parse_ticker_parameters(t)
-    df = L.apply_daily_leverage(base_df, lev, er) if (lev != 1.0 or er != 0.0) else base_df
-    cache.set(Y.price_key(t), df.copy(), expire=Y.smart_ttl(t))
-    return df
+    return L.apply_daily_leverage(base_df, lev, er) if (lev != 1.0 or er != 0.0) else base_df
+
+
+def yahoo_symbols(tickers: list[str]) -> tuple[dict[str, str], list[str], list[str]]:
+    """Splits requested tickers into ({stored base symbol: Yahoo symbol}, local series, leveraged
+    variants). Variants count through their base."""
+    bases: dict[str, str] = {}
+    local, derived = [], []
+    for t in dict.fromkeys(tickers):
+        base, _, _ = L.parse_ticker_parameters(t)
+        resolved = L.resolve_ticker_alias(base)
+        if resolved in _LOCAL_SERIES:
+            local.append(t)
+            continue
+        if base != t:
+            derived.append(t)
+        bases.setdefault(base, resolved)
+    return bases, local, derived
 
 
 def _fetch_prices(tickers: list[str], ctx: RunContext, lock: Any) -> dict:
-    """get_multiple_tickers_batch with the fewest possible Yahoo requests.
+    """Prices from the permanent ticker store (price_store), Yahoo only for what it lacks.
 
-    The legacy function re-downloads every requested Yahoo ticker as soon as one
-    is missing from the cache, and yfinance chunks are already built from an
-    unordered set with all-NaN rows dropped per ticker, so feeding it cached,
-    local and missing tickers separately returns the same frames. On top of that:
-    leveraged variants are derived from their cached base history, tickers Yahoo
-    does not know are remembered, cache entries follow the market clock, a chunk
-    another job fetched while we waited for the lock is not fetched again, and
-    rate-limited chunks are retried with a back-off.
+    Local series still come from the legacy loader; leveraged variants are derived from their
+    base history; ctx.price_update picks the store mode (stored / topup / full) and
+    ctx.price_report tells the caller what came from where.
     """
-    cache = Y.open_cache()
-    cached, local, network, derived = [], [], [], []
+    from . import price_store
+
+    bases, local, derived = yahoo_symbols(tickers)
     batch: dict[str, Any] = {}
-    for t in tickers:
-        base, _, _ = L.parse_ticker_parameters(t)
-        if L.resolve_ticker_alias(base) in _LOCAL_SERIES:
-            local.append(t)
-        elif Y.price_key(t) in cache:
-            cached.append(t)
-        elif Y.missing_key(t) in cache:
-            batch[t] = pd.DataFrame()
-        elif base != t:
-            derived.append(t)
-        else:
-            network.append(t)
-    for t in derived:
-        base, _, _ = L.parse_ticker_parameters(t)
-        if base not in network and base not in cached and Y.price_key(base) not in cache and Y.missing_key(base) not in cache:
-            network.append(base)
-    for group in (cached, local):
-        if group:
-            batch.update(L.get_multiple_tickers_batch(group, period="max", auto_adjust=False))
+    if local:
+        batch.update(L.get_multiple_tickers_batch(local, period="max", auto_adjust=False))
 
     def waiting(delay: float) -> None:
         ctx.progress(0.05, f"Yahoo rate limit: retrying in {delay:.0f}s...")
 
-    for i in range(0, len(network), _YF_CHUNK):
-        ctx.check_cancelled()
-        ctx.progress(0.05, f"Downloading data for {len(network)} tickers ({i}/{len(network)}, {len(cached)} cached)...")
-        chunk = network[i:i + _YF_CHUNK]
-        with lock if lock is not None else contextlib.nullcontext():
-            fetched_meanwhile = [t for t in chunk if Y.price_key(t) in cache]
-            todo = [t for t in chunk if t not in fetched_meanwhile]
-            if fetched_meanwhile:
-                batch.update(L.get_multiple_tickers_batch(fetched_meanwhile, period="max", auto_adjust=False))
-            if todo:
-                with Y.rate_limit_retry(waiting) as retry, _no_single_fallback_when_limited(retry):
-                    got = L.get_multiple_tickers_batch(todo, period="max", auto_adjust=False)
-                batch.update(got)
-                found = [t for t in todo if isinstance(got.get(t), pd.DataFrame) and not got[t].empty]
-                for t in found:
-                    cache.touch(Y.price_key(t), expire=Y.smart_ttl(t))
-                if found and not retry.rate_limited:
-                    for t in todo:
-                        if t not in found:
-                            cache.set(Y.missing_key(t), True, expire=Y.MISSING_TTL)
-        if i + _YF_CHUNK < len(network):
-            if lock is not None:
-                lock.yield_to_waiters()
-            time.sleep(_CHUNK_PAUSE_S)
-
+    frames, report = price_store.update(
+        bases, ctx.price_update, lock=lock, on_wait=waiting, check_cancelled=ctx.check_cancelled,
+        progress=lambda msg: ctx.progress(0.05, msg),
+    )
+    ctx.price_report = report
+    wanted = set(tickers)
+    for t, df in frames.items():
+        if t in wanted:
+            batch[t] = df
     for t in derived:
         base, _, _ = L.parse_ticker_parameters(t)
-        base_df = batch.get(base)
-        if base_df is None:
-            base_df = cache.get(Y.price_key(base))
-        batch[t] = _derive_leveraged(t, base_df, cache)
+        batch[t] = _derive_leveraged(t, frames.get(base))
     return batch
 
 
@@ -413,13 +365,34 @@ def _market_cap_scales(tickers: list[str], ctx: RunContext) -> dict:
 
     cache = diskcache.Cache(".streamlit/ticker_info_cache")
     keys = list(dict.fromkeys(k for k in (L._mcap_symbol_key(t) for t in tickers) if k and k != "CASH"))
+    from . import quote_store
+
+    def take(key: str, row: dict | None) -> None:
+        if not row:
+            return
+        cap = row.get("marketCap") if row.get("marketCap") is not None else row.get("netAssets")
+        try:
+            cap, price = float(cap), float(row.get("regularMarketPrice"))
+        except (TypeError, ValueError):
+            return
+        if not (np.isfinite(cap) and np.isfinite(price)) or cap <= 0 or price <= 0:
+            return
+        scales[key] = cap / price
+        cache.set(f"yahoo_mcap_quote_v1_{key}", {"scale": cap / price, "market_cap": cap, "price": price}, expire=86400)
+
     scales: dict[str, float] = {}
     missing = []
+    day = quote_store.today()
     for key in keys:
         hit = cache.get(f"yahoo_mcap_quote_v1_{key}")
         if isinstance(hit, dict) and hit.get("scale"):
             scales[key] = float(hit["scale"])
-        else:
+            continue
+        # Today's archived quote (taken while the prices were updated) saves the request.
+        row = quote_store.latest(key) or quote_store.latest(key.replace("-", "."))
+        if row and row.get("_day") == day:
+            take(key, row)
+        if key not in scales:
             missing.append(key)
     for i in range(0, len(missing), _MCAP_CHUNK):
         ctx.check_cancelled()
@@ -443,18 +416,7 @@ def _market_cap_scales(tickers: list[str], ctx: RunContext) -> dict:
             )
         by_symbol = {s.upper(): r for s, r in rows.items()}
         for key in chunk:
-            row = by_symbol.get(key) or by_symbol.get(key.replace("-", "."))
-            if not row:
-                continue
-            cap = row.get("marketCap") if row.get("marketCap") is not None else row.get("netAssets")
-            try:
-                cap, price = float(cap), float(row.get("regularMarketPrice"))
-            except (TypeError, ValueError):
-                continue
-            if not (np.isfinite(cap) and np.isfinite(price)) or cap <= 0 or price <= 0:
-                continue
-            scales[key] = cap / price
-            cache.set(f"yahoo_mcap_quote_v1_{key}", {"scale": cap / price, "market_cap": cap, "price": price}, expire=86400)
+            take(key, by_symbol.get(key) or by_symbol.get(key.replace("-", ".")))
         if i + _MCAP_CHUNK < len(missing):
             time.sleep(1.0)
     if not scales:
@@ -849,6 +811,8 @@ def prepare(raw_configs: Any, options: RunOptions | dict | None = None, ctx: Run
     started = time.time()
     activate_engine_home()
     ctx = ctx or RunContext()
+    if isinstance(options, dict) and options.get("price_update"):
+        ctx.price_update = str(options["price_update"])
     options = options if isinstance(options, RunOptions) else RunOptions.from_dict(options)
 
     configs = normalize_portfolio_configs(copy.deepcopy(raw_configs))

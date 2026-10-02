@@ -46,9 +46,11 @@ def smart_ttl(ticker: str = "", now: datetime | None = None) -> int:
 
 
 def open_cache():
+    """Also the permanent ticker store (price_store): diskcache's default 1 GB limit would evict
+    histories silently. The settings persist in the cache, so legacy openers inherit them."""
     import diskcache
 
-    return diskcache.Cache(CACHE_DIR)
+    return diskcache.Cache(CACHE_DIR, size_limit=64 * 2**30, eviction_policy="none")
 
 
 def price_key(ticker: str) -> str:
@@ -81,15 +83,25 @@ def quotes(symbols: list[str], fields: list[str]) -> dict[str, dict]:
     quoteSummary modules (yahooquery) cost one request per symbol. Unknown symbols are absent."""
     from yfinance.data import YfData
 
+    from . import quote_store
+
     out: dict[str, dict] = {}
     data = YfData()
     wanted = list(dict.fromkeys(s for s in symbols if s))
+    # Same request whatever the fields: always ask for the full row and archive it.
+    asked = ",".join(dict.fromkeys(["symbol", *fields, *quote_store.FIELDS]))
     for i in range(0, len(wanted), _QUOTE_CHUNK):
         chunk = wanted[i:i + _QUOTE_CHUNK]
-        payload = data.get_raw_json(_QUOTE_URL, params={"symbols": ",".join(chunk), "fields": ",".join(["symbol", *fields])})
+        payload = data.get_raw_json(_QUOTE_URL, params={"symbols": ",".join(chunk), "fields": asked})
+        got = {}
         for row in ((payload or {}).get("quoteResponse") or {}).get("result") or []:
             if row.get("symbol"):
-                out[row["symbol"]] = row
+                got[row["symbol"]] = row
+        out.update(got)
+        try:
+            quote_store.archive(got)
+        except Exception:
+            pass
         if i + _QUOTE_CHUNK < len(wanted):
             time.sleep(1.0)
     return out

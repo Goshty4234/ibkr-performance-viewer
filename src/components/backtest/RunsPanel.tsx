@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { RETENTION_DAYS } from '@/lib/backtest/history';
 import { isActive, type RunState, useBacktestStore } from '@/lib/backtest/store';
+import type { StoreReport } from '@/lib/engine/client';
 import styles from './Backtester.module.css';
 
 function fmtElapsed(ms: number): string {
@@ -18,6 +19,20 @@ function reusedText(n: number | undefined): string {
   return n ? ` · ${n} déjà calculé${n > 1 ? 's' : ''} (réutilisé${n > 1 ? 's' : ''})` : '';
 }
 
+function pricesText(p: StoreReport | null | undefined): string {
+  if (!p) return '';
+  const parts = [
+    p.stored && `${p.stored} déjà à jour`,
+    p.topped_up && `${p.topped_up} complété${p.topped_up > 1 ? 's' : ''}`,
+    p.downloaded && `${p.downloaded} téléchargé${p.downloaded > 1 ? 's' : ''}`,
+    p.refetched && `${p.refetched} retéléchargé${p.refetched > 1 ? 's' : ''} (split)`,
+    p.upgraded && `${p.upgraded} complété${p.upgraded > 1 ? 's' : ''} en historique complet (une seule fois)`,
+    p.unknown && `${p.unknown} introuvable${p.unknown > 1 ? 's' : ''}`,
+    p.failed && `${p.failed} sans réponse de Yahoo (gardé${p.failed > 1 ? 's' : ''} tel${p.failed > 1 ? 's' : ''} quel${p.failed > 1 ? 's' : ''})`,
+  ].filter(Boolean);
+  return parts.length ? ` · prix : ${parts.join(', ')}` : '';
+}
+
 function statusText(run: RunState): string {
   const job = run.job;
   switch (run.phase) {
@@ -25,13 +40,13 @@ function statusText(run: RunState): string {
     case 'queued': return `En file d'attente${job?.queue_position ? ` (position ${job.queue_position})` : ''}…`;
     case 'running': {
       const tasks = job?.tasks_total ? ` · ${job.tasks_done ?? 0}/${job.tasks_total} tâches` : '';
-      return `${job?.message || 'Calcul en cours…'}${tasks}${reusedText(job?.tasks_reused)}`;
+      return `${job?.message || 'Calcul en cours…'}${tasks}${reusedText(job?.tasks_reused)}${pricesText(job?.prices)}`;
     }
     case 'fetching': return 'Réception des résultats…';
     case 'done': {
       const fromHistory = run.reusedCount ? ` · ${run.reusedCount} repris de l’historique` : '';
       const saved = run.savedId ? ' · enregistré dans l’Historique' : '';
-      return `Terminé en ${fmtElapsed((run.finishedAt ?? 0) - (run.startedAt ?? 0))}${fromHistory}${reusedText(job?.summary?.reused)}${saved}`;
+      return `Terminé en ${fmtElapsed((run.finishedAt ?? 0) - (run.startedAt ?? 0))}${fromHistory}${reusedText(job?.summary?.reused)}${pricesText(job?.prices)}${saved}`;
     }
     case 'cancelled': return 'Annulé';
     case 'error': return run.error ?? 'Erreur';

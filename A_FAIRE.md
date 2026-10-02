@@ -6,11 +6,22 @@
 
 Idée : chaque ticker appelé une fois est gardé en entier (historique complet), sans expiration. Un run reprend les tickers déjà en base ; s'ils ne sont pas à jour, le site demande : utiliser tel quel (fin du backtest au dernier jour disponible), compléter seulement les jours manquants sur Yahoo, ou tout retélécharger. Nouvelle section du site pour parcourir tous les tickers en base, même hors ligne : graphique dans le temps, moyennes mobiles, etc.
 
-- [ ] Stockage permanent par ticker (historique complet + date du dernier jour confirmé par Yahoo).
-- [ ] Complément des jours manquants avec contrôle de fiabilité (chevauchement de quelques jours, détection des splits / corrections → retéléchargement complet du ticker).
-- [ ] Fenêtre au lancement : utiliser tel quel / compléter / tout retélécharger.
-- [ ] Section Tickers : liste, recherche, graphique, moyennes mobiles.
-- [ ] Tests : complément = téléchargement complet (même résultat), coût en requêtes Yahoo vs téléchargement complet, splits, dividendes, hors ligne, 6 000 tickers.
+- [x] Stockage permanent par ticker (historique complet + date du dernier jour confirmé par Yahoo) — `engine/backtest_engine/price_store.py`.
+- [x] On garde tout ce que la requête de prix renvoie : clôture, dividendes + ouverture, haut, bas, volume, splits (compressés à part, les runs ne lisent que clôture + dividendes).
+- [x] Fiche Yahoo complète (≈ 70-80 champs : market cap, PER, BPA, rendement, actions, 52 sem., nom…) archivée chaque jour de mise à jour — `quote_store.py`. Yahoo ne donne pas l'historique du market cap / PER : on le construit à partir de maintenant.
+- [x] Complément des jours manquants avec contrôle (10 jours de chevauchement, split ou écart → retéléchargement complet du ticker).
+- [x] Fenêtre au lancement : utiliser tel quel / compléter / tout retélécharger.
+- [x] Section Tickers : liste (nom, market cap, PER, état), recherche, graphique, 2 moyennes mobiles, bougies, volume, fiche + historique archivé.
+- [x] Tests (dossier temporaire, 55 tickers) : complément = téléchargement complet à 0 écart (3 / 10 / 30 / 120 / 400 jours, prix + barres), 6 splits réels et 6 dividendes OK, écart simulé → retéléchargé, Yahoo injoignable → données gardées et pas marquées à jour, mode « tel quel » sans réseau.
+- [ ] Après redémarrage du moteur : vérifier la section Tickers dans le navigateur et un run complet (les 6 075 tickers déjà en cache seront retéléchargés une fois en entier pour compléter les barres).
+- [ ] Mesurer `/store/tickers` et `/store/status` sur 6 000 tickers (première lecture = migration des anciennes entrées).
+
+## 0 ter. Fondamentaux détaillés (pas gratuits : 1+ requête par ticker)
+
+États financiers, historique du nombre d'actions, profil (secteur, industrie), détenteurs… Une tâche de fond lente (ex. la nuit, quelques centaines de tickers par heure) pour ne pas se faire bloquer par Yahoo.
+
+- [ ] Priorité : historique du nombre d'actions (`get_shares_full`) → vrai market cap historique au lieu de l'estimation « market cap d'aujourd'hui × prix » (fiabilité du filtre 10 G$, voir section 2).
+- [ ] Secteur / industrie, états financiers annuels et trimestriels.
 
 ## 0 bis. BUG — Filtre market cap ignoré quand Yahoo refuse
 

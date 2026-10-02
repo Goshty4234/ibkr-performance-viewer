@@ -159,6 +159,10 @@
 .runsHead { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
 .runsHeadActions { display: flex; gap: 0.3rem; }
 .runsNote { margin: 0.2rem 0 0.4rem; font-size: 0.74rem; color: var(--text-faint); line-height: 1.4; }
+
+.tickersLayout { display: grid; grid-template-columns: minmax(320px, 560px) minmax(0, 1fr); gap: 1rem; align-items: start; }
+@media (max-width: 1100px) { .tickersLayout { grid-template-columns: minmax(0, 1fr); } }
+.tickersRight { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
 .runsToggle {
   background: none;
   border: 0;

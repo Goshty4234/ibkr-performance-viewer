@@ -64,6 +64,10 @@ class RunContext:
     progress_fn: Optional[ProgressFn] = None
     cancel_fn: Optional[Callable[[], bool]] = None
     warnings: list[str] = field(default_factory=list)
+    # Ticker store mode for this run (price_store.MODES). Not a RunOptions field: it never
+    # changes a result's identity, only where the prices come from.
+    price_update: str = "topup"
+    price_report: dict = field(default_factory=dict)
 
     def progress(self, fraction: float, message: str) -> None:
         if self.progress_fn:
