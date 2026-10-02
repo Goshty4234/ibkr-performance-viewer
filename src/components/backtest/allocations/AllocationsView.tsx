@@ -277,7 +277,6 @@ function RiskSection({ report, loading }: { report: FundamentalsReport | null; l
 
 function Breakdown({ title, data }: { title: string; data: [string, number][] }) {
   const slices = useMemo<PieSlices>(() => data.filter(([, v]) => v > 0), [data]);
-  const max = slices[0]?.[1] ?? 1;
   return (
     <div className={styles.breakdown}>
       <div className={styles.breakdownTitle}>{title}</div>
@@ -291,7 +290,7 @@ function Breakdown({ title, data }: { title: string; data: [string, number][] })
                 {name}
               </span>
               <span className={styles.barTrack}>
-                <span style={{ width: `${(v / max) * 100}%`, background: SERIES_PALETTE[i % SERIES_PALETTE.length] }} />
+                <span style={{ width: `${Math.min(100, v)}%`, background: SERIES_PALETTE[i % SERIES_PALETTE.length] }} />
               </span>
               <span className={styles.barValue}>{v.toFixed(2)}%</span>
             </div>
