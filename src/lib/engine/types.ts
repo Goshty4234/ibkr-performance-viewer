@@ -456,6 +456,7 @@ export interface PortfolioConfig {
   momentum_strategy?: string;
   negative_momentum_strategy?: string;
   momentum_windows?: MomentumWindow[];
+  use_window_capped_score?: boolean;
   calc_beta?: boolean;
   beta_window_days?: number;
   exclude_days_beta?: number;

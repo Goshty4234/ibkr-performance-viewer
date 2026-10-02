@@ -158,6 +158,7 @@ def normalize_one(cfg: dict) -> dict:
         "momentum_strategy": _momentum_strategy(cfg.get("momentum_strategy", "Classic")),
         "negative_momentum_strategy": _negative_strategy(cfg.get("negative_momentum_strategy", "Cash")),
         "momentum_windows": _momentum_windows(cfg),
+        "use_window_capped_score": parse_bool(cfg.get("use_window_capped_score", False)),
         "use_minimal_threshold": parse_bool(cfg.get("use_minimal_threshold", False)),
         "minimal_threshold_percent": cfg.get("minimal_threshold_percent", 4.0),
         "use_max_allocation": parse_bool(cfg.get("use_max_allocation", False)),
@@ -208,6 +209,7 @@ def normalize_one(cfg: dict) -> dict:
 def apply_page_defaults(portfolio: dict) -> dict:
     """Defaults the Streamlit page adds to every portfolio on load (page init loop)."""
     defaults = {
+        "use_window_capped_score": False,
         "use_minimal_threshold": False,
         "minimal_threshold_percent": 4.0,
         "use_max_allocation": False,

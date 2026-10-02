@@ -56,7 +56,7 @@ export default function FocusedTab({ result, portfolios }: { result: LoadedResul
         width: 230,
         value: (r) => r.name,
         format: (_v, r) => (
-          <span className={styles.nameCell}>
+          <span className={styles.nameCell} title={r.name}>
             <span className={styles.swatchBtn} style={{ borderColor: portfolioColor(r.index), background: portfolioColor(r.index) }} />
             <span className={styles.nameText}>{r.name}</span>
           </span>

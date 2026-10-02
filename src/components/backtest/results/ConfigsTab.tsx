@@ -28,6 +28,7 @@ const FIELDS: Field[] = [
     get: (c) => (c.momentum_windows ?? []).map((w) => `${w.lookback}/${w.exclude}×${w.weight}`).join(' · '),
     width: 220,
   },
+  { label: 'Window-Capped Score', get: (c) => yes(c.use_window_capped_score) },
   { label: 'Beta Enabled', get: (c) => yes(c.calc_beta) },
   { label: 'Volatility Enabled', get: (c) => yes(c.calc_volatility) },
   { label: 'Beta Window', get: (c) => (c.calc_beta ? `${c.beta_window_days ?? 0}-${c.exclude_days_beta ?? 0}` : 'N/A') },

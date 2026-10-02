@@ -103,6 +103,7 @@ function ConfigSection({ p }: { p: PortfolioSummaryOk }) {
     ['Benchmark', String(c.benchmark_ticker)],
     ['Momentum', c.use_momentum ? `${c.momentum_strategy ?? ''} · négatif : ${c.negative_momentum_strategy ?? ''}` : 'Non'],
     ['Fenêtres', (c.momentum_windows ?? []).map((w) => `${w.lookback}/${w.exclude}×${w.weight}`).join(' · ') || '—'],
+    ['Score plafonné par fenêtre', c.use_window_capped_score ? 'Oui (−100 % à +100 %)' : 'Non'],
     ['Bêta / volatilité', `${c.calc_beta ? `bêta ${c.beta_window_days}-${c.exclude_days_beta}` : 'bêta non'} · ${c.calc_volatility ? `vol ${c.vol_window_days}-${c.exclude_days_vol}` : 'vol non'}`],
     ['Filtre MA', c.use_sma_filter ? `${c.ma_type ?? 'SMA'} ${c.sma_window ?? 200}` : 'Non'],
     ['Croisement MA', c.ma_cross_rebalance ? `tolérance ${c.ma_tolerance_percent ?? 2}% · ${c.ma_confirmation_days ?? 3} j` : 'Non'],

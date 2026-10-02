@@ -24,6 +24,11 @@ export const TIPS = {
   lookback: 'Durée de la fenêtre de rendement, en jours calendaires (ex. 365 = rendement sur un an).',
   exclude: 'Jours les plus récents ignorés à la fin de la fenêtre (ex. 30 = on saute le dernier mois, qui a souvent tendance à se retourner).',
   windowWeight: 'Poids de cette fenêtre dans le score momentum final (les poids des fenêtres devraient totaliser 100 %).',
+  windowCappedScore:
+    'Score plafonné par fenêtre : chaque fenêtre ne peut donner que son propre poids. Dans chaque fenêtre, le meilleur rendement reçoit +100 % du poids de la fenêtre '
+    + 'et les autres reçoivent leur rendement ÷ le meilleur ; le pire rendement négatif reçoit −100 % du poids et les autres négatifs reçoivent leur rendement ÷ |le pire|. '
+    + 'Le score final est la somme des fenêtres, entre −100 et +100 : un titre qui explose sur une seule fenêtre mais s’effondre sur les autres ne domine plus. '
+    + 'Décoché : score classique (somme des rendements pondérés).',
   discardNegative: 'Un titre dont le rendement sur cette fenêtre est négatif est exclu de ce rebalancement.',
   requireRecentPositive: 'Avec « Rejeter si négatif » : le titre est gardé malgré tout si son rendement récent est positif.',
   betaWeighting:

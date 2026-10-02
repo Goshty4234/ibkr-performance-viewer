@@ -9,6 +9,7 @@ import AllocRunBar from './allocations/AllocRunBar';
 import AllocationsView from './allocations/AllocationsView';
 import HistoryView from './HistoryView';
 import ImportExportDialog from './ImportExportDialog';
+import MonteCarloView from './montecarlo/MonteCarloView';
 import LibraryDialog, { SavesView } from './LibraryDialog';
 import PortfolioEditor from './PortfolioEditor';
 import PortfolioList from './PortfolioList';
@@ -36,6 +37,7 @@ const TABS: { id: BacktestView; label: string }[] = [
   { id: 'results', label: 'Résultats' },
   { id: 'allocations', label: 'Allocations' },
   { id: 'history', label: 'Historique' },
+  { id: 'montecarlo', label: 'Monte Carlo' },
   { id: 'saves', label: 'Enregistrements' },
   { id: 'tickers', label: 'Tickers' },
 ];
@@ -94,7 +96,7 @@ export default function BacktesterApp() {
         </div>
       </div>
 
-      {view === 'allocations' ? <AllocRunBar /> : <RunBar />}
+      {view === 'allocations' ? <AllocRunBar /> : view === 'montecarlo' ? null : <RunBar />}
       <RunsPanel />
       {view === 'results' && <ReuseNoticeBar purpose="backtest" />}
       {view === 'allocations' && <ReuseNoticeBar purpose="allocations" />}
@@ -117,6 +119,11 @@ export default function BacktesterApp() {
       )}
       {view === 'history' && <HistoryView />}
       {view === 'saves' && <SavesView />}
+      {mounted('montecarlo') && (
+        <div style={view === 'montecarlo' ? undefined : HIDDEN}>
+          <MonteCarloView />
+        </div>
+      )}
       {mounted('tickers') && (
         <div style={view === 'tickers' ? undefined : HIDDEN}>
           <TickersView />

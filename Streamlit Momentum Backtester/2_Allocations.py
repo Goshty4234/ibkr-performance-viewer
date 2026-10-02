@@ -6170,6 +6170,35 @@ def _momentum_return_between(df_t, start_ts, end_ts, include_div=False):
     return (price_end - price_start) / price_start
 
 
+def _window_capped_momentum_scores(window_rets_by_asset, normalized_weights):
+    """Window-capped momentum score (optional, config 'use_window_capped_score').
+
+    Each window can give at most its own weight. Per window, the best positive return gets +100% of
+    the window weight and every other positive return gets its ratio to that best (r / best). The
+    worst negative return gets -100% of the window weight and every other negative return gets
+    r / |worst|. The final score is the sum over windows (range -1..+1), so one extreme window can
+    no longer outweigh the others."""
+    n = len(normalized_weights)
+    best = [0.0] * n
+    worst = [0.0] * n
+    for rets in window_rets_by_asset.values():
+        for i, r in enumerate(rets):
+            if r > best[i]:
+                best[i] = r
+            elif r < worst[i]:
+                worst[i] = r
+    scores = {}
+    for t, rets in window_rets_by_asset.items():
+        s = 0.0
+        for i, r in enumerate(rets):
+            if r > 0 and best[i] > 0:
+                s += normalized_weights[i] * (r / best[i])
+            elif r < 0 and worst[i] < 0:
+                s += normalized_weights[i] * (r / abs(worst[i]))
+        scores[t] = s
+    return scores
+
+
 def _momentum_window_discards_negative(window, window_return, recent_return=None):
     """Exclude asset when discard_if_negative is set and this window's return is below zero."""
     if not isinstance(window, dict):
@@ -6524,6 +6553,7 @@ def single_backtest(config, sim_index, reindexed_data):
 
     def calculate_momentum(date, current_assets, momentum_windows, stocks_config=None):
         cumulative_returns, valid_assets = {}, []
+        window_rets_by_asset = {}
         
         current_assets = filter_tickers_by_sp500_entry(current_assets, date, config)
         if not current_assets:
@@ -6556,6 +6586,7 @@ def single_backtest(config, sim_index, reindexed_data):
         candidate_assets = [t for t in assets_to_calculate if t in current_data]
         for t in candidate_assets:
             is_valid, asset_returns = True, 0.0
+            window_rets_list = []
             df_t = current_data.get(t)
             if not (isinstance(df_t, pd.DataFrame) and 'Close' in df_t.columns and not df_t['Close'].dropna().empty):
                 # no usable data for this ticker
@@ -6605,9 +6636,13 @@ def single_backtest(config, sim_index, reindexed_data):
                     is_valid = False
                     break
                 asset_returns += ret * weight
+                window_rets_list.append(ret)
             if is_valid:
                 cumulative_returns[t] = asset_returns
+                window_rets_by_asset[t] = window_rets_list
                 valid_assets.append(t)
+        if config.get('use_window_capped_score', False) and window_rets_by_asset:
+            cumulative_returns = _window_capped_momentum_scores(window_rets_by_asset, normalized_weights)
         return cumulative_returns, valid_assets
 
     def calculate_momentum_weights(returns, valid_assets, date, momentum_strategy='Classic', negative_momentum_strategy='Cash'):

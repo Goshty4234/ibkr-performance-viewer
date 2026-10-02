@@ -453,6 +453,12 @@ function MomentumSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
           </div>
         ))}
 
+        <div className={styles.field}>
+          <Check checked={Boolean(p.use_window_capped_score)} onChange={(v) => set({ use_window_capped_score: v })} title={TIPS.windowCappedScore}>
+            Score plafonné par fenêtre (−100 % à +100 %)
+          </Check>
+        </div>
+
         <div className={styles.grid2}>
           <div className={styles.field}>
             <Check checked={Boolean(p.calc_beta)} onChange={(v) => set({ calc_beta: v })} title={TIPS.betaWeighting}>Pondération inverse au bêta</Check>

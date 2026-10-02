@@ -13,6 +13,11 @@
     POST   /fundamentals/pe      {tickers} -> trailing PE per ticker
     GET    /universe/{name}      sp500 | us ticker lists
     GET    /prices?ticker=&job=  close history (from the job snapshot when possible)
+    POST   /montecarlo           queue a Monte Carlo study (random universes) -> {id}
+    GET    /montecarlo/{id}      status / progress
+    GET    /montecarlo/{id}/result  gzip JSON distributions
+    DELETE /montecarlo/{id}      cancel
+    GET    /montecarlo/real-universe  how many stored tickers a bootstrap could resample
     POST   /update/check         portable engine: look for a newer release, download it in the background
     POST   /update/apply         portable engine: switch to the downloaded release and restart
 """
@@ -42,6 +47,7 @@ from backtest_engine.certs import ensure_system_ca_bundle  # noqa: E402
 
 from .auth import current_user, is_guest  # noqa: E402
 from .jobs import JobManager  # noqa: E402
+from .mc_jobs import McManager  # noqa: E402
 from .settings import load_settings  # noqa: E402
 
 settings = load_settings()
@@ -54,6 +60,7 @@ async def lifespan(app: FastAPI):
     manager = JobManager(settings)
     manager.start()
     app.state.manager = manager
+    app.state.mc = McManager(settings)
     try:
         yield
     finally:
@@ -299,6 +306,77 @@ def cancel_job(job_id: str, request: Request, user: str = Depends(current_user))
     if not job:
         raise HTTPException(404, "Unknown job")
     return manager.describe(job)
+
+
+class McRequest(BaseModel):
+    portfolios: Any = Field(..., description="Portfolio list (same format as /jobs)")
+    options: dict[str, Any] | None = None
+    label: str | None = None
+
+
+def _mc(request: Request) -> McManager:
+    return request.app.state.mc
+
+
+@app.post("/montecarlo")
+def mc_create(body: McRequest, request: Request, user: str = Depends(current_user)) -> dict:
+    from backtest_engine.config import normalize_portfolio_configs
+    from backtest_engine.mc.run import clean_options
+    from backtest_engine.mc.strategy import parse_strategy
+
+    portfolios = body.portfolios if isinstance(body.portfolios, list) else []
+    options = body.options or {}
+    try:
+        o = clean_options(options)
+        configs = normalize_portfolio_configs(portfolios)
+        for c in configs:  # fails fast on what cannot be simulated (e.g. fusion portfolios)
+            parse_strategy(c, o["risk_free"])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, f"Invalid portfolio configuration: {exc}") from exc
+    label = (body.label or "Monte Carlo : " + ", ".join(c["name"] for c in configs[:3]))[:200]
+    try:
+        job = _mc(request).submit(user, portfolios, options, label)
+    except OverflowError as exc:
+        raise HTTPException(429, str(exc)) from exc
+    return _mc(request).describe(job)
+
+
+@app.get("/montecarlo/real-universe")
+def mc_real_universe(user: str = Depends(current_user)) -> dict:
+    from backtest_engine import price_store
+    from backtest_engine.mc.panel import MIN_ROWS
+
+    rows = [r for r in price_store.list_stored() if (r.get("rows") or 0) >= MIN_ROWS]
+    return {"tickers": [r["ticker"] for r in rows], "min_rows": MIN_ROWS}
+
+
+@app.get("/montecarlo/{job_id}")
+def mc_get(job_id: str, request: Request, user: str = Depends(current_user)) -> dict:
+    job = _mc(request).get(job_id, user)
+    if not job:
+        raise HTTPException(404, "Unknown simulation")
+    return _mc(request).describe(job)
+
+
+@app.get("/montecarlo/{job_id}/result")
+def mc_result(job_id: str, request: Request, user: str = Depends(current_user)) -> Response:
+    job = _mc(request).get(job_id, user)
+    if not job:
+        raise HTTPException(404, "Unknown simulation")
+    if job.status != "done" or job.result_gz is None:
+        raise HTTPException(409, f"Result not available (status: {job.status})")
+    return Response(content=job.result_gz, media_type="application/json",
+                    headers={"Content-Encoding": "gzip", "Cache-Control": "no-store"})
+
+
+@app.delete("/montecarlo/{job_id}")
+def mc_cancel(job_id: str, request: Request, user: str = Depends(current_user)) -> dict:
+    job = _mc(request).cancel(job_id, user)
+    if not job:
+        raise HTTPException(404, "Unknown simulation")
+    return _mc(request).describe(job)
 
 
 _search_cache: dict[str, tuple[float, list]] = {}
