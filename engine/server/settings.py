@@ -9,8 +9,9 @@ variables change:
     SUPABASE_ANON_KEY       public anon key                  (required when ENGINE_AUTH=supabase)
     ENGINE_ALLOW_GUESTS     1 to accept requests without a session (site guest mode), identified by IP (default: 0)
     ENGINE_GUEST_MAX_QUEUE  active jobs per guest IP         (default: 2)
-    ENGINE_ALLOWED_ORIGINS  comma list of origins, or "*"
-    ENGINE_ORIGIN_REGEX     regex of allowed origins         (default: localhost + *.vercel.app)
+    ENGINE_ALLOWED_ORIGINS  comma list of extra origins, or "*"
+    ENGINE_ORIGINS_URL      list of site origins re-read at start (default: allowed_origins.txt on GitHub; empty = off)
+    ENGINE_ORIGIN_REGEX     regex of allowed origins         (default: localhost only)
     ENGINE_WORKERS          pooled worker processes          (default: CPU count - 1 locally, CPU count in cloud; capped by free RAM and 12)
     ENGINE_MAX_JOBS         jobs progressing concurrently    (default: 4 locally, 2 in cloud)
     ENGINE_WORKER_IDLE_S    idle seconds before a worker exits (default: 600; one warm worker is kept)
@@ -25,9 +26,43 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from backtest_engine import engine_home
+from backtest_engine import ENGINE_ROOT, engine_home
 
-DEFAULT_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$|^https://[a-z0-9-]+\.vercel\.app$"
+DEFAULT_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+ORIGINS_URL = "https://raw.githubusercontent.com/Goshty4234/ibkr-performance-viewer/main/engine/allowed_origins.txt"
+
+
+def _parse_origins(text: str) -> list[str]:
+    return [line.strip().rstrip("/") for line in text.splitlines() if line.strip() and not line.strip().startswith("#")]
+
+
+def site_origins(home: Path) -> list[str]:
+    """Origins of the web app. The list on GitHub wins so a domain change reaches every installed
+    engine at its next start; offline, the last copy fetched, then the one shipped with the code."""
+    cached = home / ".config" / "allowed_origins.txt"
+    url = os.environ.get("ENGINE_ORIGINS_URL", ORIGINS_URL).strip()
+    if url:
+        try:
+            import requests
+
+            from backtest_engine.certs import ensure_system_ca_bundle
+
+            ensure_system_ca_bundle(ENGINE_ROOT / ".certs")
+            r = requests.get(url, timeout=3)
+            if r.ok and _parse_origins(r.text):
+                cached.parent.mkdir(parents=True, exist_ok=True)
+                cached.write_text(r.text, encoding="utf-8")
+                return _parse_origins(r.text)
+        except Exception:  # noqa: BLE001 - offline: fall back to the stored lists
+            pass
+    for path in (cached, ENGINE_ROOT / "allowed_origins.txt"):
+        try:
+            found = _parse_origins(path.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+        if found:
+            return found
+    return []
 
 
 def _int(name: str, default: int) -> int:
@@ -94,7 +129,9 @@ def load_settings() -> Settings:
     mode = os.environ.get("ENGINE_MODE", "local").strip().lower()
     mode = mode if mode in ("local", "cloud") else "local"
     auth = os.environ.get("ENGINE_AUTH", "supabase" if mode == "cloud" else "none").strip().lower()
-    origins = [o.strip() for o in os.environ.get("ENGINE_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+    origins = [o.strip().rstrip("/") for o in os.environ.get("ENGINE_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+    if "*" not in origins:
+        origins = list(dict.fromkeys(origins + site_origins(engine_home())))
     s = Settings(
         mode=mode,
         auth=auth if auth in ("none", "supabase") else "none",

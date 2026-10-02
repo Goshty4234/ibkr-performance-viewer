@@ -19,6 +19,9 @@ const STORAGE_KEY = 'engine-prefs-v1';
 
 export const DEFAULT_LOCAL_URL = process.env.NEXT_PUBLIC_ENGINE_LOCAL_URL || 'http://127.0.0.1:8765';
 export const DEFAULT_CLOUD_URL = process.env.NEXT_PUBLIC_ENGINE_CLOUD_URL || '';
+/** Portable Windows engine: the latest GitHub release always carries this asset name. */
+export const ENGINE_DOWNLOAD_URL = process.env.NEXT_PUBLIC_ENGINE_DOWNLOAD_URL
+  || 'https://github.com/Goshty4234/ibkr-performance-viewer/releases/latest/download/MomentumBacktesterEngine-win64.zip';
 
 export function normalizeUrl(url: string): string {
   const u = url.trim().replace(/\/+$/, '');

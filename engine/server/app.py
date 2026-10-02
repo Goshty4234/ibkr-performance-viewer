@@ -102,6 +102,33 @@ class _PnaPreflight:
 app.add_middleware(_PnaPreflight)
 
 
+class _OriginGuard:
+    """CORS only hides responses: a foreign page could still fire simple requests (form posts)
+    at an engine on 127.0.0.1. Browser requests from origins outside the allowed list are
+    refused before reaching any endpoint; callers without an Origin header (scripts) pass."""
+
+    def __init__(self, app: Any) -> None:
+        import re
+
+        self.app = app
+        self.origins = set(settings.allowed_origins)
+        self.regex = re.compile(settings.origin_regex) if settings.origin_regex else None
+
+    def _allowed(self, origin: str) -> bool:
+        return _allow_all or origin in self.origins or bool(self.regex and self.regex.fullmatch(origin))
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope["type"] == "http":
+            origin = next((v.decode("latin-1") for k, v in scope.get("headers", []) if k == b"origin"), "")
+            if origin and not self._allowed(origin):
+                await Response("Origin not allowed", status_code=403)(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(_OriginGuard)
+
+
 class JobRequest(BaseModel):
     portfolios: Any = Field(..., description="Portfolio list (Streamlit export format)")
     options: dict[str, Any] | None = None

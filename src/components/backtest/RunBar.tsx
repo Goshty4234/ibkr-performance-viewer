@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { isActive, useBacktestStore } from '@/lib/backtest/store';
 import { useEngineStore } from '@/lib/engine/store';
+import EngineSetup from './EngineSetup';
 import RunHelp from './RunHelp';
 import { TIPS } from './tips';
 import styles from './Backtester.module.css';
@@ -116,11 +117,7 @@ export default function RunBar() {
             {activeCount} run{activeCount > 1 ? 's' : ''} en cours — tu peux en lancer d&apos;autres en parallèle.
           </span>
         )}
-        {engineStatus === 'offline' && (
-          <span style={{ fontSize: '0.74rem', color: 'var(--orange)' }}>
-            Aucun moteur détecté — lance « Lancer le moteur.bat » ou configure le moteur en ligne.
-          </span>
-        )}
+        {engineStatus === 'offline' && <EngineSetup />}
         {launchError && <div className={styles.errorBox}>{launchError}</div>}
       </div>
       <RunHelp />

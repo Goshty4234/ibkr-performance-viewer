@@ -1,0 +1,59 @@
+name: Portable engine (Windows)
+
+# Builds MomentumBacktesterEngine-win64.zip (embedded Python + libraries + engine) and publishes it
+# as a GitHub Release. The site's download button points at releases/latest, so pushing a tag
+# engine-vX.Y.Z ships a new engine to everyone; running engines show an update notice.
+on:
+  push:
+    tags: ["engine-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build
+        run: python engine/tools/build_portable.py --out dist --version "${{ github.ref_name }}"
+
+      - name: Smoke test (server answers /health and rejects unknown origins)
+        shell: pwsh
+        run: |
+          $env:ENGINE_ORIGINS_URL = ""
+          $data = Join-Path $env:RUNNER_TEMP "engine-data"
+          $p = Start-Process -FilePath "dist\MomentumBacktesterEngine\python\python.exe" `
+            -ArgumentList "-m","backtest_engine.portable","--port","8799","--data",$data,"--no-browser" `
+            -WorkingDirectory "dist\MomentumBacktesterEngine" -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 60 -and -not $ok; $i++) {
+            Start-Sleep 2
+            try { $ok = (Invoke-WebRequest http://127.0.0.1:8799/health -UseBasicParsing).StatusCode -eq 200 } catch {}
+          }
+          if (-not $ok) { throw "engine did not start" }
+          $code = try { (Invoke-WebRequest http://127.0.0.1:8799/health -Headers @{Origin = "https://evil.example"} -UseBasicParsing).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }
+          Stop-Process -Id $p.Id -Force
+          if ($code -ne 403) { throw "unknown origin got $code" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MomentumBacktesterEngine-win64
+          path: dist/MomentumBacktesterEngine-win64.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/engine-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Moteur ${{ github.ref_name }}
+          files: dist/MomentumBacktesterEngine-win64.zip
+          make_latest: true
+          body: |
+            Moteur de calcul portable pour Windows : décompresse le zip, double-clique « Lancer le moteur.cmd ».
+            Rien à installer (Python et les librairies sont inclus). Voir LISEZMOI.txt dans le zip.

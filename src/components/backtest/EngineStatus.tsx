@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { EngineMode } from '@/lib/engine/prefs';
 import { useEngineStore } from '@/lib/engine/store';
+import EngineSetup from './EngineSetup';
 import styles from './EngineStatus.module.css';
 
 const MODE_LABELS: Record<EngineMode, string> = { auto: 'Auto', local: 'Mon PC', cloud: 'En ligne' };
@@ -116,12 +117,7 @@ export default function EngineStatus() {
 
           {status === 'offline' && (
             <div className={styles.offline}>
-              {prefs.mode !== 'cloud' && (
-                <p>
-                  <b>Sur ton PC :</b> double-clique <code>Lancer le moteur.bat</code> à la racine du projet
-                  (ou <code>python run_engine.py</code>). La page le détecte toute seule.
-                </p>
-              )}
+              {prefs.mode !== 'cloud' && <EngineSetup compact />}
               {prefs.mode !== 'local' && !prefs.cloudUrl && <p><b>En ligne :</b> aucune adresse configurée.</p>}
               {prefs.mode !== 'local' && prefs.cloudUrl && <p><b>En ligne :</b> {prefs.cloudUrl} ne répond pas.</p>}
             </div>

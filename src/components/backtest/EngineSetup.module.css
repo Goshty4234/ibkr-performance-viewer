@@ -1,0 +1,42 @@
+.box,
+.compact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.box {
+  flex-basis: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--orange) 45%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--orange) 8%, transparent);
+}
+
+.title {
+  color: var(--orange);
+  font-weight: 600;
+}
+
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.note {
+  font-size: 0.72rem;
+}
+
+.note b {
+  color: var(--orange);
+  font-weight: 600;
+}
+
+.line {
+  font-size: 0.74rem;
+  color: var(--orange);
+}

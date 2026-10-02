@@ -1,5 +1,6 @@
 # Calculation engine (same libraries as the Streamlit app)
-pandas>=2.2
+# pandas 3 changes defaults (copy-on-write, string dtype) the legacy code was never checked against.
+pandas>=2.2,<3
 numpy>=1.26
 yfinance>=0.2.66
 requests>=2.31

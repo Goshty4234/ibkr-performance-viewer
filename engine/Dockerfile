@@ -24,6 +24,7 @@ RUN pip install -r requirements.txt \
 COPY backtest_engine ./backtest_engine
 COPY server ./server
 COPY Complete_Tickers ./Complete_Tickers
+COPY allowed_origins.txt .
 
 # Price cache (.streamlit) and job results (.jobs) live in volumes.
 RUN useradd --create-home --uid 10001 engine \

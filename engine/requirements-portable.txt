@@ -1,0 +1,18 @@
+# Portable Windows engine: requirements.txt minus what the engine never runs
+# (numba/llvmlite: two jitted legacy helpers nobody calls; plotly: Streamlit charts only).
+# Pinned to the versions the engine is tested with: the zip must compute exactly like the dev engine.
+pandas==2.3.3
+numpy==2.2.6
+scipy==1.15.3
+yfinance==1.7.0
+yahooquery==2.4.1
+curl_cffi==0.16.3
+requests==2.34.2
+beautifulsoup4==4.15.0
+lxml==6.1.3
+diskcache==5.6.3
+certifi
+fastapi==0.142.2
+starlette==1.7.0
+pydantic==2.13.5
+uvicorn==0.54.0

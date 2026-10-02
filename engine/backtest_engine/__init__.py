@@ -16,6 +16,23 @@ for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUME
 ENGINE_ROOT = Path(__file__).resolve().parent.parent
 
 
+def _numba_optional() -> None:
+    """The legacy page decorates two helpers with numba's @jit at import time, though nothing calls
+    them. The portable engine leaves numba out (~140 MB with llvmlite): a pass-through jit keeps
+    the import working."""
+    import importlib.util
+    import types
+
+    if "numba" in sys.modules or importlib.util.find_spec("numba") is not None:
+        return
+    stub = types.ModuleType("numba")
+    stub.jit = lambda *args, **kwargs: (lambda fn: fn)  # type: ignore[attr-defined]
+    sys.modules["numba"] = stub
+
+
+_numba_optional()
+
+
 def engine_home() -> Path:
     """Folder holding Complete_Tickers/ and the .streamlit/ price cache.
 

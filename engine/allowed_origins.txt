@@ -1,0 +1,4 @@
+# Sites allowed to drive an engine, one origin per line (localhost is always allowed).
+# Every engine re-reads this file from GitHub when it starts: to move the site to a new domain,
+# add the new origin here and push. Installed engines follow without being reinstalled.
+https://ibkr-performance-viewer-five.vercel.app

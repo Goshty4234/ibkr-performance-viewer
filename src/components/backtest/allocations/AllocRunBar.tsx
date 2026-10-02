@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { isActive, useBacktestStore } from '@/lib/backtest/store';
 import { useEngineStore } from '@/lib/engine/store';
+import EngineSetup from '../EngineSetup';
 import styles from '../Backtester.module.css';
 
 /** Allocations' own launcher: one portfolio at a time, none of the full-backtest options. */
@@ -71,11 +72,7 @@ export default function AllocRunBar() {
         {activeRun && (
           <div className={styles.allocRunProgress}><span style={{ width: `${Math.max(4, progress)}%` }} /></div>
         )}
-        {engineStatus === 'offline' && (
-          <span style={{ fontSize: '0.74rem', color: 'var(--orange)' }}>
-            Aucun moteur détecté — lance « Lancer le moteur.bat » ou configure le moteur en ligne.
-          </span>
-        )}
+        {engineStatus === 'offline' && <EngineSetup />}
         {!portfolios.length && <span className={styles.runNote}>Aucun portfolio : crée-en un dans Construire.</span>}
         {launchError && <div className={styles.errorBox}>{launchError}</div>}
       </div>

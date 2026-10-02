@@ -20,7 +20,8 @@ interface EngineState {
   client: EngineClient | null;
   lastCheck: number;
   init: () => void;
-  detect: (opts?: { quiet?: boolean }) => Promise<ResolvedEngine | null>;
+  /** forceLocal: the user says an engine now runs on this PC (asks Chrome's permission once). */
+  detect: (opts?: { quiet?: boolean; forceLocal?: boolean }) => Promise<ResolvedEngine | null>;
   setPrefs: (patch: Partial<EnginePrefs>) => Promise<void>;
   /** Re-reads /health of the current engine (live pool stats) without re-resolving. */
   refreshHealth: () => Promise<void>;
@@ -54,7 +55,14 @@ export const useEngineStore = create<EngineState>((set, get) => {
       if (started || typeof window === 'undefined') return;
       started = true;
       set({ prefs: loadLocalPrefs() });
-      void get().detect();
+      // The portable engine opens the site with ?engine=local once it is ready.
+      const url = new URL(window.location.href);
+      const fromEngine = url.searchParams.get('engine') === 'local';
+      if (fromEngine) {
+        url.searchParams.delete('engine');
+        window.history.replaceState(window.history.state, '', url.toString());
+      }
+      void get().detect({ forceLocal: fromEngine });
       loadRemotePrefs()
         .then((remote) => {
           if (!remote) return;
@@ -75,10 +83,11 @@ export const useEngineStore = create<EngineState>((set, get) => {
     },
 
     async detect(opts) {
-      if (inflight) return inflight;
+      if (inflight && !opts?.forceLocal) return inflight;
+      if (inflight) await inflight.catch(() => null);
       if (!opts?.quiet || get().status === 'idle') set({ status: 'detecting' });
       inflight = (async () => {
-        const engine = await resolveEngine(get().prefs);
+        const engine = await resolveEngine(get().prefs, opts?.forceLocal);
         const prev = get().engine;
         const same = prev && engine && prev.url === engine.url;
         set({

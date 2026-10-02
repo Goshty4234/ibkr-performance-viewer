@@ -80,6 +80,13 @@ Aujourd'hui le moteur de calcul ne tourne que sur le PC (`127.0.0.1:8765`) : san
 - [ ] Vérifier que Yahoo ne bloque pas l'adresse IP du serveur (les IP de cloud sont souvent plus limitées qu'une IP maison).
 - [ ] Surveiller la consommation : disque du cache, mémoire, nettoyage des résultats et jobs expirés.
 
+## 6. Moteur portable (calcul sur le PC du visiteur)
+
+- [x] Windows : zip `MomentumBacktesterEngine-win64.zip` (Python embarqué + librairies + moteur, ~91 Mo), publié en Release GitHub par `.github/workflows/engine-portable.yml` quand on pousse un tag `engine-vX.Y.Z`. Données dans `%LOCALAPPDATA%\MomentumBacktester`. Build local : `py -3.13 engine/tools/build_portable.py`.
+- [ ] **Ajouter Mac** (Apple Silicon + Intel) : Python autonome (ex. python-build-standalone), lanceur `.command`, dossier de données `~/Library/Application Support/MomentumBacktester`, build sur un runner `macos-latest`.
+- [ ] Signer l'exécutable Windows (évite l'avertissement SmartScreen) si le site devient public.
+- Changer de domaine : ajouter la nouvelle adresse dans `engine/allowed_origins.txt` et pousser (les moteurs déjà installés la relisent au démarrage, pas de réinstallation) ; ajouter aussi l'adresse dans Supabase → Authentication → URL Configuration (Site URL + Redirect URLs) et dans les domaines Vercel.
+
 ## Rappels de fonctionnement
 
 - Ne jamais lancer `next build` pendant que le serveur de dev tourne : vérifier avec `node node_modules\typescript\bin\tsc --noEmit -p .`.

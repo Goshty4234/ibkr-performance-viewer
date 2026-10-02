@@ -30,13 +30,45 @@ export class EngineError extends Error {
 
 const LOCAL_PROBE_MS = 700;
 const CLOUD_PROBE_MS = 6000;
+const LOCAL_SEEN_KEY = 'engine-local-seen';
+
+function isLoopback(url: string): boolean {
+  return /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/i.test(url);
+}
+
+/** Chrome 142+ (Local Network Access) needs requests from a public page to this PC flagged as
+ * such, then asks the user once for permission. Unknown to other browsers, which ignore it. */
+function withAddressSpace(url: string, init: RequestInit): RequestInit {
+  return isLoopback(url) ? ({ ...init, targetAddressSpace: 'loopback' } as RequestInit) : init;
+}
+
+/** Whether to look for an engine on this PC without being asked: always from a local page;
+ * from the public site only once an engine answered here, since the first attempt makes
+ * Chrome show its local-network permission prompt to every visitor. */
+export function localEngineKnown(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (/^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)) return true;
+  try {
+    return window.localStorage.getItem(LOCAL_SEEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markLocalSeen(): void {
+  try {
+    window.localStorage.setItem(LOCAL_SEEN_KEY, '1');
+  } catch {
+    /* private mode */
+  }
+}
 
 export async function probeEngine(url: string, timeoutMs: number): Promise<EngineHealth | null> {
   if (!url) return null;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(`${url}/health`, { signal: ctrl.signal, cache: 'no-store' });
+    const res = await fetch(`${url}/health`, withAddressSpace(url, { signal: ctrl.signal, cache: 'no-store' }));
     if (!res.ok) return null;
     const body = (await res.json()) as EngineHealth;
     return body?.engine === 'momentum-backtest' ? body : null;
@@ -47,14 +79,19 @@ export async function probeEngine(url: string, timeoutMs: number): Promise<Engin
   }
 }
 
-/** Picks the engine according to the preference: auto = this PC first, then cloud. */
-export async function resolveEngine(prefs: EnginePrefs): Promise<ResolvedEngine | null> {
+/** Picks the engine according to the preference: auto = this PC first, then cloud.
+ * forceLocal: the user says an engine runs here (first time from the public site). */
+export async function resolveEngine(prefs: EnginePrefs, forceLocal = false): Promise<ResolvedEngine | null> {
   const localUrl = normalizeUrl(prefs.localUrl).replace(/^https:\/\/(127\.0\.0\.1|localhost)/, 'http://$1');
   const cloudUrl = normalizeUrl(prefs.cloudUrl);
-  if (prefs.mode !== 'cloud') {
-    const h = await probeEngine(localUrl, LOCAL_PROBE_MS);
-    if (h) return { kind: 'local', url: localUrl, health: h };
-    if (prefs.mode === 'local') return null;
+  if (prefs.mode !== 'cloud' && (forceLocal || prefs.mode === 'local' || localEngineKnown())) {
+    // The first attempt may wait on Chrome's permission prompt.
+    const h = await probeEngine(localUrl, forceLocal && !localEngineKnown() ? 60_000 : LOCAL_PROBE_MS);
+    if (h) {
+      markLocalSeen();
+      return { kind: 'local', url: localUrl, health: h };
+    }
+    if (prefs.mode === 'local' || forceLocal) return null;
   }
   if (cloudUrl) {
     const h = await probeEngine(cloudUrl, CLOUD_PROBE_MS);
@@ -84,7 +121,7 @@ export class EngineClient {
     if (token) headers.set('Authorization', `Bearer ${token}`);
     let res: Response;
     try {
-      res = await fetch(`${this.url}${path}`, { ...init, headers, cache: 'no-store' });
+      res = await fetch(`${this.url}${path}`, withAddressSpace(this.url, { ...init, headers, cache: 'no-store' }));
     } catch {
       throw new EngineError('Moteur injoignable. Est-il toujours lancé ?');
     }
