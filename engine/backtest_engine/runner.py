@@ -472,9 +472,9 @@ def _mcap_share_ratios(tickers: list[str], scale_map: dict, ctx: RunContext) -> 
     The legacy filter estimates cap(date) = scale x Close(date) with scale = today's cap / price,
     i.e. today's share count at every date: buybacks and dilution put past caps off by tens of
     percent. Close is multiplied by this ratio (see _attach_with_share_history) so the same test
-    uses the real share count of each date. Tickers the SEC does not cover (multi-class shares,
-    ETFs, foreign filers), whose split history is not stored, or whose latest SEC count is far
-    from Yahoo's (mapping or share-class mismatch) keep the estimate.
+    uses the real share count of each date. Tickers the SEC does not cover (IFRS foreign filers,
+    funds), whose split history is not stored, or whose latest SEC count is far from Yahoo's
+    (mapping or share-class mismatch) keep the estimate.
     """
     from . import price_store, share_history
 
