@@ -24,7 +24,7 @@ import {
 import { isInverse, resolveTicker } from './tickers';
 
 export type RunPhase = 'idle' | 'submitting' | 'queued' | 'running' | 'fetching' | 'done' | 'error' | 'cancelled';
-export type BacktestView = 'build' | 'results' | 'allocations' | 'history' | 'tickers';
+export type BacktestView = 'build' | 'results' | 'allocations' | 'history' | 'saves' | 'tickers';
 
 /** A backtest result loaded while on the Allocations page waits in Résultats without moving the user. */
 const resultView = (current: BacktestView): BacktestView => (current === 'allocations' ? 'allocations' : 'results');

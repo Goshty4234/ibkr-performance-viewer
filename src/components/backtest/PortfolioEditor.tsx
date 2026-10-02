@@ -154,7 +154,7 @@ export default function PortfolioEditor() {
         <button type="button" className={styles.iconBtn} disabled={idx >= portfolios.length - 1} onClick={() => move(p._id, 1)} title="Descendre">↓</button>
         <button type="button" className={styles.iconBtn} onClick={() => duplicate(p._id)} title="Dupliquer">⧉</button>
         <button type="button" className={styles.iconBtn} onClick={() => setJsonOpen(true)} title="JSON de ce portfolio (copier / télécharger)">{'{}'}</button>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setLibraryOpen(true)} title="Garder cette configuration dans « Mes portfolios » pour la réutiliser plus tard (nom modifiable)">
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setLibraryOpen(true)} title="Garder ce portfolio dans Enregistrements pour le réutiliser plus tard (nom modifiable)">
           💾 Enregistrer
         </button>
         <button
@@ -167,7 +167,7 @@ export default function PortfolioEditor() {
         </button>
       </div>
       {jsonOpen && <ImportExportDialog mode="export" portfolioId={p._id} onClose={() => setJsonOpen(false)} />}
-      {libraryOpen && <LibraryDialog onClose={() => setLibraryOpen(false)} />}
+      {libraryOpen && <LibraryDialog scope="selected" onClose={() => setLibraryOpen(false)} />}
 
       <div className={`${styles.editorCols} ${fusion ? styles.editorColsSingle : ''}`}>
       <div className={styles.editorCol}>

@@ -1,12 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { deleteSaved, listSaved, savePortfolios, type SavedPortfolio, updateSaved } from '@/lib/backtest/library';
+import { deleteSaved, isSavedRun, listSaved, savePortfolios, saveRun, type SavedPortfolio, updateSaved } from '@/lib/backtest/library';
 import { toEngineConfig } from '@/lib/backtest/portfolio';
 import { useBacktestStore } from '@/lib/backtest/store';
+import type { PortfolioConfig } from '@/lib/engine/types';
+import { isGuest } from '@/lib/guest';
 import styles from './Backtester.module.css';
 
-function strategyTags(p: SavedPortfolio['config']): string[] {
+function strategyTags(p: PortfolioConfig): string[] {
   const tags: string[] = [];
   if (p.fusion_portfolio?.enabled) tags.push('Fusion');
   if (p.use_momentum) tags.push('Momentum');
@@ -16,7 +18,19 @@ function strategyTags(p: SavedPortfolio['config']): string[] {
   return tags;
 }
 
-export default function LibraryDialog({ onClose }: { onClose: () => void }) {
+function portfoliosOf(r: SavedPortfolio): PortfolioConfig[] {
+  return isSavedRun(r.config) ? r.config.portfolios : [{ ...r.config, name: r.name }];
+}
+
+function defaultRunName(portfolios: { name: string }[]): string {
+  const day = new Date().toLocaleDateString('fr-CA');
+  if (!portfolios.length) return `Run du ${day}`;
+  return portfolios.length === 1 ? portfolios[0].name : `${portfolios[0].name} + ${portfolios.length - 1} · ${day}`;
+}
+
+type SaveScope = 'run' | 'selected';
+
+export default function LibraryDialog({ onClose, scope }: { onClose: () => void; scope?: SaveScope }) {
   const setView = useBacktestStore((s) => s.setView);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -28,31 +42,50 @@ export default function LibraryDialog({ onClose }: { onClose: () => void }) {
     <div className={styles.overlay} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={`${styles.dialog} ${styles.dialogWide}`} role="dialog" aria-modal="true">
         <div className={styles.dialogHead}>
-          <span className={styles.dialogTitle}>Mes portfolios enregistrés</span>
+          <span className={styles.dialogTitle}>Enregistrements</span>
           <button type="button" className={styles.iconBtn} onClick={onClose} aria-label="Fermer">✕</button>
         </div>
-        <LibraryPanel onLoaded={() => { setView('build'); onClose(); }} />
+        <LibraryPanel initialScope={scope} onLoaded={() => { setView('build'); onClose(); }} />
       </div>
     </div>
   );
 }
 
-/** Saved portfolio configs of the account: save the current ones, load them back into Construire. */
-export function LibraryPanel({ onLoaded }: { onLoaded: (count: number) => void }) {
+/** Enregistrements: the section of saves made on purpose, apart from the automatic run history. */
+export function SavesView() {
+  const setView = useBacktestStore((s) => s.setView);
+  if (isGuest()) {
+    return (
+      <div className={`card ${styles.empty}`}>
+        <h2>Indisponible en mode invité</h2>
+        <p>Crée un compte pour enregistrer tes portfolios et tes runs et les retrouver sur tous tes appareils.</p>
+      </div>
+    );
+  }
+  return (
+    <div className={`card ${styles.section}`}>
+      <LibraryPanel onLoaded={() => setView('build')} />
+    </div>
+  );
+}
+
+/** Saves of the account: one portfolio, or a whole run (all portfolios + settings) as a single save. */
+export function LibraryPanel({ onLoaded, initialScope }: { onLoaded: (count: number) => void; initialScope?: SaveScope }) {
   const portfolios = useBacktestStore((s) => s.portfolios);
   const selectedId = useBacktestStore((s) => s.selectedId);
+  const options = useBacktestStore((s) => s.options);
   const importJson = useBacktestStore((s) => s.importJson);
   const [rows, setRows] = useState<SavedPortfolio[] | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
-  const [scope, setScope] = useState<'selected' | 'all'>('selected');
+  const [scope, setScope] = useState<SaveScope>(initialScope ?? (portfolios.length > 1 ? 'run' : 'selected'));
   const [folder, setFolder] = useState('');
   const [query, setQuery] = useState('');
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const active = portfolios.find((p) => p._id === selectedId) ?? portfolios[0];
-  const [name, setName] = useState(active?.name ?? '');
-  useEffect(() => setName(active?.name ?? ''), [active?._id, active?.name]);
+  const suggested = scope === 'run' ? defaultRunName(portfolios) : (active?.name ?? '');
+  const [name, setName] = useState('');
 
   const refresh = useCallback(async () => {
     try {
@@ -72,7 +105,7 @@ export function LibraryPanel({ onLoaded }: { onLoaded: (count: number) => void }
     const map = new Map<string, SavedPortfolio[]>();
     for (const r of rows ?? []) {
       if (q && !r.name.toLowerCase().includes(q) && !r.folder.toLowerCase().includes(q)
-        && !r.config.stocks?.some((s) => s.ticker.toLowerCase().includes(q))) continue;
+        && !portfoliosOf(r).some((p) => p.name.toLowerCase().includes(q) || p.stocks?.some((s) => s.ticker.toLowerCase().includes(q)))) continue;
       const list = map.get(r.folder) ?? [];
       list.push(r);
       map.set(r.folder, list);
@@ -93,26 +126,37 @@ export function LibraryPanel({ onLoaded }: { onLoaded: (count: number) => void }
     }
   }
 
-  const toSave = scope === 'all' ? portfolios : active ? [active] : [];
+  const canSave = scope === 'run' ? portfolios.length > 0 : Boolean(active);
 
   function save() {
     const dir = folder.trim();
-    const configs = toSave.map((p) => (scope === 'selected' ? { ...toEngineConfig(p), name: name.trim() || p.name } : toEngineConfig(p)));
-    const clashes = configs.filter((c) => rows?.some((r) => r.folder === dir && r.name === c.name)).map((c) => c.name);
-    if (clashes.length && !confirm(`Déjà enregistré dans ${dir ? `« ${dir} »` : 'Sans dossier'} : ${clashes.join(', ')}.\nRemplacer par la configuration actuelle ?`)) return;
+    const label = name.trim() || suggested;
+    const where = dir ? `« ${dir} »` : 'Sans dossier';
+    if (rows?.some((r) => r.folder === dir && r.name === label)
+      && !confirm(`« ${label} » existe déjà dans ${where}.\nRemplacer par la configuration actuelle ?`)) return;
     run(async () => {
-      const n = await savePortfolios(configs, dir);
-      setNotice(`${n === 1 ? `« ${configs[0].name} » enregistré` : `${n} portfolios enregistrés`} dans ${dir ? `« ${dir} »` : 'Sans dossier'}.`);
+      if (scope === 'run') {
+        await saveRun(label, dir, portfolios.map(toEngineConfig), options);
+        setNotice(`Run « ${label} » enregistré (${portfolios.length} portfolio${portfolios.length > 1 ? 's' : ''}) dans ${where}.`);
+      } else if (active) {
+        await savePortfolios([{ ...toEngineConfig(active), name: label }], dir);
+        setNotice(`« ${label} » enregistré dans ${where}.`);
+      }
+      setName('');
       await refresh();
     });
   }
 
   function load(ids: string[], mode: 'append' | 'replace') {
-    const list = (rows ?? []).filter((r) => ids.includes(r.id)).map((r) => ({ ...r.config, name: r.name }));
+    const picked = (rows ?? []).filter((r) => ids.includes(r.id));
+    const list = picked.flatMap(portfoliosOf);
     if (!list.length) return;
-    if (mode === 'replace' && portfolios.length && !confirm(`Remplacer les ${portfolios.length} portfolios actuels ?`)) return;
+    if (mode === 'replace' && portfolios.length && !confirm(`Remplacer les ${portfolios.length} portfolios actuels par ${list.length === 1 ? 'celui-ci' : `ces ${list.length}`} ?`)) return;
+    // A single run save brings its settings back with it; a mix of saves keeps the current ones.
+    const runs = picked.filter((r) => isSavedRun(r.config));
+    const savedOptions = mode === 'replace' && picked.length === 1 && runs.length === 1 && isSavedRun(runs[0].config) ? runs[0].config.options : undefined;
     try {
-      importJson(JSON.stringify(list), mode);
+      importJson(JSON.stringify(savedOptions ? { portfolios: list, options: savedOptions } : list), mode);
       onLoaded(list.length);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -132,29 +176,27 @@ export function LibraryPanel({ onLoaded }: { onLoaded: (count: number) => void }
   return (
     <>
         <p className={styles.sectionSub}>
-          Tes configurations gardées pour plus tard, dans ton compte : sur tous tes appareils, jamais supprimées
-          automatiquement. « Charger » les ajoute dans Construire.
+          Ce que tu gardes exprès, dans ton compte : sur tous tes appareils, jamais supprimé automatiquement
+          (l’Historique, lui, garde chaque run 30 jours). Un run enregistré ramène tous ses portfolios et ses réglages d’un coup.
         </p>
 
         <div className={styles.libSave}>
           <div className={styles.segmented}>
-            <button type="button" className={scope === 'selected' ? styles.segActive : ''} onClick={() => setScope('selected')} title="Enregistrer le portfolio ouvert dans Construire">
+            <button type="button" className={scope === 'run' ? styles.segActive : ''} onClick={() => setScope('run')} title="Tous les portfolios de Construire et les réglages du run (dates, départ), en une seule sauvegarde">
+              Tout le run ({portfolios.length})
+            </button>
+            <button type="button" className={scope === 'selected' ? styles.segActive : ''} onClick={() => setScope('selected')} title="Seulement le portfolio ouvert dans Construire">
               Portfolio ouvert
             </button>
-            <button type="button" className={scope === 'all' ? styles.segActive : ''} onClick={() => setScope('all')} title="Enregistrer tous les portfolios de Construire, chacun sous son nom">
-              Tous ({portfolios.length})
-            </button>
           </div>
-          {scope === 'selected' && (
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={active?.name ?? 'Nom'}
-              className={styles.libFolder}
-              aria-label="Nom de l’enregistrement"
-              title="Nom sous lequel la configuration est enregistrée (par défaut : le nom du portfolio)"
-            />
-          )}
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={suggested || 'Nom'}
+            className={styles.libFolder}
+            aria-label="Nom de l’enregistrement"
+            title="Nom de la sauvegarde (vide = celui proposé)"
+          />
           <input
             list="lib-folders"
             value={folder}
@@ -163,7 +205,7 @@ export function LibraryPanel({ onLoaded }: { onLoaded: (count: number) => void }
             className={styles.libFolder}
           />
           <datalist id="lib-folders">{folders.map((f) => <option key={f} value={f} />)}</datalist>
-          <button type="button" className="btn btn-primary" disabled={busy || !toSave.length} onClick={save}>
+          <button type="button" className="btn btn-primary" disabled={busy || !canSave} onClick={save}>
             💾 Enregistrer
           </button>
         </div>
@@ -173,11 +215,11 @@ export function LibraryPanel({ onLoaded }: { onLoaded: (count: number) => void }
         {error && <div className={styles.errorBox}>{error}</div>}
 
         <div className={styles.libToolbar}>
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Chercher un nom, un dossier ou un ticker…" />
-          <button type="button" className="btn btn-secondary btn-sm" disabled={!checkedIds.length} onClick={() => load(checkedIds, 'append')} title="Ajoute les portfolios cochés à ceux de Construire">
-            Charger la sélection ({checkedIds.length})
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Chercher un nom, un dossier, un portfolio ou un ticker…" />
+          <button type="button" className="btn btn-secondary btn-sm" disabled={!checkedIds.length} onClick={() => load(checkedIds, 'append')} title="Ajoute les portfolios des sauvegardes cochées à ceux de Construire">
+            Ajouter la sélection ({checkedIds.length})
           </button>
-          <button type="button" className="btn btn-ghost btn-sm" disabled={!checkedIds.length} onClick={() => load(checkedIds, 'replace')} title="Remplace tous les portfolios de Construire par ceux cochés">
+          <button type="button" className="btn btn-ghost btn-sm" disabled={!checkedIds.length} onClick={() => load(checkedIds, 'replace')} title="Remplace tous les portfolios de Construire par ceux des sauvegardes cochées">
             Remplacer tout
           </button>
           <button
@@ -185,7 +227,7 @@ export function LibraryPanel({ onLoaded }: { onLoaded: (count: number) => void }
             className="btn btn-ghost btn-sm"
             disabled={!checkedIds.length || busy}
             onClick={() => {
-              if (!confirm(`Supprimer ${checkedIds.length} portfolio(s) enregistré(s) ?`)) return;
+              if (!confirm(`Supprimer ${checkedIds.length} enregistrement(s) ?`)) return;
               run(async () => { await deleteSaved(checkedIds); setChecked(new Set()); await refresh(); });
             }}
           >
@@ -196,7 +238,7 @@ export function LibraryPanel({ onLoaded }: { onLoaded: (count: number) => void }
         <div className={styles.libList}>
           {rows === null && <div className={styles.sectionSub}>Chargement…</div>}
           {rows !== null && !groups.length && (
-            <div className={styles.sectionSub}>{rows.length ? 'Aucun résultat.' : 'Rien d’enregistré pour l’instant. Enregistre un portfolio ci-dessus.'}</div>
+            <div className={styles.sectionSub}>{rows.length ? 'Aucun résultat.' : 'Rien d’enregistré pour l’instant. Enregistre un run ou un portfolio ci-dessus.'}</div>
           )}
           {groups.map(([dir, list]) => (
             <div key={dir || '__root'} className={styles.libGroup}>
@@ -204,58 +246,81 @@ export function LibraryPanel({ onLoaded }: { onLoaded: (count: number) => void }
                 <span>{dir || 'Sans dossier'}</span>
                 <span className={styles.sectionSub}>{list.length}</span>
               </div>
-              {list.map((r) => (
-                <div key={r.id} className={styles.libRow}>
-                  <input type="checkbox" checked={checked.has(r.id)} onChange={() => toggle(r.id)} aria-label={`Sélectionner ${r.name}`} />
-                  <div className={styles.libMain}>
-                    <div className={styles.libName}>{r.name}</div>
-                    <div className={styles.libMeta}>
-                      {strategyTags(r.config).map((t) => <span key={t} className={styles.libTag}>{t}</span>)}
-                      <span>{(r.config.stocks ?? []).filter((s) => s.ticker).map((s) => s.ticker).slice(0, 8).join(', ')}
-                        {(r.config.stocks ?? []).length > 8 ? '…' : ''}</span>
-                      <span>· {new Date(r.updated_at).toLocaleDateString('fr-CA')}</span>
+              {list.map((r) => {
+                const saved = isSavedRun(r.config) ? r.config : null;
+                return (
+                  <div key={r.id} className={styles.libRow}>
+                    <input type="checkbox" checked={checked.has(r.id)} onChange={() => toggle(r.id)} aria-label={`Sélectionner ${r.name}`} />
+                    <div className={styles.libMain}>
+                      <div className={styles.libName}>{r.name}</div>
+                      <div className={styles.libMeta}>
+                        {saved ? (
+                          <>
+                            <span className={styles.libTag}>Run · {saved.portfolios.length} portfolio{saved.portfolios.length > 1 ? 's' : ''}</span>
+                            <span>{saved.portfolios.slice(0, 6).map((p) => p.name).join(', ')}{saved.portfolios.length > 6 ? '…' : ''}</span>
+                          </>
+                        ) : (
+                          <>
+                            {strategyTags(r.config as PortfolioConfig).map((t) => <span key={t} className={styles.libTag}>{t}</span>)}
+                            <span>{((r.config as PortfolioConfig).stocks ?? []).filter((s) => s.ticker).map((s) => s.ticker).slice(0, 8).join(', ')}
+                              {((r.config as PortfolioConfig).stocks ?? []).length > 8 ? '…' : ''}</span>
+                          </>
+                        )}
+                        <span>· {new Date(r.updated_at).toLocaleDateString('fr-CA')}</span>
+                      </div>
+                    </div>
+                    <div className={styles.libActions}>
+                      {saved ? (
+                        <>
+                          <button type="button" className="btn btn-primary btn-sm" onClick={() => load([r.id], 'replace')} title="Remplace les portfolios de Construire par ceux de ce run, avec ses réglages">
+                            Ouvrir
+                          </button>
+                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => load([r.id], 'append')} title="Ajoute les portfolios de ce run à ceux de Construire">
+                            Ajouter
+                          </button>
+                        </>
+                      ) : (
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => load([r.id], 'append')}>Charger</button>
+                      )}
+                      <button
+                        type="button"
+                        className={styles.iconBtn}
+                        title="Renommer"
+                        disabled={busy}
+                        onClick={() => {
+                          const next = prompt('Nouveau nom', r.name)?.trim();
+                          if (next && next !== r.name) run(async () => { await updateSaved(r.id, { name: next }); await refresh(); });
+                        }}
+                      >
+                        ✎
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.iconBtn}
+                        title="Déplacer dans un dossier"
+                        disabled={busy}
+                        onClick={() => {
+                          const dest = prompt('Dossier (vide = sans dossier)', r.folder);
+                          if (dest !== null && dest.trim() !== r.folder) run(async () => { await updateSaved(r.id, { folder: dest }); await refresh(); });
+                        }}
+                      >
+                        ⇄
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
+                        title="Supprimer"
+                        disabled={busy}
+                        onClick={() => {
+                          if (confirm(`Supprimer l’enregistrement « ${r.name} » ?`)) run(async () => { await deleteSaved([r.id]); await refresh(); });
+                        }}
+                      >
+                        ✕
+                      </button>
                     </div>
                   </div>
-                  <div className={styles.libActions}>
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => load([r.id], 'append')}>Charger</button>
-                    <button
-                      type="button"
-                      className={styles.iconBtn}
-                      title="Renommer"
-                      disabled={busy}
-                      onClick={() => {
-                        const name = prompt('Nouveau nom', r.name)?.trim();
-                        if (name && name !== r.name) run(async () => { await updateSaved(r.id, { name }); await refresh(); });
-                      }}
-                    >
-                      ✎
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.iconBtn}
-                      title="Déplacer dans un dossier"
-                      disabled={busy}
-                      onClick={() => {
-                        const dest = prompt('Dossier (vide = sans dossier)', r.folder);
-                        if (dest !== null && dest.trim() !== r.folder) run(async () => { await updateSaved(r.id, { folder: dest }); await refresh(); });
-                      }}
-                    >
-                      ⇄
-                    </button>
-                    <button
-                      type="button"
-                      className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
-                      title="Supprimer"
-                      disabled={busy}
-                      onClick={() => {
-                        if (confirm(`Supprimer l’enregistrement « ${r.name} » ?`)) run(async () => { await deleteSaved([r.id]); await refresh(); });
-                      }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ))}
         </div>

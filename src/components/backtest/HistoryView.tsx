@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { deleteRun, getRunRow, listRuns, loadRun, renameRun, RETENTION_DAYS, setPinned, type BacktestRunRow } from '@/lib/backtest/history';
-import { savePortfolios } from '@/lib/backtest/library';
+import { saveRun } from '@/lib/backtest/library';
 import { normalizeImported } from '@/lib/backtest/portfolio';
 import { useBacktestStore } from '@/lib/backtest/store';
 import { isGuest } from '@/lib/guest';
 import HistorySetup from './HistorySetup';
-import { LibraryPanel } from './LibraryDialog';
 import styles from './Results.module.css';
 import bt from './Backtester.module.css';
 
@@ -31,37 +30,8 @@ function toneClass(v: string | undefined): string {
   return n > 0 ? styles.pos : styles.neg;
 }
 
-/** Historique: the automatic run history, and the configurations saved on purpose ("Mes portfolios"). */
+/** Historique: every finished run, kept automatically (saves made on purpose live in Enregistrements). */
 export default function HistoryView() {
-  const [section, setSection] = useState<'runs' | 'saved'>('runs');
-  const setView = useBacktestStore((s) => s.setView);
-  return (
-    <>
-      <div className={bt.segmented} role="tablist" style={{ alignSelf: 'flex-start', marginBottom: '0.75rem' }}>
-        <button type="button" role="tab" aria-selected={section === 'runs'} className={section === 'runs' ? bt.segActive : ''} onClick={() => setSection('runs')} title="Chaque run terminé, enregistré automatiquement">
-          Runs
-        </button>
-        <button type="button" role="tab" aria-selected={section === 'saved'} className={section === 'saved' ? bt.segActive : ''} onClick={() => setSection('saved')} title="Les configurations que tu as enregistrées toi-même pour les réutiliser">
-          📚 Mes portfolios enregistrés
-        </button>
-      </div>
-      {section === 'runs' ? (
-        <RunsHistory />
-      ) : isGuest() ? (
-        <div className={`card ${bt.empty}`}>
-          <h2>Indisponible en mode invité</h2>
-          <p>Crée un compte pour enregistrer tes portfolios et les retrouver sur tous tes appareils.</p>
-        </div>
-      ) : (
-        <div className={`card ${bt.section}`}>
-          <LibraryPanel onLoaded={() => setView('build')} />
-        </div>
-      )}
-    </>
-  );
-}
-
-function RunsHistory() {
   const showResult = useBacktestStore((s) => s.showResult);
   const showAllocResult = useBacktestStore((s) => s.showAllocResult);
   const replaceAll = useBacktestStore((s) => s.replaceAll);
@@ -149,13 +119,13 @@ function RunsHistory() {
 
   const toLibrary = (row: BacktestRunRow) =>
     act(row.id, async () => {
-      const folder = prompt('Enregistrer les portfolios de ce run dans « Mes portfolios », dossier :', row.label)?.trim();
-      if (!folder) return;
+      const name = prompt('Enregistrer ce run (tous ses portfolios) dans Enregistrements, sous le nom :', row.label)?.trim();
+      if (!name) return;
       const req = (await getRunRow(row.id)).request;
       if (!req?.portfolios?.length) throw new Error('Configuration non disponible pour ce run.');
-      const configs = req.portfolios.map(({ start_date_user: _s, end_date_user: _e, ...c }) => c);
-      const n = await savePortfolios(configs, folder);
-      setNotice(`${n} portfolio${n > 1 ? 's' : ''} enregistré${n > 1 ? 's' : ''} dans « Mes portfolios enregistrés », dossier « ${folder} ».`);
+      await saveRun(name, '', req.portfolios, row.kind === 'allocations' ? {} : req.options);
+      const n = req.portfolios.length;
+      setNotice(`Run « ${name} » enregistré (${n} portfolio${n > 1 ? 's' : ''}) dans Enregistrements.`);
     });
 
   const remove = (row: BacktestRunRow) =>
@@ -375,8 +345,8 @@ function RunsHistory() {
                   <button type="button" className="btn btn-secondary btn-sm" disabled={busy === row.id} onClick={() => void restore(row)} title="Recharger ces portfolios dans le constructeur">
                     Restaurer la config
                   </button>
-                  <button type="button" className="btn btn-secondary btn-sm" disabled={busy === row.id} onClick={() => void toLibrary(row)} title="Garder la configuration de ce run dans « Mes portfolios enregistrés », pour toujours">
-                    📚 Enregistrer la config
+                  <button type="button" className="btn btn-secondary btn-sm" disabled={busy === row.id} onClick={() => void toLibrary(row)} title="Garder ce run (tous ses portfolios et ses réglages) dans Enregistrements, pour toujours">
+                    💾 Enregistrer le run
                   </button>
                   <button type="button" className="btn btn-ghost btn-sm" onClick={() => toggleSetup(row)} aria-expanded={isOpen}>
                     {isOpen ? '▾ Masquer le setup' : '▸ Voir le setup'}

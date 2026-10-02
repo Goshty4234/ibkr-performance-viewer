@@ -9,7 +9,7 @@ import AllocRunBar from './allocations/AllocRunBar';
 import AllocationsView from './allocations/AllocationsView';
 import HistoryView from './HistoryView';
 import ImportExportDialog from './ImportExportDialog';
-import LibraryDialog from './LibraryDialog';
+import LibraryDialog, { SavesView } from './LibraryDialog';
 import PortfolioEditor from './PortfolioEditor';
 import PortfolioList from './PortfolioList';
 import PriceDialog from './PriceDialog';
@@ -36,6 +36,7 @@ const TABS: { id: BacktestView; label: string }[] = [
   { id: 'results', label: 'Résultats' },
   { id: 'allocations', label: 'Allocations' },
   { id: 'history', label: 'Historique' },
+  { id: 'saves', label: 'Enregistrements' },
   { id: 'tickers', label: 'Tickers' },
 ];
 
@@ -81,8 +82,8 @@ export default function BacktesterApp() {
           ))}
         </div>
         <div className={styles.topActions}>
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => setDialog('library')} title="Tes configurations enregistrées : en enregistrer une, ou en charger une dans Construire">
-            📚 Mes portfolios
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => setDialog('library')} title="Enregistrer le run ou le portfolio ouvert, ou rouvrir un enregistrement">
+            💾 Enregistrer
           </button>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => setDialog('import')}>
             Importer JSON
@@ -115,6 +116,7 @@ export default function BacktesterApp() {
         </div>
       )}
       {view === 'history' && <HistoryView />}
+      {view === 'saves' && <SavesView />}
       {mounted('tickers') && (
         <div style={view === 'tickers' ? undefined : HIDDEN}>
           <TickersView />
