@@ -1,8 +1,9 @@
 """Yahoo Finance hygiene shared by the backtest download and the data services.
 
-- `smart_ttl`: daily bars only change while the US market is open, so a price
-  fetched after the close stays valid until the next open instead of the
-  legacy fixed 4 hours (24/7 assets such as crypto keep the 4-hour rule).
+- `smart_ttl`: a downloaded history stays valid PRICE_TTL hours (18 by default,
+  env ENGINE_PRICE_TTL_HOURS), and at least until the next US market open. A
+  multi-year backtest does not need today's bar; "Vider le cache des données"
+  in the app forces fresh prices.
 - `rate_limit_retry`: wraps `yf.download` so a chunk refused with "Too Many
   Requests" is retried with a back-off instead of falling through to one
   request per ticker.
@@ -13,6 +14,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 import time
 from datetime import datetime, timedelta
 from typing import Any, Iterator
@@ -21,8 +23,7 @@ from zoneinfo import ZoneInfo
 import yfinance as yf
 
 CACHE_DIR = ".streamlit/ticker_cache"
-LEGACY_TTL = 4 * 3600
-MIN_TTL = 30 * 60
+PRICE_TTL = int(float(os.environ.get("ENGINE_PRICE_TTL_HOURS", "18")) * 3600)
 MISSING_TTL = 12 * 3600
 _NY = ZoneInfo("America/New_York")
 _OPEN = (9, 30)
@@ -30,24 +31,18 @@ _SETTLED = (16, 20)  # final daily bar is published a few minutes after the 16:0
 _BACKOFF_S = (3.0, 10.0, 30.0)
 
 
-def _is_round_the_clock(ticker: str) -> bool:
-    t = ticker.upper()
-    return t.endswith("-USD") or t.endswith("=X") or t.endswith("=F")
-
-
 def smart_ttl(ticker: str = "", now: datetime | None = None) -> int:
     """Seconds a freshly downloaded daily history can be served from cache."""
-    if _is_round_the_clock(ticker):
-        return LEGACY_TTL
     now = (now or datetime.now(_NY)).astimezone(_NY)
     day_open = now.replace(hour=_OPEN[0], minute=_OPEN[1], second=0, microsecond=0)
     settled = now.replace(hour=_SETTLED[0], minute=_SETTLED[1], second=0, microsecond=0)
     if now.weekday() < 5 and day_open <= now < settled:
-        return int(max(MIN_TTL, min(LEGACY_TTL, (settled - now).total_seconds())))
+        # Today's bar is still moving: it must expire once, so the final close gets in.
+        return PRICE_TTL
     nxt = day_open if now < day_open else day_open + timedelta(days=1)
     while nxt.weekday() >= 5:
         nxt += timedelta(days=1)
-    return int(max(MIN_TTL, (nxt - now).total_seconds()))
+    return int(max(PRICE_TTL, (nxt - now).total_seconds()))
 
 
 def open_cache():
