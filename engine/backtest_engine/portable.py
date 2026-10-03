@@ -1,8 +1,8 @@
 """Entry point of the portable Windows engine (started by mbt_launcher, see updater.py).
 
 The package carries its own Python and libraries; nothing is installed on the PC. Data (ticker
-database, caches, jobs) lives in %LOCALAPPDATA%\\MomentumBacktester, so updates and a newer
-package extracted anywhere keep it.
+database, caches, jobs) lives in the "data" folder of the package itself (MomentumBacktesterEngine/data):
+delete the package folder and nothing is left on the PC. Updates never touch it.
 """
 
 from __future__ import annotations
@@ -23,8 +23,41 @@ from . import ENGINE_ROOT, updater
 STATIC = ("Complete_Tickers", "TOP_20_SP500_COMPLETE_TEMPLATE.csv")
 
 
-def default_data_home() -> Path:
+def legacy_data_home() -> Path:
+    """Where the first releases kept the data (outside the package)."""
     return Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "MomentumBacktester" / "engine"
+
+
+def default_data_home() -> Path:
+    """Inside the package (one folder to delete) when it can be written, else the old place."""
+    pkg = updater.root()
+    if pkg is not None:
+        data = pkg / "data"
+        try:
+            data.mkdir(exist_ok=True)
+            probe = data / ".write-test"
+            probe.write_text("1", encoding="utf-8")
+            probe.unlink()
+            return data
+        except OSError:
+            pass
+    return legacy_data_home()
+
+
+def _adopt_legacy_data(home: Path) -> None:
+    """Moves the data of the first releases into the package folder, once."""
+    old = legacy_data_home()
+    if home == old or not old.is_dir() or any(p for p in home.iterdir() if p.name != ".write-test"):
+        return
+    print(f"  Deplacement des donnees {old} -> {home} (une seule fois, peut prendre un moment)...", flush=True)
+    try:
+        for item in old.iterdir():
+            shutil.move(str(item), str(home / item.name))
+        old.rmdir()
+        if not any(old.parent.iterdir()):
+            old.parent.rmdir()
+    except OSError as exc:
+        print(f"  Deplacement incomplet ({exc}) : le reste de l'ancien dossier peut etre supprime a la main.", flush=True)
 
 
 def _sync_static(home: Path) -> None:
@@ -62,12 +95,14 @@ def _when_ready(port: int, site: str | None, restarted: bool) -> None:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="backtest_engine.portable")
     ap.add_argument("--port", type=int, default=8765)
-    ap.add_argument("--data", help="data folder (default: %%LOCALAPPDATA%%\\MomentumBacktester\\engine)")
+    ap.add_argument("--data", help="data folder (default: the data folder inside the package)")
     ap.add_argument("--no-browser", action="store_true")
     args = ap.parse_args(argv)
 
     home = Path(args.data).resolve() if args.data else default_data_home()
     home.mkdir(parents=True, exist_ok=True)
+    if not args.data:
+        _adopt_legacy_data(home)
     os.environ["ENGINE_HOME"] = str(home)
     os.environ.setdefault("ENGINE_MODE", "local")
     os.environ["ENGINE_PORTABLE"] = "1"

@@ -39,7 +39,7 @@ def _parse_origins(text: str) -> list[str]:
 def site_origins(home: Path) -> list[str]:
     """Origins of the web app. The list on GitHub wins so a domain change reaches every installed
     engine at its next start; offline, the last copy fetched, then the one shipped with the code."""
-    cached = home / ".config" / "allowed_origins.txt"
+    cached = home / "config" / "allowed_origins.txt"
     url = os.environ.get("ENGINE_ORIGINS_URL", ORIGINS_URL).strip()
     if url:
         try:
@@ -122,10 +122,13 @@ class Settings:
 
     @property
     def jobs_dir(self) -> Path:
-        return self.home / ".jobs"
+        return self.home / "jobs"
 
 
 def load_settings() -> Settings:
+    from backtest_engine import migrate_layout
+
+    migrate_layout(engine_home())
     mode = os.environ.get("ENGINE_MODE", "local").strip().lower()
     mode = mode if mode in ("local", "cloud") else "local"
     auth = os.environ.get("ENGINE_AUTH", "supabase" if mode == "cloud" else "none").strip().lower()

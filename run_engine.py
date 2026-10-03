@@ -3,6 +3,10 @@
     python run_engine.py            # first run creates engine/.venv and installs dependencies
     python run_engine.py --port 9000
     python run_engine.py --reinstall
+    python run_engine.py --data D:\\MesDonnees   # other data folder
+
+All data (ticker prices, jobs, Monte Carlo files, settings) lives in ONE folder, the same as the
+downloadable engine: %LOCALAPPDATA%\\MomentumBacktester\\engine. Delete it to wipe everything.
 
 The web app (local dev or the Vercel site) detects the engine automatically
 while this window stays open. Close it or press Ctrl+C to stop.
@@ -13,6 +17,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import shutil
 import subprocess
 import sys
 import venv
@@ -23,6 +28,33 @@ ENGINE = ROOT / "engine"
 VENV = ENGINE / ".venv"
 REQUIREMENTS = ENGINE / "requirements.txt"
 STAMP = VENV / ".requirements.sha256"
+
+
+STATIC = ("Complete_Tickers", "TOP_20_SP500_COMPLETE_TEMPLATE.csv")
+
+
+def default_data_home() -> Path:
+    """Same folder as the portable engine, so both share one cache and one place to clean."""
+    return Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "MomentumBacktester" / "engine"
+
+
+def prepare_data_home(home: Path) -> None:
+    """Creates the data folder, copies the static files the legacy code reads from it, and moves the
+    ticker cache that older dev runs kept inside engine/ (once, only when the new one is empty)."""
+    home.mkdir(parents=True, exist_ok=True)
+    for name in STATIC:
+        src = ENGINE / name
+        if src.is_dir():
+            shutil.copytree(src, home / name, dirs_exist_ok=True)
+        elif src.exists():
+            shutil.copy2(src, home / name)
+    for old, new in ((ENGINE / ".streamlit", home / ".streamlit"),):
+        if old.is_dir() and not new.exists():
+            print(f"Moving the ticker cache {old} -> {new} (once) ...")
+            try:
+                shutil.move(str(old), str(new))
+            except OSError as exc:
+                print(f"  Could not move it ({exc}); the old folder is left in place.")
 
 
 def venv_python() -> Path:
@@ -81,10 +113,14 @@ def main() -> int:
     ap.add_argument("--port", type=int, default=int(os.environ.get("ENGINE_PORT", 8765)))
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--reinstall", action="store_true")
+    ap.add_argument("--data", help="data folder (default: %%LOCALAPPDATA%%\\MomentumBacktester\\engine)")
     args = ap.parse_args()
 
     py = ensure_venv(args.reinstall)
-    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "ENGINE_MODE": os.environ.get("ENGINE_MODE", "local")}
+    home = Path(args.data).resolve() if args.data else Path(os.environ.get("ENGINE_HOME") or default_data_home()).resolve()
+    prepare_data_home(home)
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "ENGINE_MODE": os.environ.get("ENGINE_MODE", "local"), "ENGINE_HOME": str(home)}
+    print(f"Data folder: {home}")
     print(f"\nBacktest engine running on http://{args.host}:{args.port}  (Ctrl+C to stop)\n")
     try:
         return subprocess.call(

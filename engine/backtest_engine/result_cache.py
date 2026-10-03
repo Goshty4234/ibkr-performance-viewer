@@ -36,7 +36,7 @@ _last_prune = 0.0
 
 
 def cache_dir() -> Path:
-    return engine_home() / ".cache" / "portfolios"
+    return engine_home() / "cache" / "portfolios"
 
 
 def static_fingerprint() -> str:

@@ -46,6 +46,44 @@ def engine_home() -> Path:
     return Path(os.environ.get("ENGINE_HOME", ENGINE_ROOT)).resolve()
 
 
+# Folders of the data home, named for what they hold. Older versions used hidden-looking names.
+RENAMED_DIRS = {".jobs": "jobs", ".config": "config", ".cache": "cache", ".mc": "montecarlo"}
+
+DATA_README = """Dossier de donnees du moteur Momentum Backtester
+===============================================
+Tout ce que le moteur ecrit est ici. Supprime ce dossier = plus aucune trace
+(il sera recree vide au prochain lancement, les prix se retelechargent au besoin).
+
+  .streamlit\\ticker_cache   historiques de prix des tickers (le plus gros)
+  .streamlit\\quote_store    fiches Yahoo archivees (PE, capitalisation...)
+  .streamlit\\sec_store      historique du nombre d'actions
+  .streamlit\\ticker_info_cache  infos tickers (cache temporaire)
+  cache\\                    resultats de portfolios deja calcules (cache temporaire)
+  jobs\\                     fichiers des backtests recents (supprimes apres quelques heures)
+  montecarlo\\               bases de rendements reels pour le Monte Carlo
+  config\\                   liste des adresses du site autorisees
+  Complete_Tickers\\         listes de tickers fournies avec le moteur
+
+(Le dossier .streamlit garde ce nom : il est utilise tel quel par le code de calcul d'origine.)
+"""
+
+
+def migrate_layout(home: Path) -> None:
+    """Renames the old folder names to the current ones (once) and refreshes the README."""
+    for old, new in RENAMED_DIRS.items():
+        try:
+            if (home / old).is_dir() and not (home / new).exists():
+                (home / old).rename(home / new)
+        except OSError:
+            pass
+    try:
+        readme = home / "LISEZ-MOI.txt"
+        if not readme.exists() or readme.read_text(encoding="utf-8") != DATA_README:
+            readme.write_text(DATA_README, encoding="utf-8")
+    except OSError:
+        pass
+
+
 def activate_engine_home() -> Path:
     from backtest_engine.certs import ensure_system_ca_bundle
 

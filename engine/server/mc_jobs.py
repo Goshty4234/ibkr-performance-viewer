@@ -86,7 +86,7 @@ class McManager:
                 from backtest_engine.mc.panel import load_panel_from_store
 
                 tick = (options or {}).get("bootstrap", {}).get("tickers") if isinstance(options, dict) else None
-                panel_path, rows, cols = load_panel_from_store(engine_home() / ".mc", tick)
+                panel_path, rows, cols = load_panel_from_store(engine_home() / "montecarlo", tick)
                 job.message = f"Base réelle : {cols} actions, {rows} jours"
 
             def progress(p: float, msg: str) -> None:
