@@ -7,7 +7,7 @@ import { localClient } from '@/lib/storage/local-library';
 import { fmtBytes, fmtPct, pct } from '@/lib/storage/format';
 import { getResultSource, type ResultSource, setResultSource, useStorageProfile } from '@/lib/storage/profile';
 import { purgeMyOnlineResults } from '@/lib/storage/purge';
-import EngineUpdate from '../backtest/EngineUpdate';
+import EngineUpdateButton from '../backtest/EngineUpdateButton';
 import Meter from './Meter';
 import styles from './Storage.module.css';
 
@@ -113,7 +113,7 @@ export default function StoragePanel() {
                   : 'Aucun moteur local détecté. Lance le moteur pour voir et gérer le dossier. En attendant, tes résultats ne sont conservés qu’en ligne, selon ton niveau.'}
             </p>
           )}
-          {!hasLibrary && status === 'ready' && engine?.kind === 'local' && <EngineUpdate />}
+          {!hasLibrary && status === 'ready' && engine?.kind === 'local' && <EngineUpdateButton />}
           {hasLibrary && usageErr && <p className={`${styles.note} ${styles.noteErr}`}>{usageErr}</p>}
           {hasLibrary && usage && (
             <>

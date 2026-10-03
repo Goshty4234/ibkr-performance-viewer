@@ -78,9 +78,11 @@ si le code a changé il télécharge la nouvelle version (quelques Mo), la véri
 dessus. Si une version ne démarre pas, il revient tout seul à la précédente.
 
 Rien n'est installé sur ton PC : Python et les librairies sont dans ce dossier.
-Ta base de tickers et les caches sont dans %LOCALAPPDATA%\\MomentumBacktester : ils sont
-conservés par les mises à jour.
-Pour tout supprimer : efface ce dossier et %LOCALAPPDATA%\\MomentumBacktester.
+Tout le reste est dans le sous-dossier « data » : base de tickers, caches, résultats de tes
+backtests (backtests/), fichiers IBKR (ibkr/) et configurations (configs/). Les mises à jour ne
+le touchent jamais. Pour changer de PC, copie simplement ce dossier. Le site t'affiche
+l'espace utilisé et propose le nettoyage dans la page « Stockage ».
+Pour tout supprimer : efface ce dossier.
 """
 
 

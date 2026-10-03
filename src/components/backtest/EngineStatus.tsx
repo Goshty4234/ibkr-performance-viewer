@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { EngineMode } from '@/lib/engine/prefs';
 import { useEngineStore } from '@/lib/engine/store';
 import EngineSetup from './EngineSetup';
+import EngineUpdateButton, { engineStale } from './EngineUpdateButton';
 import styles from './EngineStatus.module.css';
 
 const MODE_LABELS: Record<EngineMode, string> = { auto: 'Auto', local: 'Mon PC', cloud: 'En ligne' };
@@ -48,6 +49,9 @@ export default function EngineStatus() {
         <span className={`${styles.dot} ${dotClass}`} />
         <span className={styles.pillLabel}>{label}</span>
         {prefs.mode !== 'auto' && <span className={styles.pillMode}>{MODE_LABELS[prefs.mode]}</span>}
+        {status === 'ready' && engine && engine.kind === 'local' && (engine.health.update?.state === 'ready' || engineStale(engine)) && (
+          <span title="Mise à jour du moteur disponible" aria-label="Mise à jour du moteur disponible">⟳</span>
+        )}
       </button>
 
       {open && (
@@ -78,6 +82,7 @@ export default function EngineStatus() {
             <div className={styles.info}>
               <div><span>Connecté à</span><b className="mono">{engine.url.replace(/^https?:\/\//, '')}</b></div>
               <div><span>Version</span><b className="mono">{engine.health.version}</b></div>
+              {engine.kind === 'local' && <div style={{ display: 'block' }}><EngineUpdateButton /></div>}
               <div><span>Processeurs</span><b className="mono">{engine.health.cpu_count ?? '?'}</b></div>
               <div>
                 <span>Jobs</span>
