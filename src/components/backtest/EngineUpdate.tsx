@@ -23,7 +23,9 @@ export default function EngineUpdate() {
 
   const health = engine?.health;
   if (!engine || !health || !client) return null;
-  const outdated = engineOutdated(health);
+  // A local engine that predates the storage folder: usable, but without the local library.
+  const stale = engine.kind === 'local' && !health.library;
+  const outdated = engineOutdated(health) || stale;
   const update = health.update;
   if (!outdated && update?.state !== 'ready') return null;
   const jobs = (health.running ?? 0) + (health.queued ?? 0);
@@ -62,9 +64,11 @@ export default function EngineUpdate() {
           if (u.state === 'error') throw new Error(u.error || 'échec de la mise à jour');
           if (u.state === 'current') {
             throw new Error(
-              (u.latest_api ?? 0) < ENGINE_API
-                ? 'la version du moteur pour ce site est en cours de publication : réessaie dans quelques minutes'
-                : 'déjà à jour',
+              stale
+                ? 'aucune version plus récente n’est publiée pour l’instant : après le git push, attends la fin du build GitHub (onglet Actions), puis réessaie'
+                : (u.latest_api ?? 0) < ENGINE_API
+                  ? 'la version du moteur pour ce site est en cours de publication : réessaie dans quelques minutes'
+                  : 'déjà à jour',
             );
           }
           if (u.state === 'downloading') {
@@ -103,7 +107,11 @@ export default function EngineUpdate() {
 
   return (
     <div className={styles.box}>
-      <span className={styles.title}>Ton moteur ({health.version}) est trop ancien pour cette version du site.</span>
+      <span className={styles.title}>
+        {engineOutdated(health)
+          ? `Ton moteur (${health.version}) est trop ancien pour cette version du site.`
+          : `Ton moteur (${health.version}) ne gère pas encore le dossier de stockage : une mise à jour est nécessaire.`}
+      </span>
       {engine.kind === 'cloud' ? (
         <span className={styles.note}>Le moteur en ligne doit être mis à jour par son administrateur.</span>
       ) : health.portable ? (

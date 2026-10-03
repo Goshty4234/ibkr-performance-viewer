@@ -7,6 +7,7 @@ import { localClient } from '@/lib/storage/local-library';
 import { fmtBytes, fmtPct, pct } from '@/lib/storage/format';
 import { getResultSource, type ResultSource, setResultSource, useStorageProfile } from '@/lib/storage/profile';
 import { purgeMyOnlineResults } from '@/lib/storage/purge';
+import EngineUpdate from '../backtest/EngineUpdate';
 import Meter from './Meter';
 import styles from './Storage.module.css';
 
@@ -108,10 +109,11 @@ export default function StoragePanel() {
               {status === 'detecting' || status === 'idle'
                 ? 'Détection du moteur…'
                 : status === 'ready' && engine?.kind === 'local'
-                  ? 'Ton moteur est trop ancien pour gérer le dossier de stockage : mets-le à jour (bouton dans la barre du moteur).'
+                  ? 'Ton moteur est trop ancien pour gérer le dossier de stockage : mets-le à jour avec le bouton ci-dessous.'
                   : 'Aucun moteur local détecté. Lance le moteur pour voir et gérer le dossier. En attendant, tes résultats ne sont conservés qu’en ligne, selon ton niveau.'}
             </p>
           )}
+          {!hasLibrary && status === 'ready' && engine?.kind === 'local' && <EngineUpdate />}
           {hasLibrary && usageErr && <p className={`${styles.note} ${styles.noteErr}`}>{usageErr}</p>}
           {hasLibrary && usage && (
             <>
