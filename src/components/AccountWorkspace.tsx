@@ -28,6 +28,7 @@ import {
   assessTwrrQuality,
   computeSummary,
   getAccountTimelineBounds,
+  inferredNavFlows,
   mergeStatements,
   navPointsHaveComponents,
   resolveIbkrTwrDailyPoints,
@@ -254,8 +255,7 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
         } else if (shouldPreferStatementCurve(statements, rangeStart, rangeEnd)) {
           quality = 'exact';
         } else if (hasNav && navSeries) {
-          const hasComponents = navPointsHaveComponents(navSeries.points);
-          const navFlows = !hasComponents && navSeries.cashFlows?.length
+          const navFlows = navSeries.cashFlows?.length
             ? cashFlowsToDateMap(navSeries.cashFlows)
             : null;
           const cfMap = twrrCapitalFlowsByDate(statements, navFlows);
@@ -345,6 +345,25 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
     const updated = dbToAccount(await res.json());
     setAccount(updated);
   }
+
+  // Flows found from the NAV itself (no deposit/transfer record): listed so nothing is silent.
+  const twrrNotice = useMemo(() => {
+    if (!twrrQuality) return null;
+    const base = twrrQualityNotice(twrrQuality);
+    if (twrrQuality !== 'partial' || !navSeries || !rangeStart || !rangeEnd) return base;
+    const navFlows = navSeries.cashFlows?.length ? cashFlowsToDateMap(navSeries.cashFlows) : null;
+    const found = inferredNavFlows(
+      navSeries.points,
+      rangeStart,
+      rangeEnd,
+      twrrCapitalFlowsByDate(statements, navFlows),
+    );
+    if (!found.length) return base;
+    const list = found
+      .map((f) => `${f.date} : ${f.amount > 0 ? '+' : '−'}${Math.round(Math.abs(f.amount)).toLocaleString('fr-CA')} $`)
+      .join(' · ');
+    return `${base} Détectés dans la NAV : ${list}.`;
+  }, [twrrQuality, navSeries, statements, rangeStart, rangeEnd]);
 
   const chartSubtitle = useMemo(() => {
     if (ibkrTwrPoints.length >= 2) {
@@ -720,9 +739,9 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
         </div>
       )}
 
-      {twrrQuality && twrrQualityNotice(twrrQuality) && (
+      {twrrQuality && twrrNotice && (
         <div className={twrrQuality === 'raw_nav' ? styles.error : styles.notice}>
-          {twrrQualityNotice(twrrQuality)}
+          {twrrNotice}
         </div>
       )}
 

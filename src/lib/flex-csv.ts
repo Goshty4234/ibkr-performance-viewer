@@ -44,7 +44,7 @@ export function headerIndex(headers: string[], ...needles: string[]): number {
   return -1;
 }
 
-export type FlexSectionKind = 'nav' | 'cash';
+export type FlexSectionKind = 'nav' | 'cash' | 'transfer';
 
 export interface FlexSection {
   kind: FlexSectionKind;
@@ -59,6 +59,10 @@ export function classifyFlexHeader(headers: string[]): FlexSectionKind | null {
   }
   if (lower.includes('reportdate') && lower.includes('total') && lower.includes('stock')) {
     return 'nav';
+  }
+  // Transfers (ACATS / FOP / internal): shares moving in or out of the account with no cash leg.
+  if (lower.includes('direction') && (lower.includes('positionamountinbase') || lower.includes('positionamount'))) {
+    return 'transfer';
   }
   return null;
 }
@@ -79,10 +83,10 @@ export function scanFlexSections(text: string): FlexSection[] {
 
     const headers = parseCsvLine(line);
     const kind = classifyFlexHeader(headers);
-    if (!kind) continue;
 
     if (current) sections.push(current);
-    current = { kind, headers, rows: [] };
+    // An unrecognised section must not leak its rows into the previous one.
+    current = kind ? { kind, headers, rows: [] } : null;
   }
 
   if (current) sections.push(current);

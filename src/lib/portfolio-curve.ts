@@ -7,7 +7,6 @@ import {
   buildPerformanceCurve,
   buildTwrrCurveFromNav,
   mergeStatements,
-  navPointsHaveComponents,
   resolveIbkrTwrDailyPoints,
   shouldPreferStatementCurve,
   twrrCapitalFlowsByDate,
@@ -67,8 +66,7 @@ export function buildAccountPortfolioCurve(
     const stmtEnd = health.rangeCoverage?.availableEnd ?? rangeEnd;
     raw = buildPerformanceCurve(statements, stmtStart, stmtEnd);
   } else if (hasNav && navSeries) {
-    const hasComponents = navPointsHaveComponents(navSeries.points);
-    const navFlows = !hasComponents && navSeries.cashFlows?.length
+    const navFlows = navSeries.cashFlows?.length
       ? cashFlowsToDateMap(navSeries.cashFlows)
       : null;
     const cfMap = twrrCapitalFlowsByDate(statements, navFlows);

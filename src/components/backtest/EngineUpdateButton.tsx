@@ -142,14 +142,23 @@ export default function EngineUpdateButton() {
     );
   }
 
-  // Not the self-updating package (sources or an old zip): a manual download is the only way.
+  // Not the self-updating package: either the engine is started from the sources (run_all.py), or it
+  // is an old zip without the updater. The download is a full zip: a first install, not an update.
   if (!portable) {
     if (stale || outdated) {
       return (
-        <span style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <a className="btn btn-primary btn-sm" href={ENGINE_DOWNLOAD_URL} download>⬇ Télécharger la nouvelle version</a>
+        <span style={{ display: 'inline-flex', flexDirection: 'column', gap: '0.4rem' }}>
           <span style={{ color: 'var(--text-muted)' }}>
-            Ferme l’ancien moteur, décompresse par-dessus et relance : tes données sont conservées, les prochaines mises à jour seront automatiques.
+            Ce moteur ne se met pas à jour par un clic (il tourne depuis les sources, ou c’est une très ancienne version).
+          </span>
+          <span>
+            <b>Si tu le lances avec run_all.py :</b> ferme-le et relance-le, il utilise déjà le nouveau code. Rien à télécharger.
+          </span>
+          <span>
+            <b>Si tu utilises le zip :</b>{' '}
+            <a href={ENGINE_DOWNLOAD_URL} download>télécharger la dernière version complète</a>, ferme l’ancien moteur,
+            copie ton ancien dossier <code>data</code> dans le nouveau dossier, puis lance « Lancer le moteur ». Les prochaines
+            mises à jour seront alors automatiques.
           </span>
         </span>
       );

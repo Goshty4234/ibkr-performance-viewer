@@ -45,8 +45,10 @@ export function parseFlexCashCsv(text: string, filename: string): CashFlow[] {
     const headers = section.headers;
     const dateCol = headerIndex(headers, 'settledate', 'reportdate', 'date/time');
     const amountCol = headers.findIndex((h) => h.toLowerCase() === 'amount');
-    const typeCol = headerIndex(headers, 'type');
-    const descCol = headerIndex(headers, 'description');
+    // Exact names first: a loose match would pick SecurityIDType (or similar) instead of Type.
+    const exactCol = (name: string) => headers.findIndex((h) => h.toLowerCase() === name);
+    const typeCol = exactCol('type') >= 0 ? exactCol('type') : headerIndex(headers, 'type');
+    const descCol = exactCol('description') >= 0 ? exactCol('description') : headerIndex(headers, 'description');
     const fxCol = headers.findIndex((h) => h.toLowerCase() === 'fxratetobase');
 
     if (dateCol < 0 || amountCol < 0) {

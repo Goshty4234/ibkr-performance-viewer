@@ -27,6 +27,7 @@ export function parseFlexCombinedCsv(
   const sections = scanFlexSections(text);
   const navSections = sections.filter((s) => s.kind === 'nav');
   const cashSections = sections.filter((s) => s.kind === 'cash');
+  const transferSections = sections.filter((s) => s.kind === 'transfer');
 
   if (!navSections.length) {
     throw new Error(`Aucune section NAV dans ${filename}`);
@@ -82,8 +83,10 @@ export function parseFlexCombinedCsv(
     const headers = section.headers;
     const dateCol = headerIndex(headers, 'settledate', 'reportdate', 'date/time');
     const amountCol = headers.findIndex((h) => h.toLowerCase() === 'amount');
-    const typeCol = headerIndex(headers, 'type');
-    const descCol = headerIndex(headers, 'description');
+    // Exact names first: a loose match would pick SecurityIDType (or similar) instead of Type.
+    const exactCol = (name: string) => headers.findIndex((h) => h.toLowerCase() === name);
+    const typeCol = exactCol('type') >= 0 ? exactCol('type') : headerIndex(headers, 'type');
+    const descCol = exactCol('description') >= 0 ? exactCol('description') : headerIndex(headers, 'description');
     const fxCol = headers.findIndex((h) => h.toLowerCase() === 'fxratetobase');
 
     for (const row of section.rows) {
@@ -101,6 +104,45 @@ export function parseFlexCombinedCsv(
         date: parseReportDate(row[dateCol]),
         amount,
         description: description || type,
+        isExternal: true,
+      });
+    }
+  }
+
+  // Shares moved in or out (ACATS, FOP, internal): NAV changes with no cash movement, and IBKR counts
+  // it as a deposit/withdrawal. Valued at the transfer's position amount in base currency.
+  for (const section of transferSections) {
+    const headers = section.headers;
+    const col = (name: string) => headers.findIndex((h) => h.toLowerCase() === name);
+    const dateCol = [col('reportdate'), col('date'), col('datetime')].find((i) => i >= 0) ?? -1;
+    const dirCol = col('direction');
+    const baseCol = col('positionamountinbase');
+    const posCol = col('positionamount');
+    const fxCol = col('fxratetobase');
+    const typeCol = col('type');
+    const symbolCol = col('symbol');
+    if (dateCol < 0 || dirCol < 0 || (baseCol < 0 && posCol < 0)) continue;
+
+    for (const row of section.rows) {
+      let value = baseCol >= 0 ? Math.abs(parseNumber(row[baseCol])) : 0;
+      if (!value && posCol >= 0) {
+        const fx = fxCol >= 0 ? parseNumber(row[fxCol]) : 1;
+        value = Math.abs(parseNumber(row[posCol])) * (fx > 0 ? fx : 1);
+      }
+      if (!value) continue;
+
+      const sign = (row[dirCol] ?? '').trim().toUpperCase().startsWith('OUT') ? -1 : 1;
+      let date: string;
+      try {
+        date = parseReportDate((row[dateCol] ?? '').split(/[;, ]/)[0]);
+      } catch {
+        continue;
+      }
+      const label = [typeCol >= 0 ? row[typeCol] : '', symbolCol >= 0 ? row[symbolCol] : ''].filter(Boolean).join(' ');
+      cashFlows.push({
+        date,
+        amount: sign * value,
+        description: `Transfert de titres ${sign > 0 ? 'entrant' : 'sortant'}${label ? ` (${label})` : ''}`,
         isExternal: true,
       });
     }

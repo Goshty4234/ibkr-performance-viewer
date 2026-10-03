@@ -41,6 +41,17 @@ export async function GET() {
     }
   }
 
+  // A Flex Query import (NAV + cash flows) is stored in nav_series, not in statements: it counts as one CSV.
+  const { data: navRows } = await supabase
+    .from('nav_series')
+    .select('portfolio_account_id')
+    .eq('user_id', user.id);
+  for (const row of navRows ?? []) {
+    if (row.portfolio_account_id) {
+      countMap.set(row.portfolio_account_id, (countMap.get(row.portfolio_account_id) ?? 0) + 1);
+    }
+  }
+
   return NextResponse.json(
     (data ?? []).map((row) => {
       const acc = maskAccountForClient(dbToAccount(row));
