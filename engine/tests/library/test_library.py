@@ -113,15 +113,15 @@ class Usage(Base):
     def test_usage_by_folder(self) -> None:
         self.make_run(R, payload=1000)
         self.lib.put_ibkr(U, "a.csv", b"x" * 500)
-        (self.home / ".streamlit" / "ticker_cache").mkdir(parents=True)
-        (self.home / ".streamlit" / "ticker_cache" / "SPY.pkl").write_bytes(b"z" * 4000)
+        (self.home / "marketdata" / "ticker_cache").mkdir(parents=True)
+        (self.home / "marketdata" / "ticker_cache" / "SPY.pkl").write_bytes(b"z" * 4000)
         u = self.lib.usage()
         by = {f["name"]: f for f in u["folders"]}
-        self.assertEqual(by[".streamlit"]["bytes"], 4000)
+        self.assertEqual(by["marketdata"]["bytes"], 4000)
         self.assertEqual(by["ibkr"]["bytes"], 500)
         self.assertGreaterEqual(by["backtests"]["bytes"], 3000)
         self.assertEqual(u["total"], sum(f["bytes"] for f in u["folders"]))
-        self.assertEqual(u["folders"][0]["name"], ".streamlit")  # biggest first
+        self.assertEqual(u["folders"][0]["name"], "marketdata")  # biggest first
         self.assertTrue(by["backtests"]["label"])
         self.assertEqual(u["settings"], {"auto_clean_days": 30, "keep_pinned": True})
 
@@ -162,11 +162,11 @@ class Cleaning(Base):
         (self.home / "cache" / "portfolios" / "k.json").write_bytes(b"x" * 10)
         (self.home / "jobs" / "j1").mkdir(parents=True)
         (self.home / "jobs" / "j1" / "summary.json.gz").write_bytes(b"x" * 5)
-        (self.home / ".streamlit").mkdir()
-        (self.home / ".streamlit" / "keep.pkl").write_bytes(b"k")
+        (self.home / "marketdata").mkdir()
+        (self.home / "marketdata" / "keep.pkl").write_bytes(b"k")
         self.make_run(R)
         self.assertEqual(self.lib.clean_cache(), {"removed": 2, "freed": 15})
-        self.assertTrue((self.home / ".streamlit" / "keep.pkl").exists())
+        self.assertTrue((self.home / "marketdata" / "keep.pkl").exists())
         self.assertEqual(len(self.lib.list_runs(U)), 1)
 
     def test_auto_clean_settings(self) -> None:

@@ -36,7 +36,7 @@ NAME = "MomentumBacktesterEngine"
 EMBED_URL = "https://www.python.org/ftp/python/{v}/python-{v}-embed-amd64.zip"
 ASSET_BASE = "https://github.com/Goshty4234/ibkr-performance-viewer/releases/download/{version}"
 CODE_ITEMS = ("backtest_engine", "server", "Complete_Tickers", "allowed_origins.txt")
-IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".cache", ".jobs", ".streamlit", ".certs", ".config")
+IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".cache", ".jobs", ".streamlit", "marketdata", ".certs", ".config")
 # pandas' test suite (~40 MB) is never imported. numpy's and scipy's stay: numpy.testing, loaded
 # by scipy.optimize, imports numpy/_core/tests (without it the MWRR silently became N/A).
 TEST_DIRS = ("pandas/tests",)

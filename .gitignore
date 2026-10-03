@@ -40,6 +40,7 @@ engine/.venv/
 engine/.certs/
 engine/.jobs/
 engine/.streamlit/
+engine/marketdata/
 engine/.cache/
 engine/tests/parity/_work/
 engine/tests/parity/fixtures/

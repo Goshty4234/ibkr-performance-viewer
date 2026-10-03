@@ -21,7 +21,7 @@ import diskcache
 
 from . import yahoo as Y
 
-STORE_DIR = ".streamlit/quote_store"
+STORE_DIR = "marketdata/quote_store"
 # Asked on top of Yahoo's default set, so funds get their size and every snapshot is complete.
 FIELDS = [
     "marketCap", "netAssets", "netExpenseRatio", "ytdReturn", "trailingThreeMonthReturns",

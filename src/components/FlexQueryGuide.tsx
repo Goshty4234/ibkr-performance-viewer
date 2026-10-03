@@ -1,63 +1,143 @@
+import type { ReactNode } from 'react';
 import styles from './FlexQueryGuide.module.css';
 
-/** How to build the IBKR Flex Query the importer understands (fields match src/lib/flex-csv.ts). */
+/**
+ * Step-by-step recipe for the IBKR Flex Query the importer reads (field names match
+ * src/lib/flex-csv.ts and ibkr-flex-combined.ts: a NAV block and a Cash Transactions block,
+ * CSV, one column-header row per block, rows starting with the account id).
+ */
+
+function Yes({ children, note }: { children: ReactNode; note?: string }) {
+  return (
+    <li className={styles.yes}>
+      <span className={styles.mark} aria-label="à cocher">✔</span>
+      <span>{children}{note && <small> {note}</small>}</span>
+    </li>
+  );
+}
+
+function No({ children, note }: { children: ReactNode; note?: string }) {
+  return (
+    <li className={styles.no}>
+      <span className={styles.mark} aria-label="ne pas cocher">✘</span>
+      <span>{children}{note && <small> {note}</small>}</span>
+    </li>
+  );
+}
+
+function Setting({ name, value, note }: { name: string; value: string; note?: string }) {
+  return (
+    <tr>
+      <td>{name}</td>
+      <td><b>{value}</b>{note && <small> {note}</small>}</td>
+    </tr>
+  );
+}
+
 export default function FlexQueryGuide() {
   return (
     <details className={styles.guide}>
-      <summary>Comment créer le fichier IBKR (Flex Query) ?</summary>
+      <summary>Comment créer le fichier IBKR (Flex Query) ? Guide pas à pas</summary>
       <div className={styles.body}>
-        <p>
-          Dans le portail IBKR : <b>Performance &amp; Reports → Flex Queries → Activity Flex Query → Create</b>.
-          Donne un nom à la requête, puis règle :
+        <p className={styles.lead}>
+          Suis exactement ce guide : il te donne <b>quoi cocher</b> (✔) et <b>quoi laisser décoché</b> (✘).
+          Un seul fichier suffit pour un compte, avec deux sections : la valeur du compte jour par jour,
+          et tes dépôts/retraits.
         </p>
 
-        <h4>1. Section « Net Asset Value (NAV) in Base »</h4>
-        <p>Coche ces champs (les autres sont inutiles) :</p>
-        <ul className={styles.fields}>
-          <li>Account ID</li>
-          <li>Currency</li>
-          <li>Report Date</li>
-          <li>Cash</li>
-          <li>Stock</li>
-          <li>Options</li>
-          <li>Total <small>(tout en bas de la liste)</small></li>
-          <li>Account Alias <small>(facultatif)</small></li>
-        </ul>
-        <p>Laisse « Exclude prior report date » et « Exclude long and short breakout » décochés.</p>
+        <h4>Étape 1 : ouvrir la création</h4>
+        <ol>
+          <li>Connecte-toi au portail IBKR (Client Portal).</li>
+          <li>Va dans <b>Performance &amp; Reports → Flex Queries</b>.</li>
+          <li>Dans le bloc <b>Activity Flex Query</b>, clique sur le <b>+</b> (Create).</li>
+          <li><b>Query Name</b> : écris ce que tu veux, par exemple <code>Performance Viewer</code>.</li>
+        </ol>
 
-        <h4>2. Section « Cash Transactions »</h4>
-        <p>
-          Dans « Options », coche seulement <b>Deposits &amp; Withdrawals</b> (les dividendes, intérêts et frais
-          ne servent pas ici), et choisis <b>Detail</b> (pas Summary). Champs à cocher :
-        </p>
-        <ul className={styles.fields}>
-          <li>Account ID</li>
-          <li>Currency</li>
-          <li>Asset Class</li>
-          <li>FX Rate To Base</li>
-          <li>Settle Date <small>(ou Date/Time)</small></li>
-          <li>Type</li>
-          <li>Description</li>
-          <li>Amount</li>
+        <h4>Étape 2 : choisir les deux sections</h4>
+        <p>Dans la grande liste « Sections », coche seulement ces deux-là :</p>
+        <ul className={styles.list}>
+          <Yes>Net Asset Value (NAV) in Base</Yes>
+          <Yes>Cash Transactions</Yes>
+          <No note="(ce sont d’autres sections, avec des noms qui se ressemblent)">Change in NAV, Cash Report, Trades, Open Positions, Statement of Funds, etc.</No>
         </ul>
-        <p>Elle sert à repérer tes dépôts, retraits et transferts pour le calcul du rendement (TWR).</p>
+        <p>Chaque section cochée s’ouvre avec ses propres options : voir les étapes 3 et 4.</p>
 
-        <h4>3. Configuration</h4>
+        <h4>Étape 3 : section « Net Asset Value (NAV) in Base »</h4>
+        <p>Ne clique <b>pas</b> sur « Select All ». Coche un par un :</p>
+        <ul className={styles.list}>
+          <Yes>Account ID</Yes>
+          <Yes>Currency</Yes>
+          <Yes>Report Date</Yes>
+          <Yes>Cash</Yes>
+          <Yes>Stock</Yes>
+          <Yes>Options</Yes>
+          <Yes note="(tout en bas de la liste, après Crypto : ne l’oublie pas)">Total</Yes>
+          <Yes note="(facultatif : le nom de ton compte)">Account Alias</Yes>
+          <No>Tous les autres champs (Model, Bonds, Funds, Accruals, Crypto…)</No>
+          <No>Les deux cases du haut : « Exclude prior report date » et « Exclude long and short breakout » restent décochées</No>
+        </ul>
+
+        <h4>Étape 4 : section « Cash Transactions »</h4>
+        <p>Tout en haut de la section, il y a deux groupes d’options :</p>
+        <ul className={styles.list}>
+          <Yes>Deposits &amp; Withdrawals</Yes>
+          <Yes>Detail</Yes>
+          <No>Summary</No>
+          <No>Dividends, Payment in Lieu, Withholding Tax, 871(m), Advisor Fees, Other Fees, Other Income, Carbon Credits, Bill Pay, Broker Interest, Broker Fees, Bond Interest, Price Adjustments, Commission Adjustments</No>
+        </ul>
+        <p>Puis, dans la liste des champs (toujours sans « Select All »), coche :</p>
+        <ul className={styles.list}>
+          <Yes>Account ID</Yes>
+          <Yes>Currency</Yes>
+          <Yes>FX Rate To Base</Yes>
+          <Yes>Asset Class</Yes>
+          <Yes>Description</Yes>
+          <Yes note="(ou Date/Time)">Settle Date</Yes>
+          <Yes>Amount</Yes>
+          <Yes>Type</Yes>
+          <No>Tous les autres champs (Symbol, ISIN, Conid, Trade ID…)</No>
+        </ul>
+
+        <h4>Étape 5 : réglages du bas de la page</h4>
+        <p><b>Filters</b> : ne touche à rien (aucun symbole).</p>
+        <table className={styles.table}>
+          <tbody>
+            <tr><th colSpan={2}>Delivery Configuration</th></tr>
+            <Setting name="Accounts" value="ton compte" note="(déjà choisi)" />
+            <Setting name="Models" value="rien (Optional)" />
+            <Setting name="Format" value="CSV" />
+            <Setting name="Include header and trailer records?" value="No" />
+            <Setting name="Include column headers?" value="Yes" note="(indispensable)" />
+            <Setting name="Display single column header row?" value="No" />
+            <Setting name="Include section code and line descriptor?" value="No" note="(sinon le site ne lit aucune ligne)" />
+            <Setting name="Period" value="Last 365 Calendar Days" />
+            <tr><th colSpan={2}>General Configuration</th></tr>
+            <Setting name="Date Format" value="yyyyMMdd" note="(ou yyyy-MM-dd)" />
+            <Setting name="Time Format" value="ne change rien" />
+            <Setting name="Date/Time Separator" value="ne change rien" />
+            <Setting name="Profit and Loss" value="Default" />
+            <Setting name="Include Offsetting Trade/Cancel Pairs?" value="No" />
+            <Setting name="Include Currency Rates?" value="Yes" />
+            <Setting name="Include Audit Trail Fields?" value="No" />
+            <Setting name="Display Account Alias in Place of Account ID?" value="No" note="(le site a besoin du numéro de compte)" />
+            <Setting name="Breakout by Day?" value="Yes" note="(indispensable : une valeur par jour)" />
+          </tbody>
+        </table>
+        <p>Clique ensuite sur <b>Continue</b>, vérifie le résumé, puis <b>Create</b>.</p>
+
+        <h4>Étape 6 : lancer la requête et importer</h4>
+        <ol>
+          <li>Dans la liste de tes Activity Flex Queries, clique sur la flèche <b>Run</b> de ta requête.</li>
+          <li>Choisis le format <b>CSV</b> et la période voulue, puis <b>Run</b>. Pour plus d’un an d’historique, choisis une plage de dates personnalisée, ou lance plusieurs périodes.</li>
+          <li>Télécharge le fichier, puis glisse-le dans la zone d’import ci-dessus.</li>
+        </ol>
+
+        <h4>À savoir</h4>
         <ul>
-          <li><b>Format</b> : CSV</li>
-          <li><b>Period</b> : Last 365 Calendar Days (ou une plage de dates personnalisée au moment de lancer la requête)</li>
-          <li><b>Date Format</b> : yyyyMMdd ou yyyy-MM-dd</li>
-          <li><b>Breakout by Day</b> : <b>Yes</b> (indispensable : une NAV par jour)</li>
-          <li><b>Include Currency Rates</b> : Yes</li>
-          <li><b>Display Account Alias in Place of Account ID</b> : No</li>
-          <li>Le reste : valeurs par défaut</li>
+          <li><b>Un seul compte par fichier.</b> Si tu as plusieurs comptes, refais l’opération pour chacun.</li>
+          <li>Si le site dit « format non reconnu », vérifie en priorité : <i>Include column headers = Yes</i>, <i>Include section code = No</i>, <i>Breakout by Day = Yes</i> et le champ <i>Total</i>.</li>
+          <li>Cocher des champs en plus ne casse rien : ils sont ignorés, le fichier est juste plus gros.</li>
         </ul>
-
-        <h4>4. Importer</h4>
-        <p>
-          Enregistre la requête, lance-la (« Run », format CSV), puis glisse le fichier ici.
-          <b> Un seul compte par fichier</b> : refais l’opération pour chaque compte.
-        </p>
       </div>
     </details>
   );

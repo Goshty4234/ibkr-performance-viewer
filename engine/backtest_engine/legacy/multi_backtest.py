@@ -63,7 +63,7 @@ def get_ticker_with_cache(ticker_symbol: str):
     """Get yf.Ticker object with 4-hour cache"""
     try:
         cache_key = f"ticker_obj_{ticker_symbol}"
-        cache_dir = '.streamlit/ticker_cache'
+        cache_dir = 'marketdata/ticker_cache'
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir, exist_ok=True)
         
@@ -84,7 +84,7 @@ def get_ticker_history_with_cache(ticker_symbol: str, period: str = "max", auto_
     """Get ticker historical data with 4-hour cache"""
     try:
         cache_key = f"history_{ticker_symbol}_{period}_{auto_adjust}_{columns}"
-        cache_dir = '.streamlit/ticker_cache'
+        cache_dir = 'marketdata/ticker_cache'
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir, exist_ok=True)
         
@@ -117,7 +117,7 @@ def get_ticker_info_with_cache(ticker_symbol: str):
     """Get ticker info with 4-hour cache"""
     try:
         cache_key = f"info_{ticker_symbol}"
-        cache_dir = '.streamlit/ticker_info_cache'
+        cache_dir = 'marketdata/ticker_info_cache'
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir, exist_ok=True)
         
@@ -139,7 +139,7 @@ def get_batch_download_with_cache(ticker_list: list, period: str = "max",
     """Get batch download data with 4-hour cache"""
     try:
         cache_key = f"batch_{sorted(ticker_list)}_{period}_{auto_adjust}_{kwargs}"
-        cache_dir = '.streamlit/ticker_cache'
+        cache_dir = 'marketdata/ticker_cache'
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir, exist_ok=True)
         
@@ -159,14 +159,14 @@ def clear_all_yahoo_caches():
     """Clear all Yahoo Finance caches"""
     total_cleared = 0
     
-    cache_dir = '.streamlit/ticker_cache'
+    cache_dir = 'marketdata/ticker_cache'
     if os.path.exists(cache_dir):
         disk_cache = dc.Cache(cache_dir)
         cache_size = len(disk_cache)
         disk_cache.clear()
         total_cleared += cache_size
     
-    info_cache_dir = '.streamlit/ticker_info_cache'
+    info_cache_dir = 'marketdata/ticker_info_cache'
     if os.path.exists(info_cache_dir):
         info_cache = dc.Cache(info_cache_dir)
         info_cache_size = len(info_cache)
@@ -1543,7 +1543,7 @@ def get_multiple_tickers_batch(ticker_list, period="max", auto_adjust=False):
     
     # Initialize disk cache (survives page reloads)
     # Create cache directory if it doesn't exist
-    cache_dir = '.streamlit/ticker_cache'
+    cache_dir = 'marketdata/ticker_cache'
     os.makedirs(cache_dir, exist_ok=True)
     
     # Initialize disk cache with 4-hour TTL
@@ -1899,7 +1899,7 @@ def fetch_sector_industry_map(ticker_list):
     if not ticker_list:
         return {}
 
-    cache_dir = '.streamlit/ticker_info_cache'
+    cache_dir = 'marketdata/ticker_info_cache'
     os.makedirs(cache_dir, exist_ok=True)
     disk_cache = dc.Cache(cache_dir)
     results = {}
@@ -2138,7 +2138,7 @@ def fetch_yahoo_quote_market_caps(tickers):
     if not wanted:
         return {}, None
 
-    cache_dir = ".streamlit/ticker_info_cache"
+    cache_dir = "marketdata/ticker_info_cache"
     os.makedirs(cache_dir, exist_ok=True)
     disk_cache = dc.Cache(cache_dir)
     scale_map = {}
@@ -2261,7 +2261,7 @@ def _download_wikipedia_sp500_html():
 
 def fetch_sp500_wikipedia_constituents():
     """One Wikipedia GET on this page: current S&P 500 tickers + Date added. 24h disk cache."""
-    cache_dir = ".streamlit/ticker_info_cache"
+    cache_dir = "marketdata/ticker_info_cache"
     os.makedirs(cache_dir, exist_ok=True)
     disk_cache = dc.Cache(cache_dir)
     cached = disk_cache.get(_SP500_WIKI_CACHE_KEY)
@@ -2430,7 +2430,7 @@ def parse_nasdaq_trader_common_stocks(nasdaq_text, other_text):
 
 def fetch_us_listed_common_stocks():
     """NYSE/NASDAQ/AMEX common stocks from Nasdaq Trader symbol directories. 24h disk cache."""
-    cache_dir = ".streamlit/ticker_info_cache"
+    cache_dir = "marketdata/ticker_info_cache"
     os.makedirs(cache_dir, exist_ok=True)
     disk_cache = dc.Cache(cache_dir)
     cached = disk_cache.get(_US_MARKET_CACHE_KEY)

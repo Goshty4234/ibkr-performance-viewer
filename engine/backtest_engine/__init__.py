@@ -38,7 +38,7 @@ _numba_optional()
 
 
 def engine_home() -> Path:
-    """Folder holding Complete_Tickers/ and the .streamlit/ price cache.
+    """Folder holding Complete_Tickers/ and the marketdata/ price cache.
 
     The legacy code opens these through relative paths, so the process working
     directory must point here before any backtest runs.
@@ -47,7 +47,7 @@ def engine_home() -> Path:
 
 
 # Folders of the data home, named for what they hold. Older versions used hidden-looking names.
-RENAMED_DIRS = {".jobs": "jobs", ".config": "config", ".cache": "cache", ".mc": "montecarlo"}
+RENAMED_DIRS = {".jobs": "jobs", ".config": "config", ".cache": "cache", ".mc": "montecarlo", ".streamlit": "marketdata"}
 
 DATA_README = """Dossier de donnees du moteur Momentum Backtester
 ===============================================
@@ -57,26 +57,44 @@ Tout ce que le moteur ecrit est ici. Supprime ce dossier = plus aucune trace
   backtests\\              tes resultats de backtest complets (un dossier par run, par compte)
   ibkr\\                    releves IBKR importes dans l'IBKR viewer (fichiers CSV)
   configs\\                 copie de sauvegarde de tes configurations
-  .streamlit\\ticker_cache   historiques de prix des tickers (le plus gros)
-  .streamlit\\quote_store    fiches Yahoo archivees (PE, capitalisation...)
-  .streamlit\\sec_store      historique du nombre d'actions
-  .streamlit\\ticker_info_cache  infos tickers (cache temporaire)
+  marketdata\\ticker_cache  historiques de prix des tickers (le plus gros)
+  marketdata\\quote_store   fiches Yahoo archivees (PE, capitalisation...)
+  marketdata\\sec_store     historique du nombre d'actions
+  marketdata\\ticker_info_cache  infos tickers (cache temporaire)
   cache\\                    resultats de portfolios deja calcules (cache temporaire)
   jobs\\                     fichiers des backtests recents (supprimes apres quelques heures)
   montecarlo\\               bases de rendements reels pour le Monte Carlo
   config\\                   liste des adresses du site autorisees
   Complete_Tickers\\         listes de tickers fournies avec le moteur
-
-(Le dossier .streamlit garde ce nom : il est utilise tel quel par le code de calcul d'origine.)
 """
+
+
+def _merge_dir(src: Path, dst: Path) -> None:
+    """Moves src to dst. When dst already exists, only what dst lacks is moved (folders recursively),
+    so a folder recreated empty by a run never hides the data of the old one."""
+    if not dst.exists():
+        src.rename(dst)
+        return
+    for child in list(src.iterdir()):
+        target = dst / child.name
+        if not target.exists():
+            child.rename(target)
+        elif child.is_dir() and target.is_dir():
+            _merge_dir(child, target)
+        elif child.is_file() and target.is_file():
+            child.unlink()  # same cache entry in both: the current folder's copy wins
+    try:
+        src.rmdir()
+    except OSError:
+        pass
 
 
 def migrate_layout(home: Path) -> None:
     """Renames the old folder names to the current ones (once) and refreshes the README."""
     for old, new in RENAMED_DIRS.items():
         try:
-            if (home / old).is_dir() and not (home / new).exists():
-                (home / old).rename(home / new)
+            if (home / old).is_dir():
+                _merge_dir(home / old, home / new)
         except OSError:
             pass
     try:
@@ -92,6 +110,7 @@ def activate_engine_home() -> Path:
 
     ensure_system_ca_bundle(ENGINE_ROOT / ".certs")
     home = engine_home()
+    migrate_layout(home)
     os.chdir(home)
     for p in (str(home), str(ENGINE_ROOT)):
         if p not in sys.path:

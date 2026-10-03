@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 
 import yfinance as yf
 
-CACHE_DIR = ".streamlit/ticker_cache"
+CACHE_DIR = "marketdata/ticker_cache"
 PRICE_TTL = int(float(os.environ.get("ENGINE_PRICE_TTL_HOURS", "18")) * 3600)
 MISSING_TTL = 12 * 3600
 _NY = ZoneInfo("America/New_York")

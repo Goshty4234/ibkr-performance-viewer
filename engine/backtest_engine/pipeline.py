@@ -100,7 +100,7 @@ class FileLock:
 
 
 def download_lock() -> FileLock:
-    return FileLock(engine_home() / ".streamlit" / "download.lock")
+    return FileLock(engine_home() / "marketdata" / "download.lock")
 
 
 def _trim(value: Any) -> Any:

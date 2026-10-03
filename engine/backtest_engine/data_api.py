@@ -117,7 +117,7 @@ def clear_caches() -> dict[str, int]:
             cleared += cache.delete(k)
         import diskcache
 
-        info = diskcache.Cache(".streamlit/ticker_info_cache")
+        info = diskcache.Cache("marketdata/ticker_info_cache")
         cleared += len(info)
         info.clear()
     return {"entries": cleared, "pe": pe, "kept": len(price_store.list_stored())}

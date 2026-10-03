@@ -21,7 +21,7 @@ from datetime import date, datetime
 import diskcache
 import pandas as pd
 
-STORE_DIR = ".streamlit/sec_store"
+STORE_DIR = "marketdata/sec_store"
 _UA = {"User-Agent": "IBKR Statement Performance Viewer (personal research) contact@ibkr-viewer.local", "Accept-Encoding": "gzip"}
 _FRAMES = "https://data.sec.gov/api/xbrl/frames/{tax}/{tag}/shares/{period}.json"
 _TICKERS = "https://www.sec.gov/files/company_tickers.json"

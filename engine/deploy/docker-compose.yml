@@ -13,7 +13,7 @@ services:
     environment:
       ENGINE_MODE: cloud
     volumes:
-      - engine-cache:/app/.streamlit
+      - engine-cache:/app/marketdata
       - engine-jobs:/app/.jobs
     expose:
       - "8765"

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { dbToAccount, formatAccountLinkLabel } from '@/lib/account-mapper';
 import type { PortfolioAccount } from '@/lib/types';
+import FlexQueryGuide from './FlexQueryGuide';
 import styles from './AccountsHome.module.css';
 
 function initials(name: string): string {
@@ -162,6 +163,8 @@ export default function AccountsHome() {
           {showForm ? 'Fermer' : '+ Nouveau compte'}
         </button>
       </div>
+
+      <FlexQueryGuide prominent defaultOpen={!loading && totalImports === 0} />
 
       {error && <div className={styles.error}>{error}</div>}
 
