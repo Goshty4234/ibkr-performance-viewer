@@ -109,6 +109,9 @@
 .runSide { display: flex; flex-direction: column; gap: 0.5rem; align-items: stretch; min-width: 240px; }
 
 .runBtn { min-width: 240px; }
+.btnSpin { display: inline-block; width: 0.85em; height: 0.85em; margin-right: 0.5em; vertical-align: -0.1em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: btnSpin 0.8s linear infinite; }
+@keyframes btnSpin { to { transform: rotate(360deg); } }
+.engineNote { font-size: 0.78rem; color: var(--orange); max-width: 34ch; }
 
 .runNote { font-size: 0.74rem; color: var(--text-muted); max-width: 280px; line-height: 1.35; }
 

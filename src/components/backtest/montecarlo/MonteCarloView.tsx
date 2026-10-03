@@ -39,16 +39,16 @@ const SYNTH_FIELDS: { key: keyof McSynthetic; label: string; step: number; tip: 
   { key: 'extreme_per_year', label: 'Chocs extrêmes / action / an', step: 0.01, pct: true, tip: 'Probabilité annuelle d’un saut brutal (+50 % à +300 % ou −30 % à −85 %) sur une action.' },
 ];
 
-function useClient(): { client: EngineClient | null; outdated: boolean; ready: boolean } {
+function useClient(): { client: EngineClient | null; outdated: boolean; ready: boolean; detecting: boolean } {
   const engine = useEngineStore((s) => s.engine);
   const status = useEngineStore((s) => s.status);
   const client = useMemo(() => (engine ? new EngineClient(engine.url, engine.health.auth_required) : null), [engine]);
-  return { client, outdated: engineOutdated(engine?.health), ready: status !== 'detecting' };
+  return { client, outdated: engineOutdated(engine?.health), ready: status !== 'detecting', detecting: status === 'detecting' };
 }
 
 export default function MonteCarloView() {
   const portfolios = useBacktestStore((s) => s.portfolios);
-  const { client, outdated } = useClient();
+  const { client, outdated, detecting } = useClient();
   const [opt, setOpt] = useState<McOptions>(MC_DEFAULTS);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [job, setJob] = useState<McJob | null>(null);
@@ -195,7 +195,8 @@ export default function MonteCarloView() {
             <button type="button" className="btn btn-secondary" onClick={cancel}>Annuler</button>
           )}
           {estimate > 3e8 && !running && <span className={styles.warn}>Grosse simulation : prévois plusieurs minutes.</span>}
-          {!client && <span className={styles.warn}>Moteur de calcul non détecté.</span>}
+          {!client && detecting && <span className={styles.warn}>Connexion au moteur… patiente.</span>}
+          {!client && !detecting && <span className={styles.warn}>Moteur de calcul non détecté.</span>}
           {outdated && <span className={styles.warn}>Le moteur doit être mis à jour pour le Monte Carlo.</span>}
           {job && running && (
             <span className={styles.progress}>

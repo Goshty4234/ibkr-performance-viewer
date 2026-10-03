@@ -70,8 +70,17 @@ export default function AllocRunBar() {
           onClick={() => void launch()}
           title={selected ? `Allocation du jour de « ${selected.name} »` : 'Crée d’abord un portfolio dans Construire'}
         >
-          {activeRun ? `Calcul… ${progress}%` : '▶ Lancer l’allocation'}
+          {engineStatus === 'detecting' ? (
+            <><span className={styles.btnSpin} />Connexion au moteur… patiente</>
+          ) : activeRun ? (
+            `Calcul… ${progress}%`
+          ) : (
+            '▶ Lancer l’allocation'
+          )}
         </button>
+        {outdated && (
+          <span className={styles.engineNote}>Ton moteur est trop ancien pour ce site : mets-le à jour ou télécharge la dernière version.</span>
+        )}
         {activeRun && (
           <div className={styles.allocRunProgress}><span style={{ width: `${Math.max(4, progress)}%` }} /></div>
         )}

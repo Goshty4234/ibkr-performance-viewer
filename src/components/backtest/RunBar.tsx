@@ -112,8 +112,17 @@ export default function RunBar() {
           onClick={() => void launch()}
           title={`Backtest complet des ${count} portfolio${count > 1 ? 's' : ''} de Construire, résultats dans l’onglet Résultats${engine ? ` · moteur : ${engine.url}` : ''}`}
         >
-          🚀 Lancer le backtest complet ({count})
+          {engineStatus === 'detecting' ? (
+            <><span className={styles.btnSpin} />Connexion au moteur… patiente</>
+          ) : launching ? (
+            <><span className={styles.btnSpin} />Lancement en cours…</>
+          ) : (
+            <>🚀 Lancer le backtest complet ({count})</>
+          )}
         </button>
+        {engineOutdated(engine?.health) && (
+          <span className={styles.engineNote}>Ton moteur est trop ancien pour ce site : mets-le à jour (bouton ci-dessous) ou télécharge la dernière version.</span>
+        )}
         {activeCount > 0 && (
           <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
             {activeCount} run{activeCount > 1 ? 's' : ''} en cours — tu peux en lancer d&apos;autres en parallèle.
