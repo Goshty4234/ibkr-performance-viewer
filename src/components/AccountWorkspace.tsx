@@ -60,6 +60,7 @@ import RiskMetricsTable from './RiskMetricsTable';
 import YearlyReturnsChart from './YearlyReturnsChart';
 import TimelineStatus from './TimelineStatus';
 import FileUpload from './FileUpload';
+import { mirrorIbkrFile } from '@/lib/storage/mirror';
 import styles from './AccountWorkspace.module.css';
 
 interface Props {
@@ -438,6 +439,7 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
       if (!file.name.endsWith('.csv')) continue;
       try {
         const text = await file.text();
+        void mirrorIbkrFile(file, text); // copy of the statement in the local folder
         const perfReport = isIbkrPerformanceReportCsv(text);
 
         if (perfReport) {

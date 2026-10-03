@@ -10,6 +10,8 @@ export interface EngineHealth {
   code?: string;
   /** Self-updating portable package (update below), as opposed to a dev or cloud engine. */
   portable?: boolean;
+  /** Serves the local library (results, IBKR files, storage report): a local engine, recent enough. */
+  library?: boolean;
   update?: EngineUpdateStatus;
   mode: 'local' | 'cloud';
   auth_required: boolean;

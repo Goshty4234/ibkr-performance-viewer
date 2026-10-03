@@ -189,7 +189,8 @@ export default function HistoryView() {
           </div>
           <div className={styles.summaryMeta}>
             <span>
-              Chaque run terminé est enregistré automatiquement. Les runs non protégés sont supprimés après {RETENTION_DAYS} jours :
+              Chaque run terminé est enregistré automatiquement : dans le dossier du moteur sur ce PC et/ou en ligne selon ton niveau
+              (page Stockage). En ligne, les runs non protégés sont retirés après {RETENTION_DAYS} jours :
               🔒 protège ceux à garder (ils ne peuvent plus être supprimés par erreur).
             </span>
           </div>
@@ -310,11 +311,26 @@ export default function HistoryView() {
                   {isAlloc && <span className={`${styles.historyTag} ${styles.kindTag}`}>Allocations</span>}
                   {row.pinned ? (
                     <span className={`${styles.historyTag} ${styles.kindTag}`}>protégé</span>
-                  ) : left <= 7 ? (
+                  ) : left <= 7 && row.cloud !== false ? (
                     <span className={`${styles.historyTag} ${styles.expiring}`} title="Protège-le pour le garder">
-                      {left <= 0 ? 'supprimé aujourd’hui' : `supprimé dans ${left} j`}
+                      {row.local
+                        ? (left <= 0 ? 'retiré d’internet aujourd’hui' : `retiré d’internet dans ${left} j`)
+                        : (left <= 0 ? 'supprimé aujourd’hui' : `supprimé dans ${left} j`)}
                     </span>
                   ) : null}
+                  {row.local && (
+                    <span className={styles.historyTag} title={row.localFull ? 'Copie complète dans le dossier du moteur, sur ce PC.' : 'Copie partielle dans le dossier du moteur, sur ce PC.'}>
+                      💾 sur ce PC
+                    </span>
+                  )}
+                  {row.cloud !== false && row.result_path && (
+                    <span className={styles.historyTag} title="Résultats conservés en ligne : ouvrables depuis n’importe quel appareil.">☁ en ligne</span>
+                  )}
+                  {row.details_partial && !row.localFull && (
+                    <span className={styles.historyTag} title="Les détails lourds ne sont conservés ni en ligne ni sur ce PC : les courbes et statistiques s’ouvrent peut-être tout de suite, les détails demandent de relancer le run.">
+                      résumé seul
+                    </span>
+                  )}
                   {row.simulation_start && <span className={styles.historyTag}>{row.simulation_start} → {row.simulation_end}</span>}
                   <span className={styles.historyTag}>{row.summary.length} portfolio{row.summary.length > 1 ? 's' : ''}</span>
                   {row.duration_s !== null && <span className={styles.historyTag}>{row.duration_s.toFixed(1)} s</span>}

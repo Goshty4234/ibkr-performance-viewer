@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { EngineClient } from '@/lib/engine/client';
 import type { BenchmarkRow, FundamentalsReport, PortfolioConfig, PortfolioDetail, PortfolioSummaryOk, ReturnsRow, TimerInfo } from '@/lib/engine/types';
+import { localAvailable, localGetRunFile, localPutRunFile } from '@/lib/storage/local-library';
+import { getProfile, getResultSource, LEAN_DETAIL_MAX } from '@/lib/storage/profile';
 import { RESULTS_BUCKET } from './history';
 import { detailCache, noAdditions, portfolioDates, type LoadedResult } from './result-data';
 
@@ -144,16 +146,31 @@ export async function saveAnalysis(a: AllocationAnalysis): Promise<boolean> {
   if (!path) return false;
   const stream = new Blob([JSON.stringify(a)]).stream().pipeThrough(new CompressionStream('gzip'));
   const blob = await new Response(stream).blob();
+  const profile = await getProfile();
+  const uid = path.split('/')[0];
+  // Local folder: always. Online: everything for a full account, only small analyses for a lean one.
+  const localOk = localAvailable() ? await localPutRunFile(uid, a.run.id, `allocations/${a.portfolio.index}.json.gz`, blob) : false;
+  const full = !!profile && (profile.tier === 'full' || profile.isAdmin);
+  if (!full && blob.size > LEAN_DETAIL_MAX) return localOk;
   const { error } = await createClient().storage.from(RESULTS_BUCKET).upload(path, blob, { contentType: 'application/gzip', upsert: true });
-  if (error) throw new Error(error.message);
+  if (error && !localOk) throw new Error(error.message);
   return true;
 }
 
 export async function loadAnalysis(runId: string, index: number): Promise<AllocationAnalysis | null> {
   const path = await analysisPath(runId, index);
   if (!path) return null;
-  const { data, error } = await createClient().storage.from(RESULTS_BUCKET).download(path);
-  if (error || !data) return null;
+  const uid = path.split('/')[0];
+  const source = getResultSource(await getProfile());
+  const name = `allocations/${index}.json.gz`;
+  let data: Blob | null = null;
+  if (source !== 'cloud') data = await localGetRunFile(uid, runId, name);
+  if (!data && source !== 'local') {
+    const dl = await createClient().storage.from(RESULTS_BUCKET).download(path);
+    data = dl.error || !dl.data ? null : dl.data;
+    if (data && source === 'auto' && localAvailable()) void localPutRunFile(uid, runId, name, data);
+  }
+  if (!data) return null;
   const text = await new Response(data.stream().pipeThrough(new DecompressionStream('gzip'))).text();
   const parsed = JSON.parse(text) as AllocationAnalysis;
   return parsed?.version === 1 ? parsed : null;

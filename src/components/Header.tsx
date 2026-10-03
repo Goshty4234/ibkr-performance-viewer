@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { leaveGuest } from '@/lib/guest';
 import { createClient } from '@/lib/supabase/client';
+import { useStorageProfile } from '@/lib/storage/profile';
 import EngineStatus from './backtest/EngineStatus';
 import styles from './Header.module.css';
 
@@ -18,6 +19,7 @@ const WARM_ROUTES = [
   '/',
   '/ibkr',
   '/settings',
+  '/stockage',
   `/ibkr/compte/${NO_ACCOUNT}`,
   '/api/accounts',
   `/api/statements?portfolioAccountId=${NO_ACCOUNT}`,
@@ -35,6 +37,12 @@ export default function Header({ email, guest = false }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const { profile, refresh } = useStorageProfile();
+  const isAdmin = !!profile?.isAdmin;
+
+  useEffect(() => {
+    if (!guest) void refresh();
+  }, [guest, refresh]);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -84,6 +92,8 @@ export default function Header({ email, guest = false }: Props) {
   const isBacktester = pathname === '/' || pathname.startsWith('/backtest');
   const isIbkr = pathname.startsWith('/ibkr');
   const isSettings = pathname === '/settings';
+  const isStorage = pathname === '/stockage';
+  const isAdminPage = pathname === '/admin';
 
   return (
     <header className={styles.header}>
@@ -103,6 +113,14 @@ export default function Header({ email, guest = false }: Props) {
               </Link>
             </nav>
             <nav className={styles.nav} aria-label="Navigation principale">
+              <Link href="/stockage" prefetch className={`${styles.navLink} ${isStorage ? styles.navLinkActive : ''}`}>
+                Stockage
+              </Link>
+              {isAdmin && (
+                <Link href="/admin" prefetch className={`${styles.navLink} ${isAdminPage ? styles.navLinkActive : ''}`}>
+                  Admin
+                </Link>
+              )}
               <Link href="/settings" prefetch className={`${styles.navLink} ${isSettings ? styles.navLinkActive : ''}`}>
                 Paramètres
               </Link>
@@ -125,6 +143,7 @@ export default function Header({ email, guest = false }: Props) {
       <div className={styles.right}>
         <EngineStatus />
         <nav className={styles.mobileNav} aria-label="Navigation mobile">
+          <Link href="/stockage" className={`${styles.navLink} ${isStorage ? styles.navLinkActive : ''}`} title="Stockage">💾</Link>
           <Link href="/settings" className={`${styles.navLink} ${isSettings ? styles.navLinkActive : ''}`}>⚙️</Link>
         </nav>
 
@@ -143,6 +162,14 @@ export default function Header({ email, guest = false }: Props) {
 
           {open && (
             <div className={styles.dropdown} role="menu">
+              <Link href="/stockage" role="menuitem" onClick={() => setOpen(false)}>
+                💾 Stockage
+              </Link>
+              {isAdmin && (
+                <Link href="/admin" role="menuitem" onClick={() => setOpen(false)}>
+                  🛠️ Administration
+                </Link>
+              )}
               <Link href="/settings" role="menuitem" onClick={() => setOpen(false)}>
                 ⚙️ Paramètres du compte
               </Link>

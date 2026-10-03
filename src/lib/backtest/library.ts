@@ -1,6 +1,7 @@
 import { isGuest } from '@/lib/guest';
 import { createClient } from '@/lib/supabase/client';
 import type { PortfolioConfig, RunOptions } from '@/lib/engine/types';
+import { mirrorConfigsSoon } from '@/lib/storage/mirror';
 
 /** A whole run kept as one save: every portfolio plus the run settings (dates, start rule...). */
 export interface SavedRun {
@@ -71,6 +72,7 @@ async function upsert(entries: { name: string; config: SavedPortfolio['config'] 
     const { error } = await supabase.from('backtest_portfolios').insert(inserts);
     if (error) throw new Error(error.message);
   }
+  mirrorConfigsSoon();
   return entries.length;
 }
 
@@ -103,6 +105,7 @@ export async function updateSaved(id: string, patch: { name?: string; folder?: s
   }
   const { error } = await supabase.from('backtest_portfolios').update(row).eq('id', id);
   if (error) throw new Error(error.message);
+  mirrorConfigsSoon();
 }
 
 export async function deleteSaved(ids: string[]): Promise<void> {
@@ -110,4 +113,5 @@ export async function deleteSaved(ids: string[]): Promise<void> {
   const supabase = createClient();
   const { error } = await supabase.from('backtest_portfolios').delete().in('id', ids);
   if (error) throw new Error(error.message);
+  mirrorConfigsSoon();
 }

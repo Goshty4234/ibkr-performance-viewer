@@ -23,7 +23,17 @@ export function usePortfolioDetail(result: LoadedResult | null, index: number | 
     setState((s) => ({ detail: s.detail?.index === index ? s.detail : null, loading: true, error: null }));
     detailCache.get(result, index).then(
       (detail) => {
-        if (alive) setState({ detail, loading: false, error: detail ? null : 'Détail indisponible pour ce portfolio.' });
+        if (alive) {
+          setState({
+            detail,
+            loading: false,
+            error: detail
+              ? null
+              : result.detailsPartial
+                ? 'Détail non conservé pour ce run (seuls les résumés légers sont gardés). Relance le backtest pour le revoir : « Restaurer la config » dans Historique, puis Lancer.'
+                : 'Détail indisponible pour ce portfolio.',
+          });
+        }
       },
       (e: unknown) => {
         if (alive) setState({ detail: null, loading: false, error: e instanceof Error ? e.message : String(e) });

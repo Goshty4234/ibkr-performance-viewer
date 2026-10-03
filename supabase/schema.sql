@@ -326,3 +326,6 @@ create policy "Users can delete own backtest results"
 
 -- New columns are visible to the API right away
 notify pgrst, 'reload schema';
+
+-- Light accounts keep only small results: true when some detail chunks were not stored.
+alter table public.backtest_runs add column if not exists details_partial boolean not null default false;

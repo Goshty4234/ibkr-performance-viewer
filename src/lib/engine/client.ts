@@ -150,6 +150,65 @@ export class EngineClient {
     return res.text();
   }
 
+  /** Binary-safe request (library files): the response is returned untouched. */
+  async raw(path: string, init: RequestInit = {}): Promise<Response> {
+    const headers = new Headers(init.headers);
+    const token = await accessToken();
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    let res: Response;
+    try {
+      res = await fetch(`${this.url}${path}`, withAddressSpace(this.url, { ...init, headers, cache: 'no-store' }));
+    } catch {
+      throw new EngineError('Moteur injoignable. Est-il toujours lancé ?');
+    }
+    if (!res.ok && res.status !== 404) {
+      let detail = res.statusText;
+      try {
+        const body = await res.json();
+        detail = typeof body?.detail === 'string' ? body.detail : detail;
+      } catch {
+        /* not json */
+      }
+      throw new EngineError(detail || `HTTP ${res.status}`, res.status);
+    }
+    return res;
+  }
+
+  /** Stores bytes in the local library (PUT). */
+  async libPut(path: string, body: Blob | string): Promise<void> {
+    await this.raw(`/library/${path}`, { method: 'PUT', body, headers: { 'Content-Type': 'application/octet-stream' } });
+  }
+
+  /** Reads a library file; null when it does not exist. */
+  async libGet(path: string): Promise<Blob | null> {
+    const res = await this.raw(`/library/${path}`);
+    return res.status === 404 ? null : res.blob();
+  }
+
+  async libDelete(path: string): Promise<void> {
+    await this.raw(`/library/${path}`, { method: 'DELETE' });
+  }
+
+  libJson<T>(path: string): Promise<T> {
+    return this.request(`/library/${path}`);
+  }
+
+  storageUsage(): Promise<LocalUsage> {
+    return this.request('/storage');
+  }
+
+  storagePurge(body: { target: 'runs' | 'ibkr' | 'cache' | 'prices'; older_than_days?: number | null; keep_pinned?: boolean; user?: string | null }): Promise<{ removed: number; freed: number }> {
+    return this.request('/storage/purge', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  storageSettings(): Promise<LocalStorageSettings> {
+    return this.request('/storage/settings');
+  }
+
+  setStorageSettings(patch: Partial<LocalStorageSettings>): Promise<LocalStorageSettings> {
+    return this.request('/storage/settings', { method: 'PUT', body: JSON.stringify(patch) });
+  }
+
   submit(portfolios: PortfolioConfig[], options: Partial<RunOptions>, label?: string): Promise<EngineJob> {
     return this.request('/jobs', { method: 'POST', body: JSON.stringify({ portfolios, options, label }) });
   }
@@ -282,6 +341,20 @@ export class EngineClient {
   updateApply(): Promise<EngineUpdateStatus & { restarting: boolean }> {
     return this.request('/update/apply', { method: 'POST' });
   }
+}
+
+export interface LocalStorageSettings {
+  /** Runs older than this many days are deleted automatically (0 = never). */
+  auto_clean_days: number;
+  keep_pinned: boolean;
+}
+
+export interface LocalUsage {
+  home: string;
+  total: number;
+  folders: { name: string; label: string; bytes: number; files: number }[];
+  disk: { free: number | null; total: number | null };
+  settings: LocalStorageSettings;
 }
 
 /** Where a run takes its prices from: stored histories as they are, stored + missing recent days, or everything again. */

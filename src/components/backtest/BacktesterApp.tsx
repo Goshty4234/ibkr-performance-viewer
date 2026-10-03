@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { startCloudSync } from '@/lib/backtest/cloud-sync';
 import { cleanupOldRuns } from '@/lib/backtest/history';
+import { mirrorConfigsSoon } from '@/lib/storage/mirror';
 import { useBacktestStore, type BacktestView } from '@/lib/backtest/store';
 import { useEngineStore } from '@/lib/engine/store';
 import AllocRunBar from './allocations/AllocRunBar';
@@ -62,6 +63,7 @@ export default function BacktesterApp() {
     resumeRun();
     startCloudSync();
     cleanupOldRuns().catch(() => {});
+    mirrorConfigsSoon(8000); // keeps the local folder a complete copy of the saved configurations
   }, [initEngine, resumeRun]);
 
   return (

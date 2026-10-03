@@ -54,6 +54,9 @@ DATA_README = """Dossier de donnees du moteur Momentum Backtester
 Tout ce que le moteur ecrit est ici. Supprime ce dossier = plus aucune trace
 (il sera recree vide au prochain lancement, les prix se retelechargent au besoin).
 
+  backtests\\              tes resultats de backtest complets (un dossier par run, par compte)
+  ibkr\\                    releves IBKR importes dans l'IBKR viewer (fichiers CSV)
+  configs\\                 copie de sauvegarde de tes configurations
   .streamlit\\ticker_cache   historiques de prix des tickers (le plus gros)
   .streamlit\\quote_store    fiches Yahoo archivees (PE, capitalisation...)
   .streamlit\\sec_store      historique du nombre d'actions

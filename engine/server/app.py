@@ -43,10 +43,12 @@ from fastapi.responses import Response  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
 from backtest_engine import API_VERSION, __version__, updater  # noqa: E402
+from backtest_engine.library import Library, start_auto_clean  # noqa: E402
 from backtest_engine.certs import ensure_system_ca_bundle  # noqa: E402
 
 from .auth import current_user, is_guest  # noqa: E402
 from .jobs import JobManager  # noqa: E402
+from .library_api import router as library_router  # noqa: E402
 from .mc_jobs import McManager  # noqa: E402
 from .settings import load_settings  # noqa: E402
 
@@ -61,9 +63,14 @@ async def lifespan(app: FastAPI):
     manager.start()
     app.state.manager = manager
     app.state.mc = McManager(settings)
+    # The local library (results, IBKR files, cleaning) belongs to a PC, not to a shared cloud host.
+    app.state.library = Library(settings.home) if settings.mode == "local" else None
+    stop_clean = start_auto_clean(app.state.library) if app.state.library else None
     try:
         yield
     finally:
+        if stop_clean:
+            stop_clean.set()
         manager.shutdown()
 
 
@@ -78,7 +85,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"] if _allow_all else settings.allowed_origins,
     allow_origin_regex=None if _allow_all else settings.origin_regex,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
     max_age=600,
     **_cors_kwargs,
@@ -164,6 +171,7 @@ def health(request: Request) -> dict:
         "cpu_count": os.cpu_count(),
         "uptime_s": round(time.time() - STARTED_AT, 1),
         "portable": portable,
+        "library": settings.mode == "local",
         **({"update": updater.status()} if portable else {}),
         **_manager(request).stats(),
     }
@@ -194,6 +202,8 @@ def update_apply(request: Request, user: str = Depends(current_user)) -> dict:
     threading.Timer(0.3, updater.request_restart).start()
     return {"restarting": True, **updater.status()}
 
+
+app.include_router(library_router)
 
 _plan_lock = threading.Lock()
 

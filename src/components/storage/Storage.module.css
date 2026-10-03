@@ -1,0 +1,58 @@
+.page { max-width: 980px; }
+.pageHeader { margin-bottom: 1.5rem; }
+.pageHeader h1 { font-size: 1.75rem; font-weight: 800; letter-spacing: -0.03em; }
+.pageHeader p { color: var(--text-muted); font-size: 0.95rem; margin-top: 0.35rem; max-width: 70ch; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 1.25rem; align-items: start; }
+@media (max-width: 520px) { .grid { grid-template-columns: 1fr; } }
+
+.section { padding: 1.4rem; margin-bottom: 1.25rem; }
+.grid .section { margin-bottom: 0; }
+.sectionTitle { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint); margin-bottom: 0.9rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+
+.bigNumber { font-size: 1.9rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; }
+.bigNumber small { font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-left: 0.4rem; }
+.muted { color: var(--text-muted); font-size: 0.85rem; }
+.faint { color: var(--text-faint); font-size: 0.8rem; }
+
+.meter { height: 10px; border-radius: 999px; background: var(--surface-3); overflow: hidden; margin: 0.7rem 0 0.4rem; }
+.meterFill { height: 100%; border-radius: 999px; background: var(--accent); transition: width 0.4s ease; }
+.meterWarn { background: var(--orange); }
+.meterDanger { background: var(--red); }
+.meterRow { display: flex; justify-content: space-between; gap: 0.75rem; font-size: 0.8rem; color: var(--text-muted); flex-wrap: wrap; }
+
+.badge { display: inline-flex; align-items: center; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.02em; text-transform: none; border: 1px solid var(--border-strong); color: var(--text-muted); }
+.badgeFull { color: var(--green); border-color: rgba(45, 212, 168, 0.4); background: rgba(45, 212, 168, 0.08); }
+.badgeLean { color: var(--accent); border-color: rgba(77, 141, 255, 0.4); background: rgba(77, 141, 255, 0.08); }
+.badgeAdmin { color: var(--orange); border-color: rgba(255, 176, 32, 0.4); background: rgba(255, 176, 32, 0.08); }
+
+.table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 0.8rem; }
+.table th { text-align: left; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); font-weight: 700; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.table td { padding: 0.5rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.table tr:last-child td { border-bottom: none; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tableWrap { overflow-x: auto; }
+.cellMain { font-weight: 600; word-break: break-all; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; align-items: center; }
+.field { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.8rem; color: var(--text-muted); font-weight: 600; }
+.fieldRow { display: flex; gap: 0.75rem; align-items: flex-end; flex-wrap: wrap; margin-top: 0.9rem; }
+.fieldRow input[type='number'] { width: 7.5rem; }
+.fieldRow select { min-width: 12rem; }
+.check { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-muted); }
+.check input { width: auto; }
+
+.note { font-size: 0.82rem; line-height: 1.55; padding: 0.7rem 0.9rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-2); color: var(--text-muted); margin-top: 0.9rem; }
+.noteWarn { color: var(--orange); border-color: rgba(255, 176, 32, 0.3); background: rgba(255, 176, 32, 0.07); }
+.noteOk { color: var(--green); border-color: rgba(45, 212, 168, 0.3); background: rgba(45, 212, 168, 0.07); }
+.noteErr { color: var(--red); border-color: rgba(255, 107, 122, 0.3); background: rgba(255, 107, 122, 0.07); }
+
+.danger { margin-top: 1rem; padding: 1rem; border: 1px solid rgba(255, 107, 122, 0.3); border-radius: var(--radius-sm); background: rgba(255, 107, 122, 0.05); }
+.danger h3 { font-size: 0.9rem; margin-bottom: 0.4rem; }
+.dangerItem { padding: 0.75rem 0; border-bottom: 1px solid var(--border); }
+.dangerItem:last-child { border-bottom: none; padding-bottom: 0; }
+.dangerItem p { margin-bottom: 0.5rem; }
+.tierSelect { min-width: 7.5rem; }
+.quotaInput { width: 6rem; }
+.rowSelf td { background: rgba(255, 176, 32, 0.04); }
+.fold { font-family: var(--mono); font-size: 0.78rem; color: var(--text-faint); word-break: break-all; }

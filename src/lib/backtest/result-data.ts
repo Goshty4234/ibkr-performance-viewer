@@ -16,6 +16,8 @@ export interface LoadedResult {
   key: string;
   summary: ResultSummary;
   fetchDetail: DetailFetcher;
+  /** Some portfolio details were not stored (light account): they are shown after a re-run. */
+  detailsPartial?: boolean;
 }
 
 export function okSummaries(summary: ResultSummary): PortfolioSummaryOk[] {

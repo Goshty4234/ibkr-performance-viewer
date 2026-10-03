@@ -52,7 +52,7 @@ export default function FileUpload({ onFiles, uploading, accountHint }: Props) {
         {uploading ? 'Import en cours…' : <>Glissez votre CSV IBKR <strong>(rapport TWR ou Statement)</strong></>}
       </div>
       <div className={styles.hint}>
-        CSV · Plusieurs fichiers · Sauvegardé dans Supabase
+        CSV · Plusieurs fichiers · Données analysées en ligne (quelques Ko), CSV copié dans le dossier du moteur
         {accountHint && accountHint !== 'Tous les comptes' && ` · Compte : ${accountHint}`}
       </div>
     </label>
