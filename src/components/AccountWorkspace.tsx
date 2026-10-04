@@ -508,7 +508,7 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
         const flexCash = !flexCombined && !flexNav && isFlexCashCsv(text);
 
         if (flexCombined) {
-          const { nav, cashFlows } = parseFlexCombinedCsv(text, file.name);
+          const { nav, cashFlows, twrDaily } = parseFlexCombinedCsv(text, file.name);
 
           const res = await fetch('/api/nav-series', {
             method: 'POST',
@@ -528,6 +528,29 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
             (cashFlows.length ? `, ${cashFlows.length} flux capitaux` : ''),
           );
           if (warn) notes.push(warn);
+
+          // Change in NAV carries IBKR's own daily TWR: stored like the Performance report, so the
+          // page shows the official curve (deposits, withdrawals and transfers already excluded).
+          if (twrDaily.length >= 2) {
+            const twrr = twrDaily.reduce((acc, p) => acc * (1 + p.returnPct / 100), 1) - 1;
+            const twrRes = await fetch('/api/twr-series', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                portfolioAccountId: account.id,
+                accountId: nav.accountId,
+                baseCurrency: nav.baseCurrency,
+                periodStart: twrDaily[0].date,
+                periodEnd: twrDaily[twrDaily.length - 1].date,
+                twrr,
+                points: twrDaily,
+              }),
+            });
+            const twrJson = await twrRes.json().catch(() => ({} as Record<string, unknown>));
+            if (!twrRes.ok) throw new Error((twrJson.error as string) || 'Erreur sauvegarde TWR journalier');
+            if (twrJson.series) setTwrSeries(dbToTwrSeries(twrJson.series as Record<string, unknown>));
+            notes.push(`TWR officiel IBKR : ${twrDaily.length} jours (${(twrr * 100).toFixed(1)} % sur la période)`);
+          }
           continue;
         }
 

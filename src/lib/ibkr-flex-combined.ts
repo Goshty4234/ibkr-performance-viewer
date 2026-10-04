@@ -1,4 +1,4 @@
-import type { CashFlow, DailyNavPoint, ParsedNavSeries } from './types';
+import type { CashFlow, DailyNavPoint, DailyTwrPoint, ParsedNavSeries } from './types';
 import {
   headerIndex,
   isNavReportDate,
@@ -23,11 +23,12 @@ export { isFlexCombinedCsv } from './flex-csv';
 export function parseFlexCombinedCsv(
   text: string,
   filename: string,
-): { nav: ParsedNavSeries; cashFlows: CashFlow[] } {
+): { nav: ParsedNavSeries; cashFlows: CashFlow[]; twrDaily: DailyTwrPoint[] } {
   const sections = scanFlexSections(text);
   const navSections = sections.filter((s) => s.kind === 'nav');
   const cashSections = sections.filter((s) => s.kind === 'cash');
   const transferSections = sections.filter((s) => s.kind === 'transfer');
+  const changeSections = sections.filter((s) => s.kind === 'changeNav');
 
   if (!navSections.length) {
     throw new Error(`Aucune section NAV dans ${filename}`);
@@ -148,6 +149,38 @@ export function parseFlexCombinedCsv(
     }
   }
 
+  // Change in NAV (Breakout by Day): IBKR's own daily TWR and, per day, the deposits, withdrawals and
+  // asset transfers it removed from that return. This is the exact source: when present it replaces
+  // the flows read from the other sections (same events, would otherwise be counted twice).
+  const twrDaily: DailyTwrPoint[] = [];
+  const changeFlows: CashFlow[] = [];
+  for (const section of changeSections) {
+    const headers = section.headers;
+    const col = (name: string) => headers.findIndex((h) => h.toLowerCase() === name);
+    const fromCol = col('fromdate');
+    const toCol = col('todate');
+    const twrCol = col('twr');
+    const flowCols = ['depositswithdrawals', 'assettransfers', 'internalcashtransfers'].map(col).filter((i) => i >= 0);
+    if (fromCol < 0 || toCol < 0 || twrCol < 0) continue;
+
+    for (const row of section.rows) {
+      const from = row[fromCol] ?? '';
+      const to = row[toCol] ?? '';
+      if (!isNavReportDate(to) || from !== to) continue; // daily rows only (period totals are skipped)
+      const date = parseReportDate(to);
+      twrDaily.push({ date, returnPct: parseNumber(row[twrCol]) });
+      const amount = flowCols.reduce((sum, i) => sum + parseNumber(row[i]), 0);
+      if (Math.abs(amount) > 0.005) {
+        changeFlows.push({ date, amount, description: 'Flux IBKR (Change in NAV)', isExternal: true });
+      }
+    }
+  }
+  twrDaily.sort((a, b) => a.date.localeCompare(b.date));
+  if (changeFlows.length || twrDaily.length) {
+    cashFlows.length = 0;
+    cashFlows.push(...changeFlows);
+  }
+
   return {
     nav: {
       accountId,
@@ -159,5 +192,6 @@ export function parseFlexCombinedCsv(
       points,
     },
     cashFlows,
+    twrDaily: twrDaily.length >= 2 ? twrDaily : [],
   };
 }

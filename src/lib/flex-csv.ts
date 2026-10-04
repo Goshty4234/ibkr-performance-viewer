@@ -44,7 +44,7 @@ export function headerIndex(headers: string[], ...needles: string[]): number {
   return -1;
 }
 
-export type FlexSectionKind = 'nav' | 'cash' | 'transfer';
+export type FlexSectionKind = 'nav' | 'cash' | 'transfer' | 'changeNav';
 
 export interface FlexSection {
   kind: FlexSectionKind;
@@ -59,6 +59,10 @@ export function classifyFlexHeader(headers: string[]): FlexSectionKind | null {
   }
   if (lower.includes('reportdate') && lower.includes('total') && lower.includes('stock')) {
     return 'nav';
+  }
+  // Change in NAV, one row per day: IBKR's own daily TWR plus every deposit/withdrawal/asset transfer.
+  if (lower.includes('todate') && lower.includes('endingvalue') && lower.includes('twr')) {
+    return 'changeNav';
   }
   // Transfers (ACATS / FOP / internal): shares moving in or out of the account with no cash leg.
   if (lower.includes('direction') && (lower.includes('positionamountinbase') || lower.includes('positionamount'))) {
@@ -95,5 +99,5 @@ export function scanFlexSections(text: string): FlexSection[] {
 
 export function isFlexCombinedCsv(text: string): boolean {
   const kinds = new Set(scanFlexSections(text).map((s) => s.kind));
-  return kinds.has('nav') && kinds.has('cash');
+  return kinds.has('nav') && (kinds.has('cash') || kinds.has('changeNav') || kinds.has('transfer'));
 }

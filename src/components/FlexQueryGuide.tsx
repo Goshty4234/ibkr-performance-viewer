@@ -3,7 +3,7 @@ import styles from './FlexQueryGuide.module.css';
 
 /**
  * Step-by-step recipe for the IBKR Flex Query the importer reads (field names match
- * src/lib/flex-csv.ts and ibkr-flex-combined.ts: a NAV block and a Cash Transactions block,
+ * src/lib/flex-csv.ts and ibkr-flex-combined.ts: a NAV block and a Change in NAV block,
  * CSV, one column-header row per block, rows starting with the account id).
  */
 
@@ -43,8 +43,8 @@ export default function FlexQueryGuide({ defaultOpen = false, prominent = false 
       <div className={styles.body}>
         <p className={styles.lead}>
           Suis exactement ce guide : il te donne <b>quoi cocher</b> (✔) et <b>quoi laisser décoché</b> (✘).
-          Un seul fichier suffit pour un compte, avec trois sections : la valeur du compte jour par jour,
-          tes dépôts/retraits en argent, et tes transferts de titres.
+          Un seul fichier suffit pour un compte, avec deux sections : la valeur du compte jour par jour,
+          et le rendement officiel de IBKR (avec tous tes dépôts, retraits et transferts de titres, déjà exclus).
         </p>
 
         <h4>Étape 1 : ouvrir la création</h4>
@@ -55,15 +55,15 @@ export default function FlexQueryGuide({ defaultOpen = false, prominent = false 
           <li><b>Query Name</b> : écris ce que tu veux, par exemple <code>Performance Viewer</code>.</li>
         </ol>
 
-        <h4>Étape 2 : choisir les trois sections</h4>
-        <p>Dans la grande liste « Sections », coche seulement ces trois-là :</p>
+        <h4>Étape 2 : choisir les deux sections</h4>
+        <p>Dans la grande liste « Sections », coche seulement ces deux-là :</p>
         <ul className={styles.list}>
           <Yes>Net Asset Value (NAV) in Base</Yes>
-          <Yes>Cash Transactions</Yes>
-          <Yes note="(sans elle, un transfert de titres entre comptes ressemble à un gain énorme dans ton graphique)">Transfers</Yes>
-          <No note="(ce sont d’autres sections, avec des noms qui se ressemblent)">Change in NAV, Cash Report, Trades, Open Positions, Statement of Funds, etc.</No>
+          <Yes note="(c’est elle qui donne le rendement exact et tous les transferts de titres)">Change in NAV</Yes>
+          <No note="(pas besoin : Change in NAV contient déjà les dépôts, retraits et transferts)">Cash Transactions, Transfers</No>
+          <No note="(ce sont d’autres sections, avec des noms qui se ressemblent)">Cash Report, Trades, Open Positions, Statement of Funds, etc.</No>
         </ul>
-        <p>Chaque section cochée s’ouvre avec ses propres options : voir les étapes 3, 4 et 5.</p>
+        <p>Chaque section cochée s’ouvre avec ses propres options : voir les étapes 3 et 4.</p>
 
         <h4>Étape 3 : section « Net Asset Value (NAV) in Base »</h4>
         <p>Ne clique <b>pas</b> sur « Select All ». Coche un par un :</p>
@@ -80,50 +80,23 @@ export default function FlexQueryGuide({ defaultOpen = false, prominent = false 
           <No>Les deux cases du haut : « Exclude prior report date » et « Exclude long and short breakout » restent décochées</No>
         </ul>
 
-        <h4>Étape 4 : section « Cash Transactions »</h4>
-        <p>Tout en haut de la section, il y a deux groupes d’options :</p>
-        <ul className={styles.list}>
-          <Yes>Deposits &amp; Withdrawals</Yes>
-          <Yes>Detail</Yes>
-          <No>Summary</No>
-          <No>Dividends, Payment in Lieu, Withholding Tax, 871(m), Advisor Fees, Other Fees, Other Income, Carbon Credits, Bill Pay, Broker Interest, Broker Fees, Bond Interest, Price Adjustments, Commission Adjustments</No>
-        </ul>
-        <p>Puis, dans la liste des champs (toujours sans « Select All »), coche :</p>
+        <h4>Étape 4 : section « Change in NAV »</h4>
+        <p>Garde les options du haut par défaut. Dans la liste des champs (toujours sans « Select All »), coche :</p>
         <ul className={styles.list}>
           <Yes>Account ID</Yes>
-          <Yes>Currency</Yes>
-          <Yes>FX Rate To Base</Yes>
-          <Yes>Asset Class</Yes>
-          <Yes>Description</Yes>
-          <Yes note="(la date où le dépôt apparaît dans ta valeur : à prendre plutôt que Settle Date)">Report Date</Yes>
-          <No note="(ne pas le choisir à la place de Report Date : décalage de 1 à 2 jours)">Settle Date</No>
-          <Yes>Amount</Yes>
-          <Yes>Type</Yes>
-          <No>Tous les autres champs (Symbol, ISIN, Conid, Trade ID…)</No>
+          <Yes>From Date</Yes>
+          <Yes>To Date</Yes>
+          <Yes>Starting Value</Yes>
+          <Yes>Ending Value</Yes>
+          <Yes note="(le rendement journalier officiel de IBKR : le champ le plus important)">TWR</Yes>
+          <Yes note="(tes dépôts et retraits d’argent)">Deposits &amp; Withdrawals</Yes>
+          <Yes note="(les titres qui entrent ou sortent de ton compte)">Asset Transfers</Yes>
+          <Yes note="(les transferts d’argent entre tes comptes)">Internal Cash Transfers</Yes>
+          <No>Tous les autres champs (Mtm, Realized, Dividends, Commissions, Interest…)</No>
         </ul>
+        <p><small>Avec « Breakout by Day » à Yes (étape 5), IBKR écrit une ligne par jour, c’est ce qu’il faut.</small></p>
 
-        <h4>Étape 5 : section « Transfers »</h4>
-        <p>
-          Elle sert aux titres qui entrent ou sortent de ton compte sans argent (transfert ACATS, FOP, entre tes comptes).
-          Sans elle, la valeur du compte saute ce jour-là et ton rendement affiche un faux gain ou une fausse perte.
-          Garde les options du haut par défaut, puis (sans « Select All ») coche :
-        </p>
-        <ul className={styles.list}>
-          <Yes>Account ID</Yes>
-          <Yes>Currency</Yes>
-          <Yes>FX Rate To Base</Yes>
-          <Yes>Report Date</Yes>
-          <Yes>Date</Yes>
-          <Yes>Type</Yes>
-          <Yes note="(IN = titres reçus, OUT = titres envoyés)">Direction</Yes>
-          <Yes>Symbol</Yes>
-          <Yes>Position Amount</Yes>
-          <Yes note="(la valeur dans ta devise de base : indispensable)">Position Amount In Base</Yes>
-          <No>Tous les autres champs (Company, Account, Delivering Broker, Quantity, P&amp;L…)</No>
-        </ul>
-        <p><small>Si un nom est légèrement différent dans ta liste, prends celui qui s’en rapproche le plus. Si tu n’as jamais transféré de titres, la section reste simplement vide.</small></p>
-
-        <h4>Étape 6 : réglages du bas de la page</h4>
+        <h4>Étape 5 : réglages du bas de la page</h4>
         <p><b>Filters</b> : ne touche à rien (aucun symbole).</p>
         <table className={styles.table}>
           <tbody>
@@ -150,7 +123,7 @@ export default function FlexQueryGuide({ defaultOpen = false, prominent = false 
         </table>
         <p>Clique ensuite sur <b>Continue</b>, vérifie le résumé, puis <b>Create</b>.</p>
 
-        <h4>Étape 7 : lancer la requête et importer</h4>
+        <h4>Étape 6 : lancer la requête et importer</h4>
         <ol>
           <li>Dans la liste de tes Activity Flex Queries, clique sur la flèche <b>Run</b> de ta requête.</li>
           <li>Choisis le format <b>CSV</b> et la période voulue, puis <b>Run</b>. Pour plus d’un an d’historique, choisis une plage de dates personnalisée, ou lance plusieurs périodes.</li>

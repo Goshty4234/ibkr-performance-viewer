@@ -43,8 +43,22 @@ export async function GET(request: Request) {
   return NextResponse.json(data ? sanitizeNavForClient(dbToNavSeries(data)) : null);
 }
 
-function mergeCashFlows(existing: CashFlow[], incoming: CashFlow[]): CashFlow[] {
-  const map = cashFlowsToDateMap([...existing, ...incoming]);
+/**
+ * A new import replaces the flows already stored for the dates it covers (the period of the NAV it
+ * brings, or the span of the flows themselves): adding them up used to double every flow when the same
+ * file was imported twice, and kept flows recorded under a wrong date by an older import.
+ */
+function mergeCashFlows(
+  existing: CashFlow[],
+  incoming: CashFlow[],
+  span?: { start: string; end: string },
+): CashFlow[] {
+  const dates = incoming.map((f) => f.date).sort();
+  const start = span?.start ?? dates[0] ?? '';
+  const end = span?.end ?? dates[dates.length - 1] ?? '';
+  if (!start) return existing;
+  const kept = existing.filter((f) => f.date < start || f.date > end);
+  const map = cashFlowsToDateMap([...kept, ...incoming]);
   return [...map.entries()].map(([date, amount]) => ({
     date,
     amount,
@@ -113,8 +127,15 @@ export async function POST(request: Request) {
   const merged = incoming?.length
     ? mergeNavPoints(existing ? (existing.points as DailyNavPoint[]) : [], incoming)
     : (existing?.points as DailyNavPoint[]) ?? [];
-  const mergedFlows = incomingFlows?.length
-    ? mergeCashFlows(existing ? (existing.cash_flows as CashFlow[]) ?? [] : [], incomingFlows)
+  // A NAV import that lists no flows still replaces the stored ones for its period (stale dates).
+  const mergedFlows = incomingFlows && (incomingFlows.length || incoming?.length)
+    ? mergeCashFlows(
+        existing ? (existing.cash_flows as CashFlow[]) ?? [] : [],
+        incomingFlows,
+        incoming?.length
+          ? { start: incoming[0].date, end: incoming[incoming.length - 1].date }
+          : undefined,
+      )
     : sanitizeCashFlows((existing?.cash_flows as CashFlow[]) ?? []);
 
   if (!merged.length && !existing) {
