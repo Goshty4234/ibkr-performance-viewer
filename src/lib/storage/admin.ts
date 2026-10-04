@@ -73,13 +73,14 @@ export async function adminSetConfig(key: 'default_tier' | 'lean_quota_bytes' | 
   if (error) throw wrap(error);
 }
 
-export type PurgeScope = 'old' | 'results' | 'all';
+export type PurgeScope = 'old' | 'results' | 'all' | 'ibkr';
 
 export interface PurgeReport {
   files: number;
   runs: number;
   configs: number;
-  accounts: number;
+  /** Database rows of IBKR tracking removed (only by the explicit "ibkr" scope). */
+  ibkr: number;
 }
 
 /**
@@ -87,7 +88,9 @@ export interface PurgeReport {
  * then the rows; if a file batch fails nothing else is deleted. Local folders are never touched.
  *   old      unprotected runs older than `days`
  *   results  the whole run history: rows and result files (saved configurations, IBKR data and settings stay)
- *   all      results + saved configurations + IBKR data (the accounts themselves stay)
+ *   all      results + saved configurations + drafts. IBKR accounts and their data are NEVER part of it:
+ *            they are long-term tracking.
+ *   ibkr     only IBKR tracking data (statements, NAV, TWR, positions) of ONE named user; the accounts stay
  */
 export async function adminPurge(
   scope: PurgeScope,
@@ -106,6 +109,6 @@ export async function adminPurge(
   }
   const { data: rows, error: rowsErr } = await supabase.rpc('admin_purge_rows', args);
   if (rowsErr) throw wrap(rowsErr);
-  const r = (rows ?? {}) as { runs?: number; configs?: number; accounts?: number };
-  return { files: files.length, runs: r.runs ?? 0, configs: r.configs ?? 0, accounts: r.accounts ?? 0 };
+  const r = (rows ?? {}) as { runs?: number; configs?: number; ibkr?: number };
+  return { files: files.length, runs: r.runs ?? 0, configs: r.configs ?? 0, ibkr: r.ibkr ?? 0 };
 }

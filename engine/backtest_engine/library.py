@@ -1,7 +1,8 @@
 """The user's local library: everything the site would otherwise keep online, stored in the data home.
 
     <home>/backtests/<user>/<run>/   summary.json.gz, portfolio/<i>.json.gz, allocations/<i>.json.gz, meta.json
-    <home>/ibkr/<user>/              statements imported in the IBKR viewer (raw CSV files)
+    <home>/ibkr/<user>/              statements imported in the IBKR viewer (raw CSV files) and, per account, a
+                                     copy of what the site extracted from them (_donnees-compte-<id>.json)
     <home>/configs/<user>.json       backup copy of the saved configurations
 
 Plain files, no database: deleting a folder deletes exactly what it holds. The browser is the only
@@ -28,7 +29,16 @@ IBKR_FILE_RE = re.compile(r"^[^\\/:*?\"<>|\x00-\x1f]{1,180}$")
 CONFIG_FILE = "configs.json"
 MAX_FILE_BYTES = 400 * 1024 * 1024
 
-DEFAULT_SETTINGS: dict[str, Any] = {"auto_clean_days": 30, "keep_pinned": True}
+# Cleaning policy of the local folder. The folder is the person's own disk, so nothing is removed by
+# age unless they ask for it (auto_clean_days 0 = never); the one automatic rule is a free-space guard:
+# when the disk has less than min_free_gb free, the oldest unprotected runs are removed until it has.
+# Every run can be recomputed from its configuration, which stays online.
+DEFAULT_SETTINGS: dict[str, Any] = {"auto_clean_days": 0, "keep_pinned": True, "min_free_gb": 10}
+MAX_MIN_FREE_GB = 100_000
+# A run younger than this is never removed to make room (it was just computed).
+SPACE_CLEAN_MIN_AGE_S = 86400
+# What the site writes next to the raw statements: the long-term copy of an account, never cleaned.
+ACCOUNT_DATA_PREFIX = "_donnees-compte-"
 
 # Friendly names of the folders of the data home, for the usage report.
 FOLDER_LABELS: dict[str, str] = {
@@ -217,6 +227,9 @@ class Library:
                     s["auto_clean_days"] = raw["auto_clean_days"]
                 if isinstance(raw.get("keep_pinned"), bool):
                     s["keep_pinned"] = raw["keep_pinned"]
+                g = raw.get("min_free_gb")
+                if isinstance(g, int) and not isinstance(g, bool) and 0 <= g <= MAX_MIN_FREE_GB:
+                    s["min_free_gb"] = g
         except (OSError, ValueError):
             pass
         return s
@@ -228,6 +241,9 @@ class Library:
             s["auto_clean_days"] = max(0, min(3650, days))
         if isinstance(patch.get("keep_pinned"), bool):
             s["keep_pinned"] = patch["keep_pinned"]
+        gb = patch.get("min_free_gb")
+        if isinstance(gb, int) and not isinstance(gb, bool):
+            s["min_free_gb"] = max(0, min(MAX_MIN_FREE_GB, gb))
         _atomic_write(self.settings_path, json.dumps(s).encode("utf-8"))
         return s
 
@@ -300,7 +316,9 @@ class Library:
             freed += size
         return {"removed": removed, "freed": freed}
 
-    def clean_ibkr(self, user: str | None = None) -> dict[str, int]:
+    def clean_ibkr(self, user: str | None = None, keep_account_data: bool = True) -> dict[str, int]:
+        """Removes the raw statements. The per-account data copies are kept unless asked otherwise: they
+        are what lets a person recover an account after the online data was lost."""
         base = self.home / "ibkr"
         removed = freed = 0
         try:
@@ -308,10 +326,19 @@ class Library:
         except OSError:
             return {"removed": 0, "freed": 0}
         for t in targets:
-            size, n = dir_size(t)
-            if n:
-                shutil.rmtree(t, ignore_errors=True)
-                removed += n
+            try:
+                files = [p for p in t.iterdir() if p.is_file()]
+            except OSError:
+                continue
+            for p in files:
+                if keep_account_data and p.name.startswith(ACCOUNT_DATA_PREFIX):
+                    continue
+                try:
+                    size = p.stat().st_size
+                    p.unlink()
+                except OSError:
+                    continue
+                removed += 1
                 freed += size
         return {"removed": removed, "freed": freed}
 
@@ -335,13 +362,65 @@ class Library:
                     continue
         return {"removed": removed, "freed": freed}
 
-    def auto_clean(self, now: float | None = None) -> dict[str, int] | None:
-        """The scheduled cleaning: runs older than the configured age; None when switched off."""
+    def free_bytes(self) -> int | None:
+        try:
+            return shutil.disk_usage(self.home).free
+        except OSError:
+            return None
+
+    def clean_for_space(
+        self,
+        min_free_bytes: int,
+        keep_pinned: bool = True,
+        now: float | None = None,
+        free_fn: Any = None,
+    ) -> dict[str, int]:
+        """Removes the oldest unprotected runs, one at a time, until the disk has `min_free_bytes` free.
+        Runs younger than a day are left alone. Does nothing when there is already enough room."""
+        now = time.time() if now is None else now
+        free_fn = free_fn or self.free_bytes
+        removed = freed = 0
+        if min_free_bytes <= 0:
+            return {"removed": 0, "freed": 0}
+        free = free_fn()
+        if free is None or free >= min_free_bytes:
+            return {"removed": 0, "freed": 0}
+        candidates: list[tuple[float, Path]] = []
+        for _u, d in self._iter_run_dirs(None):
+            meta = self._meta(d) or {}
+            if keep_pinned and meta.get("pinned") is True:
+                continue
+            age = self._run_age_s(d, now)
+            if age < SPACE_CLEAN_MIN_AGE_S:
+                continue
+            candidates.append((age, d))
+        for _age, d in sorted(candidates, key=lambda c: -c[0]):
+            size, _ = dir_size(d)
+            shutil.rmtree(d, ignore_errors=True)
+            removed += 1
+            freed += size
+            free = free_fn()
+            if free is None or free >= min_free_bytes:
+                break
+        return {"removed": removed, "freed": freed}
+
+    def auto_clean(self, now: float | None = None, free_fn: Any = None) -> dict[str, int] | None:
+        """The scheduled cleaning: runs older than the configured age (when set), then the free-space guard.
+        None when both are switched off."""
         s = self.settings()
-        if s["auto_clean_days"] <= 0:
+        if s["auto_clean_days"] <= 0 and s["min_free_gb"] <= 0:
             return None
         with self._lock:
-            return self.clean_runs(s["auto_clean_days"], keep_pinned=s["keep_pinned"], now=now)
+            total = {"removed": 0, "freed": 0}
+            if s["auto_clean_days"] > 0:
+                r = self.clean_runs(s["auto_clean_days"], keep_pinned=s["keep_pinned"], now=now)
+                total["removed"] += r["removed"]
+                total["freed"] += r["freed"]
+            if s["min_free_gb"] > 0:
+                r = self.clean_for_space(int(s["min_free_gb"] * 1e9), keep_pinned=s["keep_pinned"], now=now, free_fn=free_fn)
+                total["removed"] += r["removed"]
+                total["freed"] += r["freed"]
+            return total
 
 
 def start_auto_clean(lib: Library, interval_s: float = 6 * 3600, first_delay_s: float = 30.0) -> threading.Event:

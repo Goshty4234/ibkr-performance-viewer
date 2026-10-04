@@ -1,6 +1,6 @@
 import { isGuest } from '@/lib/guest';
 import { createClient } from '@/lib/supabase/client';
-import { localAvailable, localGetIbkr, localPutConfigs, localPutIbkr } from './local-library';
+import { localAvailable, localDeleteIbkr, localGetIbkr, localListStatements, localPutConfigs, localPutIbkr, type LocalFileInfo } from './local-library';
 
 /**
  * Copies to the local folder what lives online, so the folder is a complete copy of the account:
@@ -16,6 +16,37 @@ export async function mirrorIbkrFile(file: File, text?: string): Promise<void> {
   } catch {
     /* mirror only */
   }
+}
+
+async function sessionUid(): Promise<string | null> {
+  if (isGuest() || !localAvailable()) return null;
+  try {
+    const { data: { session } } = await createClient().auth.getSession();
+    return session?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** The statements (CSV) kept in the local folder, oldest first; empty when no local engine answers. */
+export async function listLocalStatements(): Promise<LocalFileInfo[]> {
+  const uid = await sessionUid();
+  return uid ? localListStatements(uid) : [];
+}
+
+/** One local statement as a File, ready for the normal import. */
+export async function readLocalStatement(name: string): Promise<File | null> {
+  const uid = await sessionUid();
+  if (!uid) return null;
+  const blob = await localGetIbkr(uid, name);
+  return blob ? new File([blob], name, { type: 'text/csv' }) : null;
+}
+
+/** An account deleted by its owner also loses its local data copy (the raw statements stay: they are the person's files). */
+export async function removeAccountDataLocal(accountId: string): Promise<void> {
+  const uid = await sessionUid();
+  if (uid) await localDeleteIbkr(uid, accountFile(accountId));
+  lastWritten.delete(accountId);
 }
 
 let accountTimer: ReturnType<typeof setTimeout> | null = null;

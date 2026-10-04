@@ -19,6 +19,9 @@ interface Props {
   navPoints: DailyNavPoint[];
   rangeStart: string;
   rangeEnd: string;
+  /** The tab last used on this account (saved with its view settings). */
+  initialTab?: Tab;
+  onTabChange?: (tab: Tab) => void;
 }
 
 type Tab = 'repartition' | 'evolution' | 'positions' | 'transactions';
@@ -56,8 +59,8 @@ function Stat({ label, value, sub, cls }: { label: string; value: string; sub?: 
   );
 }
 
-export default function HoldingsPanel({ holdings, navPoints, rangeStart, rangeEnd }: Props) {
-  const [tab, setTab] = useState<Tab>('repartition');
+export default function HoldingsPanel({ holdings, navPoints, rangeStart, rangeEnd, initialTab, onTabChange }: Props) {
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'repartition');
   const cur = holdings.baseCurrency;
   const lastIdx = useMemo(() => {
     const i = dayIndexAtOrBefore(holdings, rangeEnd);
@@ -133,7 +136,7 @@ export default function HoldingsPanel({ holdings, navPoints, rangeStart, rangeEn
       <div className={styles.tabs} role="tablist">
         {tabs.map(([k, label]) => (
           <button key={k} type="button" role="tab" aria-selected={tab === k}
-            className={`${styles.tab} ${tab === k ? styles.tabOn : ''}`} onClick={() => setTab(k)}>
+            className={`${styles.tab} ${tab === k ? styles.tabOn : ''}`} onClick={() => { setTab(k); onTabChange?.(k); }}>
             {label}
           </button>
         ))}

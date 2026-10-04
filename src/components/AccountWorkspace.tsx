@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { parseIbkrCsv } from '@/lib/ibkr';
@@ -41,7 +41,7 @@ import {
   type TwrrDataQuality,
 } from '@/lib/performance';
 import type { ChartBrushSelection } from '@/lib/chart-range';
-import { analyzeTimeline, clampDateRange, effectiveTimelineBounds } from '@/lib/timeline';
+import { analyzeTimeline, applyDatePreset, clampDateRange, effectiveTimelineBounds } from '@/lib/timeline';
 import type {
   BenchmarkSymbol,
   DatePreset,
@@ -67,7 +67,8 @@ import HoldingsPanel from './HoldingsPanel';
 import YearlyReturnsChart from './YearlyReturnsChart';
 import TimelineStatus from './TimelineStatus';
 import FileUpload from './FileUpload';
-import { mirrorAccountDataSoon, mirrorIbkrFile, readAccountDataLocal } from '@/lib/storage/mirror';
+import { listLocalStatements, mirrorAccountDataSoon, mirrorIbkrFile, readAccountDataLocal, readLocalStatement } from '@/lib/storage/mirror';
+import type { AccountViewPrefs } from '@/lib/account-view-prefs';
 import styles from './AccountWorkspace.module.css';
 
 interface Props {
@@ -86,15 +87,23 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [comparisonBenchmarks, setComparisonBenchmarks] = useState<BenchmarkSymbol[]>(['SPY']);
-  const [comparisonAccountIds, setComparisonAccountIds] = useState<string[]>([]);
-  const [comparisonBacktests, setComparisonBacktests] = useState<BacktestPick[]>([]);
+  // View settings saved with the account: they follow the person from one computer to the next.
+  const initialPrefs: AccountViewPrefs = initialAccount.viewPrefs ?? {};
+  const [comparisonBenchmarks, setComparisonBenchmarks] = useState<BenchmarkSymbol[]>(
+    (initialPrefs.benchmarks as BenchmarkSymbol[] | undefined) ?? ['SPY'],
+  );
+  const [comparisonAccountIds, setComparisonAccountIds] = useState<string[]>(initialPrefs.accountIds ?? []);
+  const [comparisonBacktests, setComparisonBacktests] = useState<BacktestPick[]>(initialPrefs.backtests ?? []);
   const [allAccounts, setAllAccounts] = useState<PortfolioAccount[]>([]);
-  const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
+  const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set(initialPrefs.hidden ?? []));
+  const [holdingsTab, setHoldingsTab] = useState<AccountViewPrefs['holdingsTab']>(initialPrefs.holdingsTab);
+  const presetToRestore = useRef<DatePreset | null>(initialPrefs.preset ?? null);
+  const savedPrefs = useRef<string | null>(null);
+  const [localCsvs, setLocalCsvs] = useState<string[] | null>(null);
   const [chartBrush, setChartBrush] = useState<ChartBrushSelection | null>(null);
   const [rangeStart, setRangeStart] = useState('');
   const [rangeEnd, setRangeEnd] = useState('');
-  const [activePreset, setActivePreset] = useState<DatePreset | null>('MAX');
+  const [activePreset, setActivePreset] = useState<DatePreset | null>(initialPrefs.preset === undefined ? 'MAX' : initialPrefs.preset);
   const [multiChartData, setMultiChartData] = useState<MultiSeriesChartPoint[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
   const [twrrQuality, setTwrrQuality] = useState<TwrrDataQuality | null>(null);
@@ -194,6 +203,67 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
 
   useEffect(() => { reloadData(); }, [reloadData]);
 
+  // Compared accounts that no longer exist are dropped from the selection.
+  useEffect(() => {
+    if (allAccounts.length === 0) return;
+    setComparisonAccountIds((ids) => {
+      const kept = ids.filter((id) => allAccounts.some((a) => a.id === id));
+      return kept.length === ids.length ? ids : kept;
+    });
+  }, [allAccounts]);
+
+  // View settings are saved with the account a moment after each change (the first settled state is the baseline).
+  useEffect(() => {
+    if (loading || localFallback !== null) return;
+    const prefs: AccountViewPrefs = {
+      benchmarks: comparisonBenchmarks,
+      accountIds: comparisonAccountIds,
+      backtests: comparisonBacktests,
+      hidden: [...hiddenSeries].sort(),
+      preset: activePreset,
+      holdingsTab,
+    };
+    const snapshot = JSON.stringify(prefs);
+    if (savedPrefs.current === null) {
+      savedPrefs.current = snapshot;
+      return;
+    }
+    if (snapshot === savedPrefs.current) return;
+    const timer = setTimeout(() => {
+      fetch('/api/accounts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: account.id, viewPrefs: prefs }),
+      })
+        .then((res) => { if (res.ok) savedPrefs.current = snapshot; })
+        .catch(() => { /* a preference: never interrupts the page */ });
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [loading, localFallback, account.id, comparisonBenchmarks, comparisonAccountIds, comparisonBacktests, hiddenSeries, activePreset, holdingsTab]);
+
+  // After a loss of the online data: the statements still kept in the local folder can be imported again.
+  useEffect(() => {
+    if (loading || uploading) return;
+    const empty = !navSeries && !holdings && !twrSeries && statements.length === 0;
+    if (!empty || localFallback !== null || isPendingIbkrId(account.ibkrAccountId)) {
+      setLocalCsvs(null);
+      return;
+    }
+    let cancelled = false;
+    listLocalStatements().then((files) => { if (!cancelled) setLocalCsvs(files.length ? files.map((f) => f.name) : null); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [loading, uploading, navSeries, holdings, twrSeries, statements.length, localFallback, account.ibkrAccountId]);
+
+  async function importFromLocalFolder() {
+    if (!localCsvs?.length) return;
+    const files: File[] = [];
+    for (const name of localCsvs) {
+      const f = await readLocalStatement(name);
+      if (f) files.push(f);
+    }
+    if (files.length) await handleFiles(files, { skipOtherAccounts: true });
+  }
+
   // Local copy of what was extracted from the CSVs (the raw files are copied on import).
   useEffect(() => {
     if (localFallback !== null || (!navSeries && !twrSeries && !holdings)) return;
@@ -266,6 +336,16 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
   useEffect(() => {
     if (!effectiveBounds) return;
     if (!rangeStart || !rangeEnd) {
+      const wanted = presetToRestore.current;
+      presetToRestore.current = null;
+      if (wanted && wanted !== 'MAX') {
+        const r = applyDatePreset(wanted, effectiveBounds);
+        const clamped = clampDateRange(r.start, r.end, effectiveBounds);
+        setRangeStart(clamped.start);
+        setRangeEnd(clamped.end);
+        setActivePreset(wanted);
+        return;
+      }
       setRangeStart(effectiveBounds.min);
       setRangeEnd(effectiveBounds.max);
       setActivePreset('MAX');
@@ -488,12 +568,13 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
     };
   }, [chartBrush, rangeStart, rangeEnd, timelineHealth]);
 
-  async function handleFiles(files: FileList) {
+  async function handleFiles(files: FileList | File[], opts: { skipOtherAccounts?: boolean } = {}) {
     setUploading(true);
     setError(null);
     setNotice(null);
     const errs: string[] = [];
     const notes: string[] = [];
+    let otherAccount = 0;
 
     try {
     for (const file of Array.from(files)) {
@@ -663,10 +744,14 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
           notes.push(`Activity Statement ${formatStatementPeriod(parsed)} importé`);
         }
       } catch (e) {
-        errs.push(`${file.name}: ${e instanceof Error ? e.message : 'erreur'}`);
+        const msg = e instanceof Error ? e.message : 'erreur';
+        // Re-importing from the local folder: statements of another account are simply skipped.
+        if (opts.skipOtherAccounts && /ne correspond pas à ce compte/.test(msg)) otherAccount += 1;
+        else errs.push(`${file.name}: ${msg}`);
       }
     }
 
+    if (otherAccount > 0) notes.push(`${otherAccount} fichier(s) d’un autre compte ignoré(s)`);
     await reloadData();
     if (notes.length) setNotice(notes.join(' · '));
     if (errs.length) setError(errs.join(' · '));
@@ -788,6 +873,15 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
         <div className={styles.notice}>
           Base en ligne injoignable : affichage de la copie locale de ce compte
           {localFallback ? ` (enregistrée le ${localFallback.slice(0, 10)})` : ''}. Les imports ne fonctionneront qu&apos;une fois la connexion revenue.
+        </div>
+      )}
+      {localCsvs && localCsvs.length > 0 && !uploading && (
+        <div className={styles.notice}>
+          Ce compte est vide en ligne, mais {localCsvs.length} relevé(s) CSV sont conservés dans le dossier du moteur sur ce PC.{' '}
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => void importFromLocalFolder()}>
+            Réimporter depuis le dossier local
+          </button>
+          <small> Seuls les fichiers qui correspondent à ce compte sont importés. Tes réglages de vue sont déjà conservés.</small>
         </div>
       )}
       {notice && <div className={styles.notice}>{notice}</div>}
@@ -1014,6 +1108,8 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
               navPoints={navSeries.points}
               rangeStart={rangeStart}
               rangeEnd={rangeEnd}
+              initialTab={holdingsTab}
+              onTabChange={setHoldingsTab}
             />
           )}
 

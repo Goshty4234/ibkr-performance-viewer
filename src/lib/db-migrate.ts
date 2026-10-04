@@ -71,6 +71,13 @@ export async function ensureTwrSeriesTable(): Promise<boolean> {
   return ok;
 }
 
+/** Colonne accounts.view_prefs (réglages de la page d'un compte, suivent la personne d'un PC à l'autre). */
+export async function ensureViewPrefsColumn(): Promise<boolean> {
+  return runSql(
+    `alter table public.accounts add column if not exists view_prefs jsonb not null default '{}'::jsonb`,
+  );
+}
+
 /** Colonne accounts.analysis_start_lock */
 export async function ensureAnalysisStartLockColumn(): Promise<boolean> {
   return runSql(

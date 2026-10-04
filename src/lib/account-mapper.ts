@@ -1,3 +1,4 @@
+import { sanitizeViewPrefs } from './account-view-prefs';
 import type { PortfolioAccount } from './types';
 
 export const PENDING_IBKR_PREFIX = 'pending:';
@@ -31,6 +32,7 @@ export function dbToAccount(row: Record<string, unknown>): PortfolioAccount {
     displayName: (row.display_name ?? row.displayName) as string,
     notes: ((row.notes as string) ?? '') || '',
     analysisStartLock: (row.analysis_start_lock ?? row.analysisStartLock ?? null) as string | null,
+    viewPrefs: sanitizeViewPrefs(row.view_prefs ?? row.viewPrefs),
     created_at: (row.created_at ?? row.createdAt) as string,
     updated_at: (row.updated_at ?? row.updatedAt) as string,
     statementCount:

@@ -106,6 +106,7 @@ returns jsonb language sql stable security definer set search_path = '' as $$
         union all select pg_column_size(t.*) from public.twr_series t where t.user_id = auth.uid()
         union all select pg_column_size(t.*) from public.accounts t where t.user_id = auth.uid()
         union all select pg_column_size(t.*) from public.user_settings t where t.user_id = auth.uid()
+        union all select pg_column_size(t.*) from public.holdings_series t where t.user_id = auth.uid()
       ) x),
     'runs', (select count(*) from public.backtest_runs where user_id = auth.uid()),
     'configs', (select count(*) from public.backtest_portfolios where user_id = auth.uid())
@@ -159,6 +160,7 @@ begin
         union all select user_id, pg_column_size(t.*) from public.twr_series t
         union all select user_id, pg_column_size(t.*) from public.accounts t
         union all select user_id, pg_column_size(t.*) from public.user_settings t
+        union all select user_id, pg_column_size(t.*) from public.holdings_series t
       ) x group by user_id),
     files as (
       select (storage.foldername(name))[1] uid, sum((metadata ->> 'size')::bigint)::bigint bytes, count(*) n
@@ -222,14 +224,16 @@ end $$;
 -- Storage API, which also frees the underlying objects; SQL deletes would only drop the metadata).
 --   scope: 'old'      unpinned runs older than p_days
 --          'results'  every run result (pinned included)
---          'all'      every run result + saved configurations + IBKR data
+--          'all'      every run result + saved configurations + drafts (NEVER the IBKR accounts and their data)
+--          'ibkr'     the IBKR tracking data of ONE named user (accounts stay); only this scope touches it
 -- p_user null = every user.
 create or replace function public.admin_purge_files(p_scope text, p_user uuid default null, p_days int default null)
 returns text[] language plpgsql stable security definer set search_path = '' as $$
 declare names text[];
 begin
   if not public.is_admin() then raise exception 'forbidden' using errcode = '42501'; end if;
-  if p_scope not in ('old', 'results', 'all') then raise exception 'invalid scope'; end if;
+  if p_scope not in ('old', 'results', 'all', 'ibkr') then raise exception 'invalid scope'; end if;
+  if p_scope = 'ibkr' then return '{}'::text[]; end if; -- IBKR data lives in database rows, not in stored files
   if p_scope = 'old' then
     if p_days is null or p_days < 0 then raise exception 'days required'; end if;
     select coalesce(array_agg(distinct o.name), '{}') into names
@@ -252,10 +256,22 @@ end $$;
 -- Step 2: delete the rows. Never touches auth users or their tier settings.
 create or replace function public.admin_purge_rows(p_scope text, p_user uuid default null, p_days int default null)
 returns jsonb language plpgsql security definer set search_path = '' as $$
-declare runs_n int := 0; cfg_n int := 0; acc_n int := 0;
+declare runs_n int := 0; cfg_n int := 0; ibkr_n int := 0; n int := 0;
 begin
   if not public.is_admin() then raise exception 'forbidden' using errcode = '42501'; end if;
-  if p_scope not in ('old', 'results', 'all') then raise exception 'invalid scope'; end if;
+  if p_scope not in ('old', 'results', 'all', 'ibkr') then raise exception 'invalid scope'; end if;
+
+  -- IBKR tracking is long-term data: only this explicit scope touches it, for one named user.
+  -- The accounts themselves (name, start lock, view settings) always stay.
+  if p_scope = 'ibkr' then
+    if p_user is null then raise exception 'user required'; end if;
+    delete from public.statements where user_id = p_user;     get diagnostics n = row_count; ibkr_n := ibkr_n + n;
+    delete from public.nav_series where user_id = p_user;     get diagnostics n = row_count; ibkr_n := ibkr_n + n;
+    delete from public.twr_series where user_id = p_user;     get diagnostics n = row_count; ibkr_n := ibkr_n + n;
+    delete from public.holdings_series where user_id = p_user; get diagnostics n = row_count; ibkr_n := ibkr_n + n;
+    return jsonb_build_object('runs', 0, 'configs', 0, 'accounts', 0, 'ibkr', ibkr_n);
+  end if;
+
   if p_scope = 'old' then
     if p_days is null or p_days < 0 then raise exception 'days required'; end if;
     delete from public.backtest_runs
@@ -266,15 +282,14 @@ begin
   end if;
   get diagnostics runs_n = row_count;
   if p_scope = 'all' then
+    -- runs, saved configurations and drafts; NOT the IBKR accounts and their data
     delete from public.backtest_portfolios where (p_user is null or user_id = p_user);
     get diagnostics cfg_n = row_count;
-    delete from public.accounts where (p_user is null or user_id = p_user); -- cascades statements, nav, twr
-    get diagnostics acc_n = row_count;
     update public.user_settings
       set backtest_workspace = null, backtest_workspace_at = null, allocation_values = null
       where (p_user is null or user_id = p_user);
   end if;
-  return jsonb_build_object('runs', runs_n, 'configs', cfg_n, 'accounts', acc_n);
+  return jsonb_build_object('runs', runs_n, 'configs', cfg_n, 'accounts', 0, 'ibkr', 0);
 end $$;
 
 -- Internal helpers (effective_*, used_result_bytes, cfg_text) are NOT granted: callable only from the

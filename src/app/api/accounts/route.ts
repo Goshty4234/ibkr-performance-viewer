@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
-import { ensureAnalysisStartLockColumn } from '@/lib/db-migrate';
+import { ensureAnalysisStartLockColumn, ensureViewPrefsColumn } from '@/lib/db-migrate';
+import { sanitizeViewPrefs } from '@/lib/account-view-prefs';
 import { dbToAccount, PENDING_IBKR_PREFIX } from '@/lib/account-mapper';
 import { maskAccountForClient } from '@/lib/privacy';
 import { randomUUID } from 'crypto';
@@ -102,7 +103,7 @@ export async function PATCH(request: Request) {
   const id = body.id as string;
   if (!id) return NextResponse.json({ error: 'ID requis' }, { status: 400 });
 
-  const updates: Record<string, string | null> = { updated_at: new Date().toISOString() };
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (body.displayName) updates.display_name = body.displayName.trim();
   if (body.notes !== undefined) updates.notes = body.notes;
 
@@ -110,6 +111,11 @@ export async function PATCH(request: Request) {
     await ensureAnalysisStartLockColumn();
     const raw = body.analysisStartLock as string | null;
     updates.analysis_start_lock = raw && String(raw).trim() ? String(raw).trim().slice(0, 10) : null;
+  }
+
+  if (body.viewPrefs !== undefined) {
+    await ensureViewPrefsColumn();
+    updates.view_prefs = sanitizeViewPrefs(body.viewPrefs);
   }
 
   const { data, error } = await supabase
@@ -120,7 +126,13 @@ export async function PATCH(request: Request) {
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    const missing = /view_prefs/.test(error.message);
+    return NextResponse.json(
+      { error: missing ? 'Colonne view_prefs manquante — exécutez supabase/data-governance.sql dans Supabase' : error.message },
+      { status: missing ? 503 : 500 },
+    );
+  }
   return NextResponse.json(maskAccountForClient(dbToAccount(data)));
 }
 

@@ -1,3 +1,5 @@
+import type { AccountViewPrefs } from './account-view-prefs';
+
 export interface PortfolioAccount {
   id: string;
   user_id: string;
@@ -6,6 +8,8 @@ export interface PortfolioAccount {
   notes: string;
   /** Date plancher pour l'analyse — l'historique avant est ignoré */
   analysisStartLock?: string | null;
+  /** View settings of the account page, saved with the account (follow the person across computers). */
+  viewPrefs?: AccountViewPrefs;
   created_at: string;
   updated_at: string;
   statementCount?: number;

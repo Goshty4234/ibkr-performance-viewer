@@ -23,11 +23,12 @@ const MB = 1_000_000;
 const SCOPE_LABEL: Record<PurgeScope, string> = {
   old: 'les résultats de plus de N jours',
   results: 'tout l’historique de runs (garde configurations et IBKR)',
-  all: 'TOUT (runs, configurations, données IBKR)',
+  all: 'TOUT sauf Comptes IBKR (runs, configurations, brouillons)',
+  ibkr: 'les données IBKR (relevés, NAV, TWR, positions ; les comptes restent)',
 };
 
 function report(r: PurgeReport): string {
-  return `${r.files} fichier(s), ${r.runs} run(s)${r.configs ? `, ${r.configs} configuration(s)` : ''}${r.accounts ? `, ${r.accounts} compte(s) IBKR` : ''} supprimé(s).`;
+  return `${r.files} fichier(s), ${r.runs} run(s)${r.configs ? `, ${r.configs} configuration(s)` : ''}${r.ibkr ? `, ${r.ibkr} ligne(s) de suivi IBKR` : ''} supprimé(s).`;
 }
 
 export default function AdminPanel({ selfId }: { selfId: string }) {
@@ -72,8 +73,8 @@ export default function AdminPanel({ selfId }: { selfId: string }) {
 
   /** Several users one by one when the administrator is left out, a single call otherwise. */
   async function purge(scope: PurgeScope, only?: AdminUser): Promise<string> {
-    const total: PurgeReport = { files: 0, runs: 0, configs: 0, accounts: 0 };
-    const add = (r: PurgeReport) => { total.files += r.files; total.runs += r.runs; total.configs += r.configs; total.accounts += r.accounts; };
+    const total: PurgeReport = { files: 0, runs: 0, configs: 0, ibkr: 0 };
+    const add = (r: PurgeReport) => { total.files += r.files; total.runs += r.runs; total.configs += r.configs; total.ibkr += r.ibkr; };
     const onProgress = (d: number, t: number) => setProgress(`${d}/${t} fichiers supprimés…`);
     if (only) add(await adminPurge(scope, { userId: only.id, days, onProgress }));
     else if (includeSelf) add(await adminPurge(scope, { userId: null, days, onProgress }));
@@ -88,6 +89,7 @@ export default function AdminPanel({ selfId }: { selfId: string }) {
     const what = scope === 'old' ? `les résultats non protégés de plus de ${days} jour(s)` : SCOPE_LABEL[scope];
     if (!confirm(`Supprimer en ligne ${what} ${who} ?\n\nLes dossiers locaux des utilisateurs ne sont pas touchés. Action définitive.`)) return;
     if (scope === 'all' && prompt('Tape PURGER pour confirmer la purge complète.')?.trim() !== 'PURGER') return;
+    if (scope === 'ibkr' && prompt('Les données de suivi IBKR de cet utilisateur seront perdues (il devra réimporter ses CSV). Tape IBKR pour confirmer.')?.trim() !== 'IBKR') return;
     void act(`p-${scope}-${only?.id ?? 'all'}`, () => purge(scope, only));
   }
 
@@ -128,7 +130,7 @@ export default function AdminPanel({ selfId }: { selfId: string }) {
           <h2 className={styles.sectionTitle}>Base de données</h2>
           <div className={styles.bigNumber}>{fmtPct(dbPct)}<small>{fmtBytes(ov.db_bytes)} sur {fmtBytes(ov.db_limit)}</small></div>
           <Meter used={ov.db_bytes} total={ov.db_limit} />
-          <p className={styles.faint}>Configurations, fiches de runs, données IBKR, réglages (inclut le système de Supabase).</p>
+          <p className={styles.faint}>Configurations, fiches de runs, données IBKR (dont les positions), réglages (inclut le système de Supabase).</p>
         </section>
         <section className={`card ${styles.section}`}>
           <h2 className={styles.sectionTitle}>Stockage de fichiers</h2>
@@ -177,7 +179,10 @@ export default function AdminPanel({ selfId }: { selfId: string }) {
 
       <section className={`card ${styles.section}`}>
         <h2 className={styles.sectionTitle}>Purges</h2>
-        <p className={styles.muted}>Elles visent le stockage en ligne. Les dossiers sur les PC des utilisateurs ne sont jamais touchés (chacun a son propre nettoyage automatique).</p>
+        <p className={styles.muted}>
+          Elles visent le stockage en ligne. Les dossiers sur les PC des utilisateurs ne sont jamais touchés (chacun gère son propre espace disque).
+          Le suivi Comptes IBKR (valeur, TWR, flux, positions) n’est jamais inclus dans une purge globale : seul le bouton « Effacer IBKR » d’un utilisateur précis peut le supprimer.
+        </p>
         <div className={styles.fieldRow}>
           <label className={styles.check}>
             <input type="checkbox" checked={includeSelf} onChange={(e) => setIncludeSelf(e.target.checked)} />
@@ -203,7 +208,7 @@ export default function AdminPanel({ selfId }: { selfId: string }) {
           </div>
           <div className={styles.dangerItem}>
             <h3>Purge complète</h3>
-            <p className={styles.muted}>Supprime tout : historique, configurations sauvegardées, brouillons, données IBKR. Les comptes (connexion) et leurs niveaux restent.</p>
+            <p className={styles.muted}>Supprime l’historique, les configurations sauvegardées et les brouillons. Les comptes IBKR et leurs données, les connexions et les niveaux restent.</p>
             <button type="button" className="btn btn-danger btn-sm" disabled={!!busy} onClick={() => askPurge('all')}>Purge complète…</button>
           </div>
         </div>
@@ -321,8 +326,13 @@ function UserRow({ u, self, share, leanDefault, busy, onSave, onPurge }: {
             Vider runs
           </button>
           {!u.is_admin && (
-            <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => onPurge('all')} title="Supprime tout ce que cet utilisateur a enregistré (le compte reste)">
+            <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => onPurge('all')} title="Supprime les runs, configurations et brouillons de cet utilisateur (ses comptes IBKR restent)">
               Tout effacer
+            </button>
+          )}
+          {!u.is_admin && u.accounts > 0 && (
+            <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => onPurge('ibkr')} title="Supprime le suivi IBKR de cet utilisateur (relevés, NAV, TWR, positions). Ses comptes restent. Il devra réimporter ses CSV.">
+              Effacer IBKR
             </button>
           )}
         </div>

@@ -235,6 +235,8 @@ create unique index if not exists twr_series_portfolio_idx
 create index if not exists twr_series_user_id_idx on public.twr_series(user_id);
 
 alter table public.accounts add column if not exists analysis_start_lock date;
+-- View settings of the account page (comparisons, hidden curves, period): they follow the person across computers
+alter table public.accounts add column if not exists view_prefs jsonb not null default '{}'::jsonb;
 
 -- ---------------------------------------------------------------------------
 -- Backtester

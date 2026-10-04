@@ -347,6 +347,8 @@ export interface LocalStorageSettings {
   /** Runs older than this many days are deleted automatically (0 = never). */
   auto_clean_days: number;
   keep_pinned: boolean;
+  /** The engine removes the oldest unprotected runs when the disk has less than this many GB free (0 = never). */
+  min_free_gb?: number;
 }
 
 export interface LocalUsage {

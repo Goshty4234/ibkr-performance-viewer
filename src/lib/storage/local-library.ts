@@ -117,6 +117,37 @@ export async function localGetIbkr(uid: string, name: string): Promise<Blob | nu
   }
 }
 
+export async function localDeleteIbkr(uid: string, name: string): Promise<boolean> {
+  const c = localClient();
+  if (!c) return false;
+  try {
+    await c.libDelete(`ibkr/${uid}/${encodeURIComponent(name)}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface LocalFileInfo {
+  name: string;
+  bytes: number;
+  mtime: number;
+}
+
+/** The raw statements (CSV) kept in the local folder for this person, oldest first. */
+export async function localListStatements(uid: string): Promise<LocalFileInfo[]> {
+  const c = localClient();
+  if (!c) return [];
+  try {
+    const { files } = await c.libJson<{ files: LocalFileInfo[] }>(`ibkr/${uid}`);
+    return (files ?? [])
+      .filter((f) => /\.csv$/i.test(f.name))
+      .sort((a, b) => a.mtime - b.mtime || a.name.localeCompare(b.name));
+  } catch {
+    return [];
+  }
+}
+
 export async function localPutConfigs(uid: string, data: string): Promise<boolean> {
   const c = localClient();
   if (!c) return false;

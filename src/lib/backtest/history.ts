@@ -12,7 +12,7 @@ import {
   localPutRunFile,
   type LocalRun,
 } from '@/lib/storage/local-library';
-import { cloudFirst, getProfile, getResultSource, LEAN_DETAIL_MAX, LEAN_SUMMARY_MAX } from '@/lib/storage/profile';
+import { cloudFirst, getProfile, getResultSource, LEAN_DETAIL_MAX, LEAN_SUMMARY_MAX, type StorageProfile } from '@/lib/storage/profile';
 import { bundleResult, type LoadedResult, toBundle } from './result-data';
 import { packResult, readStoredJson } from './lean-codec';
 
@@ -418,30 +418,61 @@ export async function loadLatestOnce(kind: RunKind = 'backtest'): Promise<{ row:
 // Retention
 // ---------------------------------------------------------------------------------------------
 
+/** Online result files of an unprotected run are removed after this many days (light accounts only). */
 export const RETENTION_DAYS = 30;
+/** A run left without any result file (summary only) disappears from the database after this many days. */
+export const ROW_RETENTION_DAYS = 180;
 const CLEANUP_STAMP = 'backtester-history-cleanup';
 
 /**
- * Deletes unprotected runs older than RETENTION_DAYS from the online storage (at most once a day
- * per browser). The local library follows its own setting (automatic cleaning in the engine).
+ * The online expiry protects the shared database, so it only applies to light accounts. A full
+ * account and the administrator keep everything online until they purge it themselves.
+ * IBKR accounts are never concerned: they are long-term tracking, not run history.
+ */
+export function onlineExpiryApplies(profile: StorageProfile | null): boolean {
+  return !!profile && !profile.isAdmin && profile.tier !== 'full';
+}
+
+/**
+ * Online retention, at most once a day per browser, light accounts only:
+ *  1. unprotected runs older than RETENTION_DAYS lose their online result files; the row (configuration
+ *     and statistics) stays, so the run can be re-run or reopened as a summary;
+ *  2. rows that kept no file for ROW_RETENTION_DAYS are removed.
+ * The local library follows its own rule (the free-space guard of the engine).
  */
 export async function cleanupOldRuns(): Promise<number> {
   const today = new Date().toISOString().slice(0, 10);
   if (typeof window === 'undefined' || isGuest() || localStorage.getItem(CLEANUP_STAMP) === today) return 0;
+  const profile = await getProfile();
+  if (!onlineExpiryApplies(profile)) return 0;
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return 0;
-  const cutoff = new Date(Date.now() - RETENTION_DAYS * 86_400_000).toISOString();
+  const day = 86_400_000;
   const { data, error } = await supabase
     .from('backtest_runs')
     .select('id,result_path')
     .eq('pinned', false)
-    .lt('created_at', cutoff)
+    .not('result_path', 'is', null)
+    .lt('created_at', new Date(Date.now() - RETENTION_DAYS * day).toISOString())
     .limit(200);
   if (error) throw new Error(error.message);
-  for (const row of data ?? []) await deleteRun(row as Pick<BacktestRunRow, 'id' | 'result_path'>, { cloudOnly: true });
+  for (const row of data ?? []) {
+    await deleteRun(row as Pick<BacktestRunRow, 'id' | 'result_path'>, { cloudOnly: true, keepRow: true });
+  }
+  const { data: stale, error: staleErr } = await supabase
+    .from('backtest_runs')
+    .select('id,result_path')
+    .eq('pinned', false)
+    .is('result_path', null)
+    .lt('created_at', new Date(Date.now() - ROW_RETENTION_DAYS * day).toISOString())
+    .limit(200);
+  if (staleErr) throw new Error(staleErr.message);
+  for (const row of stale ?? []) {
+    await deleteRun(row as Pick<BacktestRunRow, 'id' | 'result_path'>, { cloudOnly: true });
+  }
   localStorage.setItem(CLEANUP_STAMP, today);
-  return data?.length ?? 0;
+  return (data?.length ?? 0) + (stale?.length ?? 0);
 }
 
 // ---------------------------------------------------------------------------------------------

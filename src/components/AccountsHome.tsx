@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { dbToAccount, formatAccountLinkLabel } from '@/lib/account-mapper';
 import type { PortfolioAccount } from '@/lib/types';
+import { removeAccountDataLocal } from '@/lib/storage/mirror';
 import FlexQueryGuide from './FlexQueryGuide';
 import styles from './AccountsHome.module.css';
 
@@ -136,6 +137,7 @@ export default function AccountsHome() {
       setError(j.error || 'Erreur suppression');
       return;
     }
+    void removeAccountDataLocal(acc.id);
     await loadAccounts();
   }
 

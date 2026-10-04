@@ -6,10 +6,20 @@ import { useEngineStore } from '@/lib/engine/store';
 import { localClient } from '@/lib/storage/local-library';
 import { fmtBytes, fmtPct, pct } from '@/lib/storage/format';
 import { getResultSource, type ResultSource, setResultSource, useStorageProfile } from '@/lib/storage/profile';
+import { onlineExpiryApplies, RETENTION_DAYS } from '@/lib/backtest/history';
 import { purgeMyOnlineResults } from '@/lib/storage/purge';
 import EngineUpdateButton from '../backtest/EngineUpdateButton';
 import Meter from './Meter';
 import styles from './Storage.module.css';
+
+const FREE_CHOICES = [
+  { v: 0, label: 'Désactivé' },
+  { v: 5, label: '5 Go' },
+  { v: 10, label: '10 Go' },
+  { v: 20, label: '20 Go' },
+  { v: 50, label: '50 Go' },
+  { v: 100, label: '100 Go' },
+];
 
 type Msg = { kind: 'ok' | 'err' | 'info'; text: string } | null;
 
@@ -73,7 +83,7 @@ export default function StoragePanel() {
     void run(`l-${target}`, async () => freed(await c.storagePurge({ target, older_than_days: older, keep_pinned: true, user: target === 'cache' || target === 'prices' ? null : uid })));
   }
 
-  async function saveSettings(patch: { auto_clean_days?: number; keep_pinned?: boolean }) {
+  async function saveSettings(patch: { auto_clean_days?: number; keep_pinned?: boolean; min_free_gb?: number }) {
     const c = localClient();
     if (!c) return;
     try {
@@ -156,13 +166,28 @@ export default function StoragePanel() {
                     {CLEAN_CHOICES.map((c) => <option key={c.v} value={c.v}>{c.label}</option>)}
                   </select>
                 </label>
+                <label className={styles.field}>
+                  Garder au moins … libres sur le disque
+                  <select
+                    value={usage.settings.min_free_gb ?? 10}
+                    onChange={(e) => void saveSettings({ min_free_gb: Number(e.target.value) })}
+                  >
+                    {!FREE_CHOICES.some((c) => c.v === (usage.settings.min_free_gb ?? 10)) && (
+                      <option value={usage.settings.min_free_gb ?? 10}>{usage.settings.min_free_gb ?? 10} Go</option>
+                    )}
+                    {FREE_CHOICES.map((c) => <option key={c.v} value={c.v}>{c.label}</option>)}
+                  </select>
+                </label>
                 <label className={styles.check}>
                   <input type="checkbox" checked={usage.settings.keep_pinned} onChange={(e) => void saveSettings({ keep_pinned: e.target.checked })} />
                   Garder les runs protégés
                 </label>
               </div>
               <p className={styles.faint} style={{ marginTop: '0.5rem' }}>
-                Le moteur nettoie tout seul, au démarrage puis toutes les 6 heures, tant qu’il tourne.
+                Ton dossier est ton disque : par défaut rien n’est supprimé à cause de l’âge. Seule la règle de l’espace libre agit : si le disque
+                passe sous le seuil, le moteur retire d’abord les runs non protégés les plus anciens (jamais ceux de moins d’un jour), jusqu’à retrouver la place.
+                Un run retiré se recalcule en relançant sa configuration, qui reste en ligne. Le moteur vérifie au démarrage puis toutes les 6 heures.
+                Les données de tes comptes IBKR ne sont jamais nettoyées automatiquement.
               </p>
 
               <h2 className={styles.sectionTitle} style={{ marginTop: '1.4rem' }}>Faire de la place maintenant</h2>
@@ -186,7 +211,7 @@ export default function StoragePanel() {
                   Vider les prix en cache
                 </button>
                 <button type="button" className="btn btn-secondary btn-sm" disabled={!!busy || !uid}
-                  onClick={() => localPurge('ibkr', null, 'Supprimer de ce PC les relevés IBKR (CSV) que tu as importés ? Tes données analysées en ligne ne sont pas touchées.')}>
+                  onClick={() => localPurge('ibkr', null, 'Supprimer de ce PC les relevés IBKR (CSV) que tu as importés ? Tes données analysées en ligne et la copie locale de tes comptes (_donnees-compte-…) ne sont pas touchées.')}>
                   Supprimer mes CSV IBKR
                 </button>
                 <button type="button" className="btn btn-danger btn-sm" disabled={!!busy || !uid}
@@ -256,7 +281,14 @@ export default function StoragePanel() {
               <h2 className={styles.sectionTitle} style={{ marginTop: '1.4rem' }}>Faire de la place en ligne</h2>
               <p className={styles.muted}>
                 Supprime seulement les fichiers de résultats en ligne. Tes configurations, tes fiches de runs et ton dossier local restent intacts.
-                Les runs non protégés de plus de 30 jours sont de toute façon retirés automatiquement.
+                {onlineExpiryApplies(profile)
+                  ? `Niveau Léger : les résultats lourds des runs non protégés de plus de ${RETENTION_DAYS} jours sont retirés automatiquement (la fiche reste, relance le run pour les retrouver).`
+                  : 'Niveau Complet : rien n’est retiré automatiquement en ligne, tu décides.'}
+              </p>
+              <p className={styles.note}>
+                <strong>Comptes IBKR :</strong> la valeur du compte, le TWR, les flux, les positions, les transactions et tes réglages de vue sont
+                conservés en ligne sans limite de durée. Aucune purge automatique ni purge de runs n’y touche. Une copie est aussi écrite dans
+                le dossier du moteur à chaque ouverture d’un compte. Sur un autre ordinateur tout est déjà là (c’est en ligne). Si la base en ligne était un jour vide, ouvre le compte : le site te propose de réimporter tes CSV depuis ce dossier.
               </p>
               <div className={styles.actions}>
                 <button type="button" className="btn btn-secondary btn-sm" disabled={!!busy}

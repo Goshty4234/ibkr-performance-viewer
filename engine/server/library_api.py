@@ -189,6 +189,7 @@ def storage_purge(body: PurgeBody, request: Request, user: str = Depends(current
 class SettingsBody(BaseModel):
     auto_clean_days: int | None = None
     keep_pinned: bool | None = None
+    min_free_gb: int | None = None
 
 
 @router.get("/storage/settings")

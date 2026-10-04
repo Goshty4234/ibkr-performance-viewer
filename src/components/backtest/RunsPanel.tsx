@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { RETENTION_DAYS } from '@/lib/backtest/history';
 import { isActive, type RunState, useBacktestStore } from '@/lib/backtest/store';
 import type { StoreReport } from '@/lib/engine/client';
 import styles from './Backtester.module.css';
@@ -165,7 +164,7 @@ export default function RunsPanel() {
       </div>
       {!collapsed && (
         <p className={styles.runsNote}>
-          Suivi des runs lancés depuis ce navigateur. Chaque run terminé est aussi enregistré dans l’Historique (compte connecté, gardé {RETENTION_DAYS} jours, ou plus s’il est épinglé).
+          Suivi des runs lancés depuis ce navigateur. Chaque run terminé est aussi enregistré dans l’Historique (compte connecté ; 🔒 garde un run en entier).
           ✕ retire seulement de cette liste, jamais de l’Historique.
         </p>
       )}

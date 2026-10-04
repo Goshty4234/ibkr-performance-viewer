@@ -123,7 +123,7 @@ class Usage(Base):
         self.assertEqual(u["total"], sum(f["bytes"] for f in u["folders"]))
         self.assertEqual(u["folders"][0]["name"], "marketdata")  # biggest first
         self.assertTrue(by["backtests"]["label"])
-        self.assertEqual(u["settings"], {"auto_clean_days": 30, "keep_pinned": True})
+        self.assertEqual(u["settings"], {"auto_clean_days": 0, "keep_pinned": True, "min_free_gb": 10})
 
 
 class Cleaning(Base):
@@ -157,6 +157,14 @@ class Cleaning(Base):
         self.assertEqual(self.lib.clean_ibkr(U), {"removed": 2, "freed": 3})
         self.assertEqual(self.lib.list_ibkr(U), [])
 
+    def test_clean_ibkr_keeps_account_data_copy(self) -> None:
+        self.lib.put_ibkr(U, "a.csv", b"1")
+        self.lib.put_ibkr(U, "_donnees-compte-abc.json", b'{"nav":1}')
+        self.assertEqual(self.lib.clean_ibkr(U), {"removed": 1, "freed": 1})
+        self.assertEqual([f["name"] for f in self.lib.list_ibkr(U)], ["_donnees-compte-abc.json"])
+        self.assertEqual(self.lib.clean_ibkr(U, keep_account_data=False)["removed"], 1)
+        self.assertEqual(self.lib.list_ibkr(U), [])
+
     def test_clean_cache_only_temp_folders(self) -> None:
         (self.home / "cache" / "portfolios").mkdir(parents=True)
         (self.home / "cache" / "portfolios" / "k.json").write_bytes(b"x" * 10)
@@ -172,27 +180,63 @@ class Cleaning(Base):
     def test_auto_clean_settings(self) -> None:
         self.make_run("old", age_days=40)
         self.make_run("new", age_days=1)
-        self.assertEqual(self.lib.auto_clean()["removed"], 1)
-        self.lib.set_settings({"auto_clean_days": 0})
+        self.assertEqual(self.lib.auto_clean(free_fn=lambda: 10**12)["removed"], 0)  # no age rule by default, plenty of room
+        self.assertEqual(len(self.lib.list_runs(U)), 2)
+        self.lib.set_settings({"auto_clean_days": 30})
+        self.assertEqual(self.lib.auto_clean(free_fn=lambda: 10**12)["removed"], 1)
+        self.lib.set_settings({"auto_clean_days": 0, "min_free_gb": 0})
         self.make_run("old2", age_days=400)
-        self.assertIsNone(self.lib.auto_clean())  # off
+        self.assertIsNone(self.lib.auto_clean())  # both off
         self.assertEqual(len(self.lib.list_runs(U)), 2)
         self.lib.set_settings({"auto_clean_days": 7, "keep_pinned": False})
-        self.assertEqual(self.lib.settings(), {"auto_clean_days": 7, "keep_pinned": False})
+        self.assertEqual(self.lib.settings(), {"auto_clean_days": 7, "keep_pinned": False, "min_free_gb": 0})
         self.assertEqual(self.lib.auto_clean()["removed"], 1)
 
     def test_settings_validation(self) -> None:
-        self.lib.set_settings({"auto_clean_days": 99999, "keep_pinned": "yes"})
-        self.assertEqual(self.lib.settings(), {"auto_clean_days": 3650, "keep_pinned": True})
-        self.lib.set_settings({"auto_clean_days": -5})
+        self.lib.set_settings({"auto_clean_days": 99999, "keep_pinned": "yes", "min_free_gb": 10**9})
+        self.assertEqual(self.lib.settings(), {"auto_clean_days": 3650, "keep_pinned": True, "min_free_gb": 100000})
+        self.lib.set_settings({"auto_clean_days": -5, "min_free_gb": -3})
         self.assertEqual(self.lib.settings()["auto_clean_days"], 0)
-        self.lib.set_settings({"auto_clean_days": True})  # bool is not a number of days
+        self.assertEqual(self.lib.settings()["min_free_gb"], 0)
+        self.lib.set_settings({"auto_clean_days": True, "min_free_gb": True})  # bool is not a number
         self.assertEqual(self.lib.settings()["auto_clean_days"], 0)
+        self.assertEqual(self.lib.settings()["min_free_gb"], 0)
         self.lib.settings_path.write_text("{broken", encoding="utf-8")
-        self.assertEqual(self.lib.settings(), {"auto_clean_days": 30, "keep_pinned": True})
+        self.assertEqual(self.lib.settings(), {"auto_clean_days": 0, "keep_pinned": True, "min_free_gb": 10})
+
+    def test_space_guard_removes_oldest_first_until_room(self) -> None:
+        self.make_run("a-oldest", age_days=90)
+        self.make_run("b-old", age_days=60)
+        self.make_run("c-pinned", age_days=200, pinned=True)
+        self.make_run("d-fresh", age_days=0.1)
+
+        def free_fn() -> int:  # each removed run frees 40 units
+            n_runs = len(self.lib.list_runs(U))
+            return 100 + (4 - n_runs) * 40
+
+        res = self.lib.clean_for_space(150, free_fn=free_fn)
+        self.assertEqual(res["removed"], 2)  # 100 -> 140 -> 180 (>=150): stops after the second
+        left = sorted(r["id"] for r in self.lib.list_runs(U))
+        self.assertEqual(left, ["c-pinned", "d-fresh"])  # pinned and fresh survive
+        # enough room already: nothing happens
+        self.assertEqual(self.lib.clean_for_space(10, free_fn=lambda: 500), {"removed": 0, "freed": 0})
+        # unknown free space: nothing happens
+        self.assertEqual(self.lib.clean_for_space(10**9, free_fn=lambda: None), {"removed": 0, "freed": 0})
+
+    def test_space_guard_never_touches_pinned_or_fresh_even_when_full(self) -> None:
+        self.make_run("p", age_days=100, pinned=True)
+        self.make_run("f", age_days=0.2)
+        self.assertEqual(self.lib.clean_for_space(10**12, free_fn=lambda: 1)["removed"], 0)
+        self.assertEqual(len(self.lib.list_runs(U)), 2)
+
+    def test_auto_clean_runs_space_guard(self) -> None:
+        self.make_run("old", age_days=50)
+        self.lib.set_settings({"min_free_gb": 1})
+        self.assertEqual(self.lib.auto_clean(free_fn=lambda: 0)["removed"], 1)
 
     def test_background_thread_cleans_and_stops(self) -> None:
         self.make_run("old", age_days=60)
+        self.lib.set_settings({"auto_clean_days": 30})
         stop = start_auto_clean(self.lib, interval_s=3600, first_delay_s=0.05)
         deadline = time.time() + 3
         while time.time() < deadline and self.lib.list_runs(U):

@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { deleteRun, getRunRow, listRuns, loadRun, renameRun, RETENTION_DAYS, setPinned, type BacktestRunRow } from '@/lib/backtest/history';
+import { deleteRun, getRunRow, listRuns, loadRun, onlineExpiryApplies, renameRun, RETENTION_DAYS, setPinned, type BacktestRunRow } from '@/lib/backtest/history';
+import { useStorageProfile } from '@/lib/storage/profile';
 import { saveRun } from '@/lib/backtest/library';
 import { normalizeImported } from '@/lib/backtest/portfolio';
 import { useBacktestStore } from '@/lib/backtest/store';
@@ -37,6 +38,7 @@ export default function HistoryView() {
   const replaceAll = useBacktestStore((s) => s.replaceAll);
   const setView = useBacktestStore((s) => s.setView);
   const currentRunId = useBacktestStore((s) => s.resultRunId);
+  const expiry = onlineExpiryApplies(useStorageProfile((s) => s.profile));
   const allocRunId = useBacktestStore((s) => s.alloc?.runId ?? null);
 
   const [rows, setRows] = useState<BacktestRunRow[] | null>(null);
@@ -190,7 +192,10 @@ export default function HistoryView() {
           <div className={styles.summaryMeta}>
             <span>
               Chaque run terminé est enregistré automatiquement : dans le dossier du moteur sur ce PC et/ou en ligne selon ton niveau
-              (page Stockage). En ligne, les runs non protégés sont retirés après {RETENTION_DAYS} jours :
+              (page Stockage).
+              {expiry
+                ? <> En ligne, les résultats lourds des runs non protégés sont retirés après {RETENTION_DAYS} jours (la configuration et le résumé restent, relance le run pour tout retrouver) : </>
+                : <> Tes runs ne sont jamais retirés automatiquement en ligne : </>}
               🔒 protège ceux à garder (ils ne peuvent plus être supprimés par erreur).
             </span>
           </div>
@@ -243,7 +248,7 @@ export default function HistoryView() {
             const isCurrent = row.id === (isAlloc ? allocRunId : currentRunId);
             const isOpen = expanded.has(row.id);
             const setup = setups[row.id];
-            const left = daysLeft(row);
+            const left = expiry ? daysLeft(row) : Number.POSITIVE_INFINITY;
             const isPicked = selected.has(row.id) && !row.pinned;
             const cls = [
               'card', styles.historyItem, isCurrent && styles.historyCurrent, isOpen && styles.historyExpanded,
@@ -311,11 +316,11 @@ export default function HistoryView() {
                   {isAlloc && <span className={`${styles.historyTag} ${styles.kindTag}`}>Allocations</span>}
                   {row.pinned ? (
                     <span className={`${styles.historyTag} ${styles.kindTag}`}>protégé</span>
-                  ) : left <= 7 && row.cloud !== false ? (
+                  ) : left <= 7 && row.cloud !== false && !!row.result_path ? (
                     <span className={`${styles.historyTag} ${styles.expiring}`} title="Protège-le pour le garder">
                       {row.local
                         ? (left <= 0 ? 'retiré d’internet aujourd’hui' : `retiré d’internet dans ${left} j`)
-                        : (left <= 0 ? 'supprimé aujourd’hui' : `supprimé dans ${left} j`)}
+                        : (left <= 0 ? 'résultats retirés aujourd’hui' : `résultats retirés dans ${left} j`)}
                     </span>
                   ) : null}
                   {row.local && (
