@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { EngineMode } from '@/lib/engine/prefs';
+import { FOLDER_URL } from '@/lib/engine/client';
 import { useEngineStore } from '@/lib/engine/store';
 import EngineSetup from './EngineSetup';
 import EngineUpdateButton, { engineStale } from './EngineUpdateButton';
@@ -78,6 +79,13 @@ export default function EngineStatus() {
             {prefs.mode === 'local' && 'Uniquement le moteur lancé sur ce PC.'}
             {prefs.mode === 'cloud' && 'Uniquement le moteur en ligne, même si ton PC est disponible.'}
           </p>
+          {prefs.mode !== 'cloud' && (
+            <p className={styles.hint}>
+              <a href={FOLDER_URL} title="Ouvre le dossier MomentumBacktesterEngine dans l’Explorateur (disponible une fois que le moteur a été lancé une première fois)">
+                📁 Ouvrir le dossier du moteur
+              </a>
+            </p>
+          )}
 
           {(status === 'ready' || reconnecting || restarting) && engine && (
             <div className={styles.info}>

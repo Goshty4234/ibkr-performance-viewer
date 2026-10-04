@@ -24,6 +24,8 @@ from . import ENGINE_ROOT, updater
 STATIC = ("Complete_Tickers", "TOP_20_SP500_COMPLETE_TEMPLATE.csv")
 # The site's « Lancer le moteur » button opens this link; Windows hands it to the package launcher.
 LAUNCH_SCHEME = "momentum-engine"
+# The site's « Ouvrir le dossier du moteur » button: Windows opens this package folder in Explorer.
+FOLDER_SCHEME = "momentum-engine-dossier"
 
 
 def register_launch_link() -> None:
@@ -43,12 +45,17 @@ def register_launch_link() -> None:
 
         comspec = os.environ.get("COMSPEC") or str(Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "cmd.exe")
         command = f'"{comspec}" /c ""{launcher}" --no-browser"'
-        base = rf"Software\Classes\{LAUNCH_SCHEME}"
-        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base) as key:
-            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "URL:Momentum Backtester - moteur")
-            winreg.SetValueEx(key, "URL Protocol", 0, winreg.REG_SZ, "")
-        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base + r"\shell\open\command") as key:
-            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, command)
+        explorer = str(Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "explorer.exe")
+        for scheme, title, cmd in (
+            (LAUNCH_SCHEME, "URL:Momentum Backtester - moteur", command),
+            (FOLDER_SCHEME, "URL:Momentum Backtester - dossier", f'"{explorer}" "{launcher.parent}"'),
+        ):
+            base = rf"Software\Classes\{scheme}"
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base) as key:
+                winreg.SetValueEx(key, "", 0, winreg.REG_SZ, title)
+                winreg.SetValueEx(key, "URL Protocol", 0, winreg.REG_SZ, "")
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base + r"\shell\open\command") as key:
+                winreg.SetValueEx(key, "", 0, winreg.REG_SZ, cmd)
     except OSError as exc:
         print(f"  (bouton « Lancer le moteur » du site non active : {exc})", flush=True)
 
