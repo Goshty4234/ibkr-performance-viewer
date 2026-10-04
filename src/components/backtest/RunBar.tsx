@@ -6,6 +6,7 @@ import { engineOutdated } from '@/lib/engine/client';
 import { useEngineStore } from '@/lib/engine/store';
 import EngineSetup from './EngineSetup';
 import EngineUpdate from './EngineUpdate';
+import EngineWait from './EngineWait';
 import RunHelp from './RunHelp';
 import { TIPS } from './tips';
 import styles from './Backtester.module.css';
@@ -128,8 +129,9 @@ export default function RunBar() {
             {activeCount} run{activeCount > 1 ? 's' : ''} en cours — tu peux en lancer d&apos;autres en parallèle.
           </span>
         )}
+        {engineStatus === 'detecting' && <EngineWait />}
         {engineStatus === 'offline' && <EngineSetup />}
-        {engineStatus === 'ready' && <EngineUpdate />}
+        {(engineStatus === 'ready' || engineStatus === 'detecting') && <EngineUpdate />}
         {launchError && <div className={styles.errorBox}>{launchError}</div>}
       </div>
       <RunHelp />

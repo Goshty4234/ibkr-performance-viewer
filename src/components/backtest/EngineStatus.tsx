@@ -10,7 +10,7 @@ import styles from './EngineStatus.module.css';
 const MODE_LABELS: Record<EngineMode, string> = { auto: 'Auto', local: 'Mon PC', cloud: 'En ligne' };
 
 export default function EngineStatus() {
-  const { status, engine, prefs, init, detect, setPrefs, refreshHealth, client } = useEngineStore();
+  const { status, engine, prefs, init, detect, setPrefs, refreshHealth, client, reconnecting, restarting } = useEngineStore();
   const [open, setOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [cacheMsg, setCacheMsg] = useState<string | null>(null);
@@ -37,7 +37,8 @@ export default function EngineStatus() {
   const label =
     status === 'ready' && engine
       ? engine.kind === 'local' ? 'Mon PC' : 'En ligne'
-      : status === 'offline' ? 'Moteur hors ligne' : 'Détection…';
+      : status === 'offline' ? 'Moteur hors ligne'
+        : restarting ? 'Redémarrage…' : reconnecting ? 'Reconnexion…' : 'Détection…';
   const dotClass =
     status === 'ready' && engine
       ? engine.kind === 'local' ? styles.dotLocal : styles.dotCloud
@@ -78,7 +79,7 @@ export default function EngineStatus() {
             {prefs.mode === 'cloud' && 'Uniquement le moteur en ligne, même si ton PC est disponible.'}
           </p>
 
-          {status === 'ready' && engine && (
+          {(status === 'ready' || reconnecting || restarting) && engine && (
             <div className={styles.info}>
               <div><span>Connecté à</span><b className="mono">{engine.url.replace(/^https?:\/\//, '')}</b></div>
               <div><span>Version</span><b className="mono">{engine.health.version}</b></div>

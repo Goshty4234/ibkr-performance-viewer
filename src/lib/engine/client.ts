@@ -37,7 +37,7 @@ export function engineOutdated(health: EngineHealth | null | undefined): boolean
   return !!health && (health.api ?? 0) < ENGINE_API;
 }
 
-const LOCAL_PROBE_MS = 700;
+const LOCAL_PROBE_MS = 1500;
 const CLOUD_PROBE_MS = 6000;
 const LOCAL_SEEN_KEY = 'engine-local-seen';
 

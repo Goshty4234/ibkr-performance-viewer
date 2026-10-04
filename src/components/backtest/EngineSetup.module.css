@@ -40,3 +40,27 @@
   font-size: 0.74rem;
   color: var(--orange);
 }
+
+.wait {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.spin {
+  flex: none;
+  width: 0.8rem;
+  height: 0.8rem;
+  border: 2px solid color-mix(in srgb, var(--text-muted) 35%, transparent);
+  border-top-color: var(--text-muted);
+  border-radius: 50%;
+  animation: engineWaitSpin 0.8s linear infinite;
+}
+
+@keyframes engineWaitSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}

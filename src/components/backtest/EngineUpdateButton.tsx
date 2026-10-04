@@ -28,6 +28,7 @@ export function engineStale(engine: { kind: string; health: EngineHealth } | nul
 export default function EngineUpdateButton() {
   const engine = useEngineStore((s) => s.engine);
   const client = useEngineStore((s) => s.client);
+  const restarting = useEngineStore((s) => s.restarting);
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState('');
   const autoChecked = useRef(false);
@@ -80,6 +81,8 @@ export default function EngineUpdateButton() {
     try {
       const target = useEngineStore.getState().engine?.health.update?.latest;
       setBusy('Redémarrage du moteur…');
+      // While restarting, the page keeps the engine and shows "reconnecting" instead of "no engine".
+      useEngineStore.getState().beginRestart();
       await client.updateApply();
       const t0 = Date.now();
       while (Date.now() - t0 < RESTART_LIMIT_MS) {
@@ -91,6 +94,7 @@ export default function EngineUpdateButton() {
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
     } finally {
+      useEngineStore.getState().endRestart();
       setBusy('');
     }
   }
@@ -115,10 +119,11 @@ export default function EngineUpdateButton() {
   const outdated = engineOutdated(health);
   const note = msg ? <b style={{ color: 'var(--orange)' }}> {msg}</b> : null;
 
-  if (busy) {
+  const working = busy || (restarting ? 'Redémarrage du moteur…' : '');
+  if (working) {
     return (
       <span style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <button type="button" className="btn btn-secondary btn-sm" disabled>⟳ {busy}</button>
+        <button type="button" className="btn btn-secondary btn-sm" disabled>⟳ {working}</button>
       </span>
     );
   }

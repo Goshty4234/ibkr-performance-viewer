@@ -6,6 +6,7 @@ import { engineOutdated } from '@/lib/engine/client';
 import { useEngineStore } from '@/lib/engine/store';
 import EngineSetup from '../EngineSetup';
 import EngineUpdate from '../EngineUpdate';
+import EngineWait from '../EngineWait';
 import styles from '../Backtester.module.css';
 
 /** Allocations' own launcher: one portfolio at a time, none of the full-backtest options. */
@@ -84,8 +85,9 @@ export default function AllocRunBar() {
         {activeRun && (
           <div className={styles.allocRunProgress}><span style={{ width: `${Math.max(4, progress)}%` }} /></div>
         )}
+        {engineStatus === 'detecting' && <EngineWait />}
         {engineStatus === 'offline' && <EngineSetup />}
-        {engineStatus === 'ready' && <EngineUpdate />}
+        {(engineStatus === 'ready' || engineStatus === 'detecting') && <EngineUpdate />}
         {!portfolios.length && <span className={styles.runNote}>Aucun portfolio : crée-en un dans Construire.</span>}
         {launchError && <div className={styles.errorBox}>{launchError}</div>}
       </div>

@@ -19,6 +19,12 @@ interface EngineState {
   engine: ResolvedEngine | null;
   client: EngineClient | null;
   lastCheck: number;
+  /** A known engine stopped answering (busy, restarting): kept, retried every second, not "offline" yet. */
+  reconnecting: boolean;
+  /** An engine update restart is running: the engine is expected to vanish for a while. */
+  restarting: boolean;
+  beginRestart: () => void;
+  endRestart: () => void;
   init: () => void;
   /** forceLocal: the user says an engine now runs on this PC (asks Chrome's permission once). */
   detect: (opts?: { quiet?: boolean; forceLocal?: boolean }) => Promise<ResolvedEngine | null>;
@@ -29,15 +35,21 @@ interface EngineState {
 
 const READY_RECHECK_MS = 20_000;
 const OFFLINE_RECHECK_MS = 5_000;
+/** An engine that answered before and goes quiet is retried this often... */
+const RETRY_MS = 1_000;
+/** ...for this long before the page concludes that no engine exists (an update restart waits longer). */
+const LOST_GRACE_MS = 20_000;
 
 let started = false;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let inflight: Promise<ResolvedEngine | null> | null = null;
+let lostSince = 0;
 
 export const useEngineStore = create<EngineState>((set, get) => {
   function schedule() {
     if (timer) clearTimeout(timer);
-    const delay = get().status === 'ready' ? READY_RECHECK_MS : OFFLINE_RECHECK_MS;
+    const s = get();
+    const delay = s.status === 'ready' ? READY_RECHECK_MS : s.reconnecting ? RETRY_MS : OFFLINE_RECHECK_MS;
     timer = setTimeout(() => {
       if (document.visibilityState === 'visible') void get().detect({ quiet: true });
       else schedule();
@@ -50,6 +62,15 @@ export const useEngineStore = create<EngineState>((set, get) => {
     engine: null,
     client: null,
     lastCheck: 0,
+    reconnecting: false,
+    restarting: false,
+
+    beginRestart() {
+      set({ restarting: true });
+    },
+    endRestart() {
+      set({ restarting: false });
+    },
 
     init() {
       if (started || typeof window === 'undefined') return;
@@ -89,14 +110,31 @@ export const useEngineStore = create<EngineState>((set, get) => {
       inflight = (async () => {
         const engine = await resolveEngine(get().prefs, opts?.forceLocal);
         const prev = get().engine;
-        const same = prev && engine && prev.url === engine.url;
-        set({
-          engine,
-          status: engine ? 'ready' : 'offline',
-          client: engine ? (same ? get().client : new EngineClient(engine.url, engine.health.auth_required)) : null,
-          lastCheck: Date.now(),
-        });
-        return engine;
+        if (engine) {
+          lostSince = 0;
+          const same = !!prev && prev.url === engine.url;
+          set({
+            engine,
+            status: 'ready',
+            reconnecting: false,
+            client: same ? get().client : new EngineClient(engine.url, engine.health.auth_required),
+            lastCheck: Date.now(),
+          });
+          return engine;
+        }
+        // A background re-check of an engine that answered a moment ago: it is usually busy or
+        // restarting (update). Keep it and retry quickly before saying that no engine exists.
+        if (prev && opts?.quiet) {
+          const now = Date.now();
+          if (!lostSince) lostSince = now;
+          if (get().restarting || now - lostSince < LOST_GRACE_MS) {
+            set({ status: 'detecting', reconnecting: true, lastCheck: now });
+            return null;
+          }
+        }
+        lostSince = 0;
+        set({ engine: null, client: null, status: 'offline', reconnecting: false, lastCheck: Date.now() });
+        return null;
       })();
       try {
         return await inflight;
