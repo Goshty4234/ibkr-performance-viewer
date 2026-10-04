@@ -37,7 +37,7 @@ if str(ENGINE_ROOT) not in sys.path:
 CONFIG_DIR = ENGINE_ROOT / "tests" / "parity" / "configs"
 BASELINE_DIR = HERE / "baseline"
 PRICES = HERE / "prices.zip"
-STORE = Path("marketdata") / "ticker_cache"
+STORE = Path("marketdata") / "price_history"
 END_DATE = "2026-09-30"
 DEAD_PROXY = "http://127.0.0.1:9"
 

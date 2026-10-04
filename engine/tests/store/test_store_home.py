@@ -1,7 +1,7 @@
 """The ticker list must not depend on the folder the engine was started from.
 
 Regression: right after a start (or an update restart) the engine's working directory is the package
-folder, and /store/tickers opened marketdata/ticker_cache relative to it: an empty store, "0 tickers",
+folder, and /store/tickers opened marketdata/price_history relative to it: an empty store, "0 tickers",
 until a run or a search switched the working directory to the data home.
 """
 
@@ -28,7 +28,7 @@ class StoreListIgnoresCwd(unittest.TestCase):
         self.env = os.environ.get("ENGINE_HOME")
         os.environ["ENGINE_HOME"] = str(self.home)
         days = pd.bdate_range("2024-01-02", periods=5)
-        store = diskcache.Cache(str(self.home / "marketdata" / "ticker_cache"))
+        store = diskcache.Cache(str(self.home / "marketdata" / "price_history"))
         store.set("AAPL_max_False", pd.DataFrame({"Close": [1.0, 2, 3, 4, 5], "Dividends": 0.0}, index=days))
         store.close()
 

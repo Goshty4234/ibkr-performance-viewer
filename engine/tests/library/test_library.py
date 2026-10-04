@@ -113,8 +113,8 @@ class Usage(Base):
     def test_usage_by_folder(self) -> None:
         self.make_run(R, payload=1000)
         self.lib.put_ibkr(U, "a.csv", b"x" * 500)
-        (self.home / "marketdata" / "ticker_cache").mkdir(parents=True)
-        (self.home / "marketdata" / "ticker_cache" / "SPY.pkl").write_bytes(b"z" * 4000)
+        (self.home / "marketdata" / "price_history").mkdir(parents=True)
+        (self.home / "marketdata" / "price_history" / "SPY.pkl").write_bytes(b"z" * 4000)
         u = self.lib.usage()
         by = {f["name"]: f for f in u["folders"]}
         self.assertEqual(by["marketdata"]["bytes"], 4000)

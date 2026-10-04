@@ -363,7 +363,7 @@ def _market_cap_scales(tickers: list[str], ctx: RunContext) -> dict:
     "minimum market cap" portfolio then ran unfiltered."""
     import diskcache
 
-    cache = diskcache.Cache("marketdata/ticker_info_cache")
+    cache = diskcache.Cache("marketdata/ticker_info_temp")
     keys = list(dict.fromkeys(k for k in (L._mcap_symbol_key(t) for t in tickers) if k and k != "CASH"))
     from . import quote_store
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -47,7 +48,12 @@ def engine_home() -> Path:
 
 
 # Folders of the data home, named for what they hold. Older versions used hidden-looking names.
-RENAMED_DIRS = {".jobs": "jobs", ".config": "config", ".cache": "cache", ".mc": "montecarlo", ".streamlit": "marketdata"}
+# Order matters: ".streamlit" becomes "marketdata" first, then the folders inside it are renamed.
+RENAMED_DIRS = {
+    ".jobs": "jobs", ".config": "config", ".cache": "cache", ".mc": "montecarlo", ".streamlit": "marketdata",
+    "marketdata/ticker_cache": "marketdata/price_history",
+    "marketdata/ticker_info_cache": "marketdata/ticker_info_temp",
+}
 
 DATA_README = """Dossier de donnees du moteur Momentum Backtester
 ===============================================
@@ -57,10 +63,12 @@ Tout ce que le moteur ecrit est ici. Supprime ce dossier = plus aucune trace
   backtests\\              tes resultats de backtest complets (un dossier par run, par compte)
   ibkr\\                    releves IBKR importes dans l'IBKR viewer (fichiers CSV)
   configs\\                 copie de sauvegarde de tes configurations
-  marketdata\\ticker_cache  historiques de prix des tickers (le plus gros)
-  marketdata\\quote_store   fiches Yahoo archivees (PE, capitalisation...)
-  marketdata\\sec_store     historique du nombre d'actions
-  marketdata\\ticker_info_cache  infos tickers (cache temporaire)
+  marketdata\\price_history  PERMANENT : historiques de prix des tickers (le plus gros). Rien ne
+                          l'efface tout seul ; il ne se refait que par retelechargement (lent,
+                          limites de Yahoo). A garder / copier. (Ancien nom : ticker_cache.)
+  marketdata\\quote_store   PERMANENT : fiches Yahoo archivees (PE, capitalisation...)
+  marketdata\\sec_store     PERMANENT : historique du nombre d'actions
+  marketdata\\ticker_info_temp  temporaire : infos tickers, se refait seul (ancien nom : ticker_info_cache)
   cache\\                    resultats de portfolios deja calcules (cache temporaire)
   jobs\\                     fichiers des backtests recents (supprimes apres quelques heures)
   montecarlo\\               fichiers temporaires des simulations Monte Carlo
@@ -89,12 +97,28 @@ def _merge_dir(src: Path, dst: Path) -> None:
         pass
 
 
+EMPTY_STORE_BYTES = 5 * 1024 * 1024
+
+
+def _dir_bytes(path: Path) -> int:
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+
+
 def migrate_layout(home: Path) -> None:
     """Renames the old folder names to the current ones (once) and refreshes the README."""
     for old, new in RENAMED_DIRS.items():
         try:
-            if (home / old).is_dir():
-                _merge_dir(home / old, home / new)
+            if not (home / old).is_dir():
+                continue
+            if "/" in old and (home / new).exists():
+                # Two disk caches cannot be merged file by file (their index is one database): the one
+                # a newer engine just created empty gives way to the real one; if both hold data, the
+                # old folder is left alone (nothing is lost, the new one is simply used).
+                if _dir_bytes(home / new) < EMPTY_STORE_BYTES:
+                    shutil.rmtree(home / new)
+                else:
+                    continue
+            _merge_dir(home / old, home / new)
         except OSError:
             pass
     try:
