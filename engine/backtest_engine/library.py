@@ -49,7 +49,7 @@ FOLDER_LABELS: dict[str, str] = {
     ".streamlit": "Anciens prix des tickers (sera déplacé vers marketdata)",
     "cache": "Résultats de portfolios déjà calculés (cache)",
     "jobs": "Backtests récents en cours/terminés (temporaire)",
-    "montecarlo": "Bases de rendements pour le Monte Carlo",
+    "montecarlo": "Monte Carlo (fichiers temporaires)",
     "Complete_Tickers": "Listes de tickers fournies avec le moteur",
     "config": "Réglages du moteur",
 }

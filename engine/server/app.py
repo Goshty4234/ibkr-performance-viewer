@@ -13,11 +13,10 @@
     POST   /fundamentals/pe      {tickers} -> trailing PE per ticker
     GET    /universe/{name}      sp500 | us ticker lists
     GET    /prices?ticker=&job=  close history (from the job snapshot when possible)
-    POST   /montecarlo           queue a Monte Carlo study (random universes) -> {id}
+    POST   /montecarlo           queue a Monte Carlo study (random draws of real stocks) -> {id}
     GET    /montecarlo/{id}      status / progress
-    GET    /montecarlo/{id}/result  gzip JSON distributions
+    GET    /montecarlo/{id}/result  gzip JSON (curves of every draw, distributions, head-to-head)
     DELETE /montecarlo/{id}      cancel
-    GET    /montecarlo/real-universe  how many stored tickers a bootstrap could resample
     POST   /update/check         portable engine: look for a newer release, download it in the background
     POST   /update/apply         portable engine: switch to the downloaded release and restart
 """
@@ -324,7 +323,8 @@ def cancel_job(job_id: str, request: Request, user: str = Depends(current_user))
 
 class McRequest(BaseModel):
     portfolios: Any = Field(..., description="Portfolio list (same format as /jobs)")
-    options: dict[str, Any] | None = None
+    options: dict[str, Any] | None = Field(None, description="Run options (same as /jobs)")
+    mc: dict[str, Any] | None = Field(None, description="Draws: universe, n_draws, n_pick, seed, start_date, end_date")
     label: str | None = None
 
 
@@ -335,36 +335,22 @@ def _mc(request: Request) -> McManager:
 @app.post("/montecarlo")
 def mc_create(body: McRequest, request: Request, user: str = Depends(current_user)) -> dict:
     from backtest_engine.config import normalize_portfolio_configs
-    from backtest_engine.mc.run import clean_options
-    from backtest_engine.mc.strategy import parse_strategy
+    from backtest_engine.montecarlo import clean_options
 
     portfolios = body.portfolios if isinstance(body.portfolios, list) else []
-    options = body.options or {}
     try:
-        o = clean_options(options)
+        mc = clean_options(body.mc)
         configs = normalize_portfolio_configs(portfolios)
-        for c in configs:  # fails fast on what cannot be simulated (e.g. fusion portfolios)
-            parse_strategy(c, o["risk_free"])
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(400, f"Invalid portfolio configuration: {exc}") from exc
     label = (body.label or "Monte Carlo : " + ", ".join(c["name"] for c in configs[:3]))[:200]
     try:
-        job = _mc(request).submit(user, portfolios, options, label)
+        job = _mc(request).submit(user, portfolios, body.options or {}, mc, label)
     except OverflowError as exc:
         raise HTTPException(429, str(exc)) from exc
     return _mc(request).describe(job)
-
-
-@app.get("/montecarlo/real-universe")
-def mc_real_universe(user: str = Depends(current_user)) -> dict:
-    from backtest_engine import price_store
-    from backtest_engine.mc.panel import MIN_ROWS
-
-    activate_engine_home()  # the ticker store is opened relative to the data home
-    rows = [r for r in price_store.list_stored() if (r.get("rows") or 0) >= MIN_ROWS]
-    return {"tickers": [r["ticker"] for r in rows], "min_rows": MIN_ROWS}
 
 
 @app.get("/montecarlo/{job_id}")

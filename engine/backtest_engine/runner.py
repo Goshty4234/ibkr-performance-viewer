@@ -18,7 +18,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from . import __version__, activate_engine_home, analytics
+from . import __version__, accel, activate_engine_home, analytics
 from . import yahoo as Y
 from .config import apply_date_range, normalize_portfolio_configs
 from .context import BacktestError, RunContext, RunOptions
@@ -534,6 +534,10 @@ def _attach_with_share_history(config, reindexed_data):
 
 
 L.attach_mcap_close_lookup = _attach_with_share_history
+
+# Numpy reads in the day loop of single_backtest (same results, see accel/).
+accel.install(_legacy_ma_crossings)
+_legacy_ma_crossings = accel.ma_crossings_impl(_legacy_ma_crossings)
 
 
 def _redistribute_excluded(today_weights_map: dict, excluded_assets: dict) -> dict:

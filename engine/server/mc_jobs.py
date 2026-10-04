@@ -1,5 +1,5 @@
-"""Monte Carlo jobs: one background thread per job (the simulation itself fans out to a process
-pool inside run_montecarlo). Results are kept in memory, gzip-compressed, for a few hours."""
+"""Monte Carlo jobs (real stocks): one background thread per job; the draws fan out to a process
+pool inside run_montecarlo. Results are kept in memory, gzip-compressed, for a few hours."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from .auth import is_guest
@@ -45,7 +46,7 @@ class McManager:
         for k in [k for k, j in self.jobs.items() if j.finished and now - j.finished > self.ttl_s]:
             self.jobs.pop(k, None)
 
-    def submit(self, user: str, portfolios: list[dict], options: dict[str, Any], label: str) -> McJob:
+    def submit(self, user: str, portfolios: list[dict], options: dict[str, Any], mc: dict[str, Any], label: str) -> McJob:
         with self.lock:
             self._sweep()
             active = [j for j in self.jobs.values() if j.user == user and j.status not in FINISHED]
@@ -53,7 +54,7 @@ class McManager:
                 raise OverflowError("Trop de simulations Monte Carlo en cours : attends qu’une se termine.")
             job = McJob(id=uuid.uuid4().hex[:12], user=user, label=label)
             self.jobs[job.id] = job
-        threading.Thread(target=self._run, args=(job, portfolios, options), daemon=True, name=f"mc-{job.id}").start()
+        threading.Thread(target=self._run, args=(job, portfolios, options, mc), daemon=True, name=f"mc-{job.id}").start()
         return job
 
     def get(self, job_id: str, user: str) -> McJob | None:
@@ -70,9 +71,10 @@ class McManager:
         return {"id": j.id, "label": j.label, "status": j.status, "progress": round(j.progress, 4),
                 "message": j.message, "error": j.error, "created": j.created, "finished": j.finished}
 
-    def _run(self, job: McJob, portfolios: list[dict], options: dict[str, Any]) -> None:
+    def _run(self, job: McJob, portfolios: list[dict], options: dict[str, Any], mc: dict[str, Any]) -> None:
         from backtest_engine import engine_home
-        from backtest_engine.mc.run import MonteCarloCancelled, clean_options, run_montecarlo
+        from backtest_engine.context import BacktestError
+        from backtest_engine.montecarlo import MonteCarloCancelled, run_montecarlo
 
         while not self.slots.acquire(timeout=0.5):
             if job.cancel.is_set():
@@ -80,29 +82,41 @@ class McManager:
                 return
         try:
             job.status, job.message = "running", "Préparation"
-            o = clean_options(options)
-            panel_path = None
-            if o["generator"] == "bootstrap":
-                from backtest_engine.mc.panel import load_panel_from_store
-
-                tick = (options or {}).get("bootstrap", {}).get("tickers") if isinstance(options, dict) else None
-                panel_path, rows, cols = load_panel_from_store(engine_home() / "montecarlo", tick)
-                job.message = f"Base réelle : {cols} actions, {rows} jours"
 
             def progress(p: float, msg: str) -> None:
                 job.progress, job.message = p, msg
 
-            res = run_montecarlo(portfolios, options, progress=progress, cancelled=job.cancel.is_set,
-                                 workers=self.settings.workers, panel_path=panel_path)
+            root = engine_home() / "montecarlo"
+            _clean_leftovers(root)
+            res = run_montecarlo(portfolios, options, mc, job_dir=root / job.id, progress=progress,
+                                 cancelled=job.cancel.is_set, workers=self.settings.workers)
             data = json.dumps(res, separators=(",", ":"), allow_nan=False).encode("utf-8")
             job.result_gz = gzip.compress(data, compresslevel=5)
             job.status, job.progress, job.message = "done", 1.0, "Terminé"
         except MonteCarloCancelled:
             job.status, job.message = "cancelled", "Annulé"
-        except ValueError as exc:
+        except (ValueError, BacktestError) as exc:
             job.status, job.error, job.message = "error", str(exc), "Erreur"
         except Exception as exc:  # noqa: BLE001
             job.status, job.error, job.message = "error", f"{type(exc).__name__}: {exc}", "Erreur"
         finally:
             job.finished = time.time()
             self.slots.release()
+
+
+def _clean_leftovers(root: Path) -> None:
+    """Snapshots of simulations interrupted by an engine stop, and the return bases of the former
+    synthetic Monte Carlo (*.npy): nothing reads them any more."""
+    import shutil
+
+    if not root.is_dir():
+        return
+    now = time.time()
+    for p in root.iterdir():
+        try:
+            if p.is_dir() and now - p.stat().st_mtime > 6 * 3600:
+                shutil.rmtree(p, ignore_errors=True)
+            elif p.is_file() and p.suffix == ".npy":
+                p.unlink()
+        except OSError:
+            pass

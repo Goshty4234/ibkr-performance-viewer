@@ -30,3 +30,11 @@
 .n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .base td { color: var(--text-muted); font-style: italic; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 0.45rem; }
+.inline { display: inline-flex; align-items: center; gap: 0.5rem; }
+.inline input { min-width: 0; flex: 1; }
+.textarea { width: 100%; font-family: var(--mono); font-size: 0.78rem; resize: vertical; }
+.clickable { cursor: pointer; }
+.hot td { background: rgba(77, 141, 255, 0.12); }
+.tickers { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 0.72rem; color: var(--text-muted); }
+.faint { color: var(--text-faint); font-size: 0.72rem; }
+.tall { max-height: 460px; }

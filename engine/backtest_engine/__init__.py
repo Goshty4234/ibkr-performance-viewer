@@ -10,7 +10,7 @@ __version__ = "1.0.0"
 # Contract between the site and the engine (endpoints, request and result formats). Bump it with
 # ENGINE_API in src/lib/engine/client.ts when the site needs something older engines lack: the
 # site then refuses to run on an older engine and offers its update.
-API_VERSION = 3
+API_VERSION = 4
 
 # Parallelism comes from worker processes. Multi-threaded BLAS would also
 # commit one buffer per core in every process (~1 GB each with 16 cores).
@@ -63,7 +63,7 @@ Tout ce que le moteur ecrit est ici. Supprime ce dossier = plus aucune trace
   marketdata\\ticker_info_cache  infos tickers (cache temporaire)
   cache\\                    resultats de portfolios deja calcules (cache temporaire)
   jobs\\                     fichiers des backtests recents (supprimes apres quelques heures)
-  montecarlo\\               bases de rendements reels pour le Monte Carlo
+  montecarlo\\               fichiers temporaires des simulations Monte Carlo
   config\\                   liste des adresses du site autorisees
   Complete_Tickers\\         listes de tickers fournies avec le moteur
 """

@@ -54,16 +54,12 @@ Exemple : fenêtres 365-30 à 50 %, 180-30 à 30 %, 120-30 à 20 %. Sur 365-30, 
 - [ ] Ajouter l'option dans le moteur (désactivée par défaut, pour que les anciens résultats et la non-régression ne bougent pas), dans l'éditeur de portfolio (avec infobulle), dans l'export / import JSON et dans le rapport.
 - [ ] Ajouter une configuration de test dans `engine/tests/regression` et comparer avec la pondération actuelle (rendement, drawdown, rotation).
 
-## 5. NOUVEAU — Monte Carlo : tester les configurations sur des marchés simulés
+## 5. Monte Carlo sur vraies actions — fait (4 octobre 2026)
 
-But : vérifier qu'une configuration (fenêtres, pondérations, filtres) est robuste et pas seulement chanceuse sur l'historique réel.
+Remplace l'ancien Monte Carlo à actions simulées. Chaque tirage prend N actions au hasard dans un univers réel (S&P 500 actuel, actions américaines, tickers des portfolios ou liste perso) et fait rouler tous les portfolios sur ces mêmes actions, comme un run normal (mêmes options : entrée S&P 500, market cap minimum, filtres…), plus une référence équipondérée. Résultat : toutes les courbes, le face-à-face par tirage (part des tirages gagnés, écart de CAGR), les distributions.
 
-- [ ] Générer des actions synthétiques (ex. 20 actions) aux comportements différents : tendance, volatilité, corrélations, krachs, retournements. Méthodes possibles : marche aléatoire (GBM), rééchantillonnage par blocs de vrais rendements (garde les krachs réels), changements de régime.
-- [ ] Graine aléatoire enregistrée : chaque simulation est reproductible.
-- [ ] Injecter ces séries dans le moteur sans Yahoo (comme les séries synthétiques de `Complete_Tickers`).
-- [ ] Lancer des centaines de backtests par configuration, en parallèle sur les workers du moteur, avec une limite de mémoire et de disque (ne pas garder le détail de chaque simulation, seulement les statistiques).
-- [ ] Résultats : distribution du CAGR, drawdown max, Sharpe (percentiles 5/50/95), probabilité de battre la référence (buy & hold équipondéré), comparaison côte à côte de plusieurs configurations.
-- [ ] Gros volumes : possibilité de les lancer sur GitHub Actions (comme le workflow `backtest.yml`).
+- [ ] Le lancer sur le S&P 500 (50 tirages × 30 actions) et vérifier le temps réel sur le PC.
+- [ ] Idées : biais de survivance (ajouter les compagnies sorties de l'indice si on trouve leurs prix), coûts de transaction, tirages stratifiés par secteur.
 
 ## 6. Rapport complet détaillé pour la section Allocations
 
@@ -97,6 +93,8 @@ Le moteur tourne aujourd'hui sur le PC de chacun (moteur portable). Un moteur en
 - [ ] Réparer `tests/parity/run_parity.py` (comparaison au code Streamlit d'origine) : ses enregistrements Yahoo datent d'avant la base de tickers, les 9 configurations plantent sur « Not recorded ».
 
 ## Rappels de fonctionnement
+
+- **Moteur accéléré** : `backtest_engine/accel/single_backtest_fast.py` est une copie de `single_backtest` (legacy) où seules les lectures de prix changent (tableaux numpy au lieu de `.loc` jour par jour). Si le fichier legacy est régénéré depuis Streamlit, reporter le changement dans la copie ; `ENGINE_LEGACY_LOOP=1` fait tourner l'ancienne fonction pour comparer. Le test de non-régression tourne à chaque publication du moteur ; `py -3.13 -m tests.montecarlo.test_real_draws` (depuis engine/) vérifie qu'un tirage du Monte Carlo égale un run normal.
 
 - Ne jamais lancer `next build` pendant que le serveur de dev tourne : vérifier avec `node node_modules\typescript\bin\tsc --noEmit -p .`.
 - Ne jamais modifier `engine/backtest_engine/legacy/*.py` à la main (fichiers générés).

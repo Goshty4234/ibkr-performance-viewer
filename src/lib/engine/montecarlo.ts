@@ -1,53 +1,36 @@
 import type { EngineClient } from './client';
+import type { PortfolioConfig, RunOptions } from './types';
 
-export interface McSynthetic {
-  market_mu: number;
-  rf: number;
-  market_vol: number;
-  beta_sd: number;
-  idio_vol: number;
-  idio_vol_dispersion: number;
-  alpha_sd: number;
-  alpha_halflife_days: number;
-  tail_df: number;
-  market_tail_df: number;
-  crisis_per_year: number;
-  crisis_days: number;
-  crisis_vol_mult: number;
-  crisis_drift: number;
-  extreme_per_year: number;
-  extreme_up_share: number;
-}
+/** Monte Carlo on real stocks: each draw takes `n_pick` tickers of the universe at random and runs
+ * every portfolio on exactly those stocks (a normal run), then the next draw takes others. */
+export type McUniverseSource = 'sp500' | 'us' | 'portfolios' | 'list';
 
 export interface McOptions {
-  n_sims: number;
-  n_assets: number;
-  years: number;
+  n_draws: number;
+  n_pick: number;
   seed: number;
-  generator: 'synthetic' | 'bootstrap';
-  synthetic: McSynthetic;
-  bootstrap: { block_days: number; demean: boolean };
-  cost_bps: number;
-  risk_free: number;
+  universe: { source: McUniverseSource; tickers: string[] };
+  start_date: string | null;
+  end_date: string | null;
+  baseline: boolean;
+  points: number;
 }
 
 export const MC_DEFAULTS: McOptions = {
-  n_sims: 300,
-  n_assets: 20,
-  years: 10,
+  n_draws: 50,
+  n_pick: 30,
   seed: 12345,
-  generator: 'synthetic',
-  synthetic: {
-    market_mu: 0.07, rf: 0.02, market_vol: 0.16, beta_sd: 0.3, idio_vol: 0.28, idio_vol_dispersion: 0.4,
-    alpha_sd: 0, alpha_halflife_days: 250, tail_df: 4, market_tail_df: 6, crisis_per_year: 0.3, crisis_days: 90,
-    crisis_vol_mult: 2.2, crisis_drift: -0.35, extreme_per_year: 0.02, extreme_up_share: 0.55,
-  },
-  bootstrap: { block_days: 21, demean: true },
-  cost_bps: 0,
-  risk_free: 0.02,
+  universe: { source: 'sp500', tickers: [] },
+  start_date: '2005-01-01',
+  end_date: null,
+  baseline: true,
+  points: 400,
 };
 
-export type McMetric = 'total_return' | 'cagr' | 'max_dd' | 'vol' | 'sharpe' | 'sortino' | 'calmar' | 'turnover' | 'avg_holdings' | 'cash_pct';
+/** Statistics per draw, in Construire's units (returns and drawdowns in %). */
+export type McStatKey =
+  | 'CAGR' | 'Total Return' | 'MaxDrawdown' | 'Volatility' | 'Sharpe' | 'Sortino' | 'UlcerIndex' | 'UPI' | 'Beta' | 'MWRR'
+  | 'Final Value (with)' | 'Final Value (no_additions)' | 'holdings' | 'cash';
 
 export interface McStat {
   n: number;
@@ -62,34 +45,49 @@ export interface McStat {
   p95: number | null;
 }
 
-export interface McProbabilities {
-  positive_cagr: number;
-  lost_money: number;
-  drawdown_over_50: number;
-  beats_baseline_cagr: number | null;
-  beats_baseline_sharpe: number | null;
-  smaller_drawdown_than_baseline: number | null;
-}
-
 export interface McSeries {
-  id: string;
   name: string;
   kind: 'portfolio' | 'baseline';
-  warnings: string[];
-  metrics: Record<McMetric, (number | null)[]>;
-  summary: Record<McMetric, McStat>;
+  stats: Record<McStatKey, (number | null)[]>;
+  summary: Record<McStatKey, McStat>;
   fan: Record<'p5' | 'p25' | 'p50' | 'p75' | 'p95', (number | null)[]>;
-  probabilities?: McProbabilities;
+  /** Value of the portfolio without contributions, 1 = start of the draw, on `dates`. */
+  curves: (number | null)[][];
+}
+
+export interface McPair {
+  a: number;
+  b: number;
+  n: number;
+  cagr_win: number | null;
+  sharpe_win: number | null;
+  drawdown_win: number | null;
+  /** CAGR of a minus CAGR of b, in points per year, over the draws. */
+  cagr_diff: McStat;
+}
+
+export interface McDraw {
+  draw: number;
+  tickers: string[];
+  start: string | null;
+  end: string | null;
+  error: string | null;
 }
 
 export interface McResult {
   format: number;
-  options: McOptions & { workers: number; chunks: number };
-  calendar: { eval_days: number; start: string; end: string; fan_dates: string[]; tdays_per_year: number };
-  series: McSeries[];
-  pairwise_cagr: { names: string[]; matrix: (number | null)[][] };
+  options: McOptions & { workers: number };
+  universe: { label: string; count: number; missing: string[]; stale: string[]; short: string[]; n_missing: number; n_stale: number; n_short: number };
+  window: { start: string; end: string };
+  dates: string[];
+  warnings: string[];
   elapsed_s: number;
-  universe_note: string;
+  busy_s: number;
+  series: McSeries[];
+  pairs: McPair[];
+  draws: McDraw[];
+  errors: { draw: number; portfolio?: string; error: string | null }[];
+  benchmark: { ticker: string; curve: (number | null)[] } | null;
 }
 
 export interface McJob {
@@ -101,8 +99,8 @@ export interface McJob {
   error: string | null;
 }
 
-export function mcSubmit(client: EngineClient, portfolios: unknown[], options: Partial<McOptions> & { bootstrap?: Record<string, unknown> }, label?: string): Promise<McJob> {
-  return client.text('/montecarlo', { method: 'POST', body: JSON.stringify({ portfolios, options, label }) }).then((t) => JSON.parse(t) as McJob);
+export function mcSubmit(client: EngineClient, portfolios: PortfolioConfig[], options: Partial<RunOptions>, mc: McOptions, label?: string): Promise<McJob> {
+  return client.text('/montecarlo', { method: 'POST', body: JSON.stringify({ portfolios, options, mc, label }) }).then((t) => JSON.parse(t) as McJob);
 }
 
 export function mcJob(client: EngineClient, id: string): Promise<McJob> {
@@ -117,12 +115,13 @@ export function mcResult(client: EngineClient, id: string): Promise<McResult> {
   return client.text(`/montecarlo/${id}/result`).then((t) => JSON.parse(t) as McResult);
 }
 
-export function mcRealUniverse(client: EngineClient): Promise<{ tickers: string[]; min_rows: number }> {
-  return client.text('/montecarlo/real-universe').then((t) => JSON.parse(t));
+/** Tickers typed or pasted in any format (spaces, commas, new lines, semicolons). */
+export function parseTickers(text: string): string[] {
+  return [...new Set(text.split(/[\s,;]+/).map((t) => t.trim().toUpperCase()).filter(Boolean))];
 }
 
 /** Histogram of several samples on shared bins (counts as % of each sample). */
-export function histogram(samples: (number | null)[][], bins = 40, clip = 0.01): { centers: number[]; shares: number[][] } {
+export function histogram(samples: (number | null)[][], bins = 30, clip = 0.01): { centers: number[]; shares: number[][] } {
   const all = samples.flat().filter((v): v is number => v !== null && Number.isFinite(v)).sort((a, b) => a - b);
   if (!all.length) return { centers: [], shares: samples.map(() => []) };
   const lo = all[Math.floor(all.length * clip)];
@@ -141,4 +140,9 @@ export function histogram(samples: (number | null)[][], bins = 40, clip = 0.01):
     return counts.map((c) => (n ? (100 * c) / n : 0));
   });
   return { centers, shares };
+}
+
+/** Pair (a, b) of the result, a and b being series indexes. */
+export function pairOf(result: McResult, a: number, b: number): McPair | undefined {
+  return result.pairs.find((p) => p.a === a && p.b === b);
 }
