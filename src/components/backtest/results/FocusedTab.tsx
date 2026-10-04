@@ -167,6 +167,34 @@ export default function FocusedTab({
         {!valid && <div className={styles.padded}>La date de début doit précéder la date de fin.</div>}
       </div>
 
+      {valid && (
+        <div className="card">
+          <div className={styles.cardHead}>
+            <div>
+              <div className={styles.cardTitle}>Métriques sur la période</div>
+              <div className={styles.cardSub}>{range.start} → {range.end}</div>
+            </div>
+          </div>
+          {error ? (
+            <div className={styles.padded}>{error}</div>
+          ) : (
+            <div className={styles.padded}>
+              <DataGrid
+                columns={columns}
+                rows={data ?? []}
+                rowKey={(r) => r.index}
+                maxHeight={620}
+                csvName={`analyse-ciblee-${range.start}-${range.end}`}
+                empty={loading ? 'Calcul…' : 'Aucun portfolio n’a assez de données sur cette période.'}
+              />
+              <ColumnDefinitions
+                columns={FOCUSED_COLUMNS.filter((c) => !essential || c.essential).map((c) => ({ label: c.label, title: FOCUSED_DEFINITIONS[c.key] }))}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {valid &&
         (cd ? (
           <div className={styles.chartStack}>
@@ -195,34 +223,6 @@ export default function FocusedTab({
         ) : (
           <div className={`card ${styles.loadingCard}`}>{charts.error ?? 'Préparation des graphiques…'}</div>
         ))}
-
-      {valid && (
-        <div className="card">
-          <div className={styles.cardHead}>
-            <div>
-              <div className={styles.cardTitle}>Métriques sur la période</div>
-              <div className={styles.cardSub}>{range.start} → {range.end}</div>
-            </div>
-          </div>
-          {error ? (
-            <div className={styles.padded}>{error}</div>
-          ) : (
-            <div className={styles.padded}>
-              <DataGrid
-                columns={columns}
-                rows={data ?? []}
-                rowKey={(r) => r.index}
-                maxHeight={620}
-                csvName={`analyse-ciblee-${range.start}-${range.end}`}
-                empty={loading ? 'Calcul…' : 'Aucun portfolio n’a assez de données sur cette période.'}
-              />
-              <ColumnDefinitions
-                columns={FOCUSED_COLUMNS.filter((c) => !essential || c.essential).map((c) => ({ label: c.label, title: FOCUSED_DEFINITIONS[c.key] }))}
-              />
-            </div>
-          )}
-        </div>
-      )}
     </>
   );
 }

@@ -10,6 +10,7 @@ import {
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
+  XAxis,
   YAxis,
 } from 'recharts';
 import { formatChartTooltipDate, formatShortDateRange } from '@/lib/dates';
@@ -359,6 +360,11 @@ export default function PerformanceChart({
                 syncMethod="value"
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                {/* Hidden date axis (takes no space; the dates are shown by the Drawdown chart below).
+                    Without it Recharts only builds an implicit index axis when at least one Line is
+                    drawn: with every series hidden the selection overlay then crashed ("Could not
+                    find xAxis by id 0"), and its date-based x1/x2 never resolved on an index axis. */}
+                <XAxis dataKey="date" hide />
                 {logAxis ? (
                   <YAxis
                     scale="log"
