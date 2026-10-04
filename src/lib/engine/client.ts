@@ -326,7 +326,15 @@ export class EngineClient {
     return this.request('/store/status', { method: 'POST', body: JSON.stringify({ tickers }) });
   }
 
-  storeTickers(): Promise<StoredTicker[]> {
+  /**
+   * The ticker store sits in folders relative to the engine's data folder. Engines released before the
+   * fix only moved there at their first request needing the legacy code, and this list is the one route
+   * that never did: asked first after a start or an update restart, it read an empty folder ("0 tickers")
+   * until a run or a search happened. An empty resolve makes any engine move there first (a few ms once
+   * done), so the list is right whatever engine version is installed.
+   */
+  async storeTickers(): Promise<StoredTicker[]> {
+    await this.resolveTickers([]).catch(() => undefined);
     return this.request('/store/tickers');
   }
 

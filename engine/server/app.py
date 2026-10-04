@@ -362,6 +362,7 @@ def mc_real_universe(user: str = Depends(current_user)) -> dict:
     from backtest_engine import price_store
     from backtest_engine.mc.panel import MIN_ROWS
 
+    activate_engine_home()  # the ticker store is opened relative to the data home
     rows = [r for r in price_store.list_stored() if (r.get("rows") or 0) >= MIN_ROWS]
     return {"tickers": [r["ticker"] for r in rows], "min_rows": MIN_ROWS}
 

@@ -157,6 +157,10 @@ def store_list() -> list[dict]:
     cap / PE."""
     from . import price_store, quote_store
 
+    # The stores are opened through paths relative to the data home. Every other entry point switches
+    # to it through _legacy(); this one never did, so asked first after a start it read the (empty)
+    # folder the engine was launched from: "0 tickers".
+    activate_engine_home()
     rows = price_store.list_stored()
     quotes = quote_store.latest_many([r["ticker"] for r in rows])
     for r in rows:
