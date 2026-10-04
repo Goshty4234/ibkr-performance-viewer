@@ -28,7 +28,6 @@ import {
   assessTwrrQuality,
   computeSummary,
   getAccountTimelineBounds,
-  inferredNavFlows,
   mergeStatements,
   navPointsHaveComponents,
   resolveIbkrTwrDailyPoints,
@@ -346,24 +345,7 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
     setAccount(updated);
   }
 
-  // Flows found from the NAV itself (no deposit/transfer record): listed so nothing is silent.
-  const twrrNotice = useMemo(() => {
-    if (!twrrQuality) return null;
-    const base = twrrQualityNotice(twrrQuality);
-    if (twrrQuality !== 'partial' || !navSeries || !rangeStart || !rangeEnd) return base;
-    const navFlows = navSeries.cashFlows?.length ? cashFlowsToDateMap(navSeries.cashFlows) : null;
-    const found = inferredNavFlows(
-      navSeries.points,
-      rangeStart,
-      rangeEnd,
-      twrrCapitalFlowsByDate(statements, navFlows),
-    );
-    if (!found.length) return base;
-    const list = found
-      .map((f) => `${f.date} : ${f.amount > 0 ? '+' : '−'}${Math.round(Math.abs(f.amount)).toLocaleString('fr-CA')} $`)
-      .join(' · ');
-    return `${base} Détectés dans la NAV : ${list}.`;
-  }, [twrrQuality, navSeries, statements, rangeStart, rangeEnd]);
+  const twrrNotice = useMemo(() => (twrrQuality ? twrrQualityNotice(twrrQuality) : null), [twrrQuality]);
 
   const chartSubtitle = useMemo(() => {
     if (ibkrTwrPoints.length >= 2) {
@@ -749,7 +731,7 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
       {navSeries && statements.length === 0 && (
         <div className={styles.notice}>
           {navPointsHaveComponents(navSeries.points)
-            ? 'Courbe TWRR depuis Flex NAV — les dépôts/retraits sont exclus quand détectables.'
+            ? 'Courbe calculée depuis la NAV Flex, sans estimation : seuls les flux présents dans le fichier sont exclus.'
             : 'Réimportez votre Flex NAV : les colonnes Stock/Cash manquent, le rendement affiché sera faux.'}
         </div>
       )}

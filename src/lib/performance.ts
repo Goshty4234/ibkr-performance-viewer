@@ -357,169 +357,27 @@ export function navPointsHaveComponents(points: DailyNavPoint[]): boolean {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Capital flows behind a NAV-only TWRR.
+// NAV-only TWRR (fallback when the official IBKR TWR is not imported).
 //
-// Daily NAV (total, cash, stock) cannot tell a deposit from a trade: buying shares moves cash into
-// stock, a deposit raises cash, and shares transferred in raise stock alone. Rules that read the cash
-// leg alone turn every trade into a "deposit" (measured on a real account over 199 days: +76 % instead
-// of the +18 % IBKR reports). So the flow of a day is decided by which explanation leaves the
-// smallest market move, with thresholds learned from the account's own volatility:
-//   1. A flow declared by a source (Statement, Flex Cash Transactions / Transfers) is authoritative.
-//      It is aligned to the NAV day it really shows up on (report / settle / trade dates differ).
-//   2. Without any declared flow, a cash move is a deposit/withdrawal when treating it as one leaves a
-//      smaller market move than treating the day as a plain trade (change of total ~ market only).
-//   3. A jump of the total beyond what the account's own volatility explains, with no cash to
-//      account for it, is treated as shares transferred in/out (never visible in NAV alone).
-// Every flow inferred this way is reported so the page can show it; the official IBKR TWR (Performance
-// report) remains the exact source and always wins when imported.
+// Nothing is guessed here. The daily NAV cannot tell a deposit from a trade, so the only capital
+// flows removed from the return are the ones a source declares (Flex Change in NAV, Cash Transactions,
+// Transfers, Activity Statement). A flow nobody declared stays in the return and the page says so.
+// The exact source is the Change in NAV section of the Flex Query: it carries IBKR's own daily TWR.
 // ---------------------------------------------------------------------------------------------
 
-const NAV_FLOW_SIGMAS = 4; // a daily move beyond 4 robust sigmas of the account is not just the market
-const NAV_FLOW_MIN_SHARE = 0.01; // cash moves below 1 % of the NAV are not worth a flow
-const NAV_FLOW_CASH_RATIO = 0.75; // cash explains the day if it leaves < 75 % of the raw NAV move
-const NAV_FLOW_ALIGN_DAYS = 3; // a declared flow may sit up to 3 NAV days from its record date
-
-export interface InferredNavFlow {
-  date: string;
-  amount: number;
-  kind: 'cash' | 'jump';
-}
-
-export interface NavFlowEstimate {
-  /** Capital flow by NAV date (positive: money or shares in). */
-  flows: Map<string, number>;
-  /** Flows no record declared: found from the NAV itself. */
-  inferred: InferredNavFlow[];
-  /** At least one flow came from a declared source. */
-  hasDeclared: boolean;
-}
-
-function robustDailySigma(points: DailyNavPoint[]): number {
-  const moves: number[] = [];
-  for (let i = 1; i < points.length; i++) {
-    const prev = points[i - 1].total;
-    if (prev > 0) moves.push(Math.abs(points[i].total - prev) / prev);
-  }
-  if (!moves.length) return 0.002;
-  moves.sort((a, b) => a - b);
-  const mid = Math.floor(moves.length / 2);
-  const median = moves.length % 2 ? moves[mid] : (moves[mid - 1] + moves[mid]) / 2;
-  return Math.max(1.4826 * median, 0.002);
-}
-
-export function estimateNavFlows(
-  points: DailyNavPoint[],
-  declared: Map<string, number>,
-): NavFlowEstimate {
-  const pts = [...points].sort((a, b) => a.date.localeCompare(b.date));
-  const flows = new Map<string, number>();
-  const inferred: InferredNavFlow[] = [];
-  const hasDeclared = declared.size > 0;
-  const n = pts.length;
-  if (n < 2) return { flows, inferred, hasDeclared };
-
-  const move = (i: number) => pts[i].total - pts[i - 1].total;
-
-  // 1. Declared flows, each placed on the NAV day that actually carries it.
-  const declaredByIndex = new Map<number, number>();
-  for (const [date, amount] of declared) {
-    let i0 = pts.findIndex((p) => p.date >= date);
-    if (i0 < 0 || (i0 === 0 && pts[0].date !== date && date < pts[0].date)) continue;
-    if (i0 === 0) continue; // no previous NAV to measure the day against
-    // A flow shows in the total, and a cash flow also in the cash leg: take the closest match of both.
-    const fit = (j: number) => {
-      const viaTotal = Math.abs(move(j) - amount);
-      const a = pts[j].cash;
-      const b = pts[j - 1].cash;
-      return a != null && b != null ? Math.min(viaTotal, Math.abs(a - b - amount)) : viaTotal;
-    };
-    let best = i0;
-    let bestErr = fit(i0);
-    for (let j = Math.max(1, i0 - NAV_FLOW_ALIGN_DAYS); j <= Math.min(n - 1, i0 + NAV_FLOW_ALIGN_DAYS); j++) {
-      const err = fit(j);
-      if (err < bestErr) { best = j; bestErr = err; }
-    }
-    // Move it only when another day matches clearly better than the recorded date.
-    if (best !== i0 && bestErr >= 0.5 * fit(i0)) best = i0;
-    declaredByIndex.set(best, (declaredByIndex.get(best) ?? 0) + amount);
-  }
-
-  const hasComponents = navPointsHaveComponents(pts);
-  const sigma = robustDailySigma(pts);
-
-  for (let i = 1; i < n; i++) {
-    const prev = pts[i - 1];
-    const cur = pts[i];
-
-    const known = declaredByIndex.get(i);
-    if (known !== undefined) {
-      flows.set(cur.date, known);
-      continue;
-    }
-    if (!hasComponents || prev.total <= 0) continue;
-    if (prev.cash == null || cur.cash == null || prev.stock == null || cur.stock == null) continue;
-
-    const dTotal = cur.total - prev.total;
-    const dCash = cur.cash - prev.cash;
-    const dStock = cur.stock - prev.stock;
-    const marketBand = NAV_FLOW_SIGMAS * sigma * prev.total;
-    const stockBand = NAV_FLOW_SIGMAS * sigma * Math.max(prev.stock, 1);
-
-    let flow = 0;
-    let kind: InferredNavFlow['kind'] | null = null;
-    if (
-      !hasDeclared &&
-      Math.abs(dCash) >= NAV_FLOW_MIN_SHARE * prev.total &&
-      Math.abs(dTotal - dCash) < NAV_FLOW_CASH_RATIO * Math.abs(dTotal)
-    ) {
-      // Cash entered/left. If the stock leg moved like the market the cash is the flow; if it moved
-      // more, trades share the day and the cash is polluted: the total is the better measure.
-      flow = Math.abs(dStock) <= stockBand ? dCash : dTotal;
-      kind = 'cash';
-    } else if (Math.abs(dTotal) > marketBand) {
-      flow = dTotal;
-      kind = 'jump';
-    }
-
-    if (flow !== 0 && kind) {
-      flows.set(cur.date, flow);
-      inferred.push({ date: cur.date, amount: flow, kind });
-    }
-  }
-
-  return { flows, inferred, hasDeclared };
-}
-
-export type TwrrDataQuality = 'exact' | 'partial' | 'estimated' | 'raw_nav';
+export type TwrrDataQuality = 'exact' | 'partial' | 'raw_nav';
 
 export function assessTwrrQuality(
   points: DailyNavPoint[],
-  rangeStart: string,
-  rangeEnd: string,
+  _rangeStart: string,
+  _rangeEnd: string,
   cashFlowByDate: Map<string, number>,
 ): TwrrDataQuality {
-  if (!navPointsHaveComponents(points)) {
-    return cashFlowByDate.size > 0 ? 'estimated' : 'raw_nav';
-  }
-  const est = estimateNavFlows(points, cashFlowByDate);
-  const inRange = est.inferred.filter((f) => f.date >= rangeStart && f.date <= rangeEnd);
-  return est.hasDeclared && inRange.length === 0 ? 'exact' : 'partial';
+  if (!navPointsHaveComponents(points)) return cashFlowByDate.size > 0 ? 'partial' : 'raw_nav';
+  return cashFlowByDate.size > 0 ? 'partial' : 'raw_nav';
 }
 
-/** Flows found from the NAV alone inside the range (shown to the person so nothing is silent). */
-export function inferredNavFlows(
-  points: DailyNavPoint[],
-  rangeStart: string,
-  rangeEnd: string,
-  cashFlowByDate: Map<string, number>,
-): InferredNavFlow[] {
-  if (!navPointsHaveComponents(points)) return [];
-  return estimateNavFlows(points, cashFlowByDate).inferred.filter(
-    (f) => f.date >= rangeStart && f.date <= rangeEnd,
-  );
-}
-
-/** TWRR index from daily Flex NAV — external flows excluded (index-like) */
+/** TWRR index from daily Flex NAV: only the declared capital flows are removed (no inference). */
 export function buildTwrrCurveFromNav(
   points: DailyNavPoint[],
   rangeStart: string,
@@ -529,7 +387,6 @@ export function buildTwrrCurveFromNav(
   const filtered = points.filter((p) => p.date >= rangeStart && p.date <= rangeEnd);
   if (filtered.length < 2) return [];
 
-  const { flows } = estimateNavFlows(points, cashFlowByDate);
   let index = 100;
   const out: { date: string; portfolio: number }[] = [];
 
@@ -540,7 +397,7 @@ export function buildTwrrCurveFromNav(
     }
     const prevNav = filtered[i - 1].total;
     const nav = filtered[i].total;
-    const cf = flows.get(filtered[i].date) ?? 0;
+    const cf = cashFlowByDate.get(filtered[i].date) ?? 0;
     if (prevNav > 0) {
       index *= 1 + (nav - cf) / prevNav - 1;
     }
@@ -564,24 +421,20 @@ export function shouldPreferStatementCurve(
 export function twrrQualityLabel(quality: TwrrDataQuality): string {
   switch (quality) {
     case 'exact':
-      return 'TWRR — dépôts/retraits exclus (NAV Stock/Cash)';
+      return 'TWR officiel IBKR';
     case 'partial':
-      return 'TWRR estimé — mouvements de capitaux déduits de la NAV';
-    case 'estimated':
-      return 'TWRR estimé — réimportez Flex NAV avec Stock/Cash';
+      return 'Rendement depuis la NAV — seuls les flux déclarés sont exclus';
     case 'raw_nav':
-      return 'NAV brute — réimportez le Flex NAV';
+      return 'NAV brute — aucun flux déclaré';
   }
 }
 
 export function twrrQualityNotice(quality: TwrrDataQuality): string | null {
   switch (quality) {
     case 'raw_nav':
-      return 'Réimportez votre fichier Flex NAV (avec colonnes Stock/Cash) puis Ctrl+F5. Sans ces colonnes, les dépôts faussent le rendement (~+177 %).';
-    case 'estimated':
-      return 'Réimportez un Flex NAV avec colonnes Stock et Cash, ou un CSV combiné NAV + Cash Transactions.';
+      return 'Aucun dépôt, retrait ou transfert dans le fichier : les mouvements de capitaux faussent le rendement. Ajoute la section Change in NAV à ta Flex Query (guide ci-dessus) et réimporte le fichier.';
     case 'partial':
-      return 'Rendement estimé à partir de la valeur du compte : les dépôts/retraits non déclarés sont déduits automatiquement. Pour le TWR exact, importe le Rapport Performance IBKR (PortfolioAnalyst).';
+      return 'Rendement calculé depuis la NAV, sans estimation : seuls les flux présents dans le fichier sont exclus. Les transferts de titres absents du fichier faussent la courbe. Pour le TWR exact, ajoute la section Change in NAV à ta Flex Query et réimporte.';
     default:
       return null;
   }

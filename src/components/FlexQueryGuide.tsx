@@ -115,7 +115,7 @@ export default function FlexQueryGuide({ defaultOpen = false, prominent = false 
             <Setting name="Date/Time Separator" value="ne change rien" />
             <Setting name="Profit and Loss" value="Default" />
             <Setting name="Include Offsetting Trade/Cancel Pairs?" value="No" />
-            <Setting name="Include Currency Rates?" value="Yes" />
+            <Setting name="Include Currency Rates?" value="No" note="(sinon le fichier gonfle de 39 taux de change par jour)" />
             <Setting name="Include Audit Trail Fields?" value="No" />
             <Setting name="Display Account Alias in Place of Account ID?" value="No" note="(le site a besoin du numéro de compte)" />
             <Setting name="Breakout by Day?" value="Yes" note="(indispensable : une valeur par jour)" />
