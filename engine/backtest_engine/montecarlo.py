@@ -39,7 +39,7 @@ from typing import Any, Callable
 import numpy as np
 import pandas as pd
 
-FORMAT = 3
+FORMAT = 4
 BASELINE_NAME = "Équipondéré des actions tirées (mensuel)"
 PCTS = (5, 25, 50, 75, 95)
 # Statistics kept per draw (Construire's "values", in its units: percent for returns and drawdowns).
@@ -146,6 +146,94 @@ def with_stocks(cfg: dict, tickers: list[str]) -> dict:
     return out
 
 
+# ------------------------------------------------------------------------------------------------
+# which portfolios make sense in a Monte Carlo
+# ------------------------------------------------------------------------------------------------
+# A draw replaces the stocks of every portfolio by N stocks picked at random. That only means
+# something when the portfolio is a *rule* applied to whatever stocks it is given (momentum), or a
+# plain equal-weight basket (every stock the same weight: any N stocks do the same job). A portfolio
+# whose weights ARE the strategy (60/40, one ticker, fixed unequal weights) would silently become
+# something else, so it is left out and the reason is shown.
+
+def classify(cfg: dict, n_pick: int) -> dict[str, Any]:
+    """Verdict for one normalized portfolio: included (momentum / equal weight) or excluded, with the reason."""
+    from . import runner as R
+
+    out: dict[str, Any] = {"name": cfg.get("name"), "status": "excluded", "kind": None, "reason": None, "notes": []}
+
+    def no(kind: str, why: str) -> dict[str, Any]:
+        out.update(status="excluded", kind=kind, reason=why)
+        return out
+
+    if R.is_fusion(cfg):
+        return no("fusion", "Portfolio fusionné : il combine d’autres portfolios au lieu de détenir des actions, "
+                            "il n’y a rien à remplacer par un tirage.")
+    if cfg.get("use_targeted_rebalancing"):
+        return no("targeted", "Rééquilibrage ciblé : ses seuils sont liés à tes tickers précis et ne s’appliqueraient "
+                              "à aucune des actions tirées (il ne rééquilibrerait jamais).")
+
+    tickers = [str(s.get("ticker") or "").strip() for s in cfg.get("stocks") or [] if isinstance(s, dict)]
+    real = [s for s in cfg.get("stocks") or [] if isinstance(s, dict) and str(s.get("ticker") or "").strip()
+            and str(s.get("ticker")).strip().upper() != "CASH"]
+    notes: list[str] = out["notes"]
+
+    if cfg.get("use_momentum"):
+        out.update(status="included", kind="momentum")
+        top = cfg.get("limit_to_top_n_tickers") if cfg.get("use_limit_to_top_n") else None
+        if isinstance(top, (int, float)) and top >= n_pick:
+            notes.append(f"Limite « top {int(top)} » ≥ {n_pick} actions par tirage : elle ne filtre rien ici.")
+        eq = cfg.get("equal_weight_n_tickers") if cfg.get("use_equal_weight") else None
+        if isinstance(eq, (int, float)) and eq >= n_pick:
+            notes.append(f"Équipondération sur {int(eq)} titres ≥ {n_pick} actions par tirage : tout le panier est détenu.")
+        cap = cfg.get("max_allocation_percent") if cfg.get("use_max_allocation") else None
+        if isinstance(cap, (int, float)) and cap > 0 and cap * n_pick < 100:
+            notes.append(f"Plafond de {cap:g} % par titre avec seulement {n_pick} actions : une partie reste en cash.")
+        return out
+
+    # static allocations: only an equal-weight basket survives
+    if any(t.upper() == "CASH" for t in tickers):
+        return no("static", "Allocation fixe avec une part de CASH : cette part n’a pas d’équivalent dans un panier tiré au hasard.")
+    if len(real) < 2:
+        what = f" ({real[0]['ticker']})" if real else ""
+        return no("single", f"Un seul titre{what} sans momentum : un tirage le remplacerait par un panier de {n_pick} actions, "
+                            "ce ne serait plus ton portfolio.")
+    allocs = []
+    for s in real:
+        try:
+            allocs.append(float(s.get("allocation") or 0.0))
+        except (TypeError, ValueError):
+            allocs.append(0.0)
+    top_a = max(allocs)
+    if top_a <= 0:
+        return no("static", "Aucune pondération renseignée.")
+    if max(allocs) - min(allocs) > 1e-3 * top_a:
+        return no("static", "Pondérations fixes inégales (ex. 60/40) : ce sont elles, la stratégie. Remplacer les titres par des "
+                            "actions tirées au hasard ne les représenterait plus.")
+    out.update(status="included", kind="equal_weight")
+    notes.append(f"Pondérations égales ({len(real)} titres) : traité comme un panier équipondéré, chaque tirage met "
+                 f"1/{n_pick} (≈ {100 / n_pick:.1f} %) sur chacune des {n_pick} actions tirées.")
+    if cfg.get("rebalancing_frequency") in ("Never", "Buy & Hold", "Buy & Hold (Target)"):
+        notes.append("Sans rééquilibrage : équipondéré au départ seulement, les poids dérivent ensuite.")
+    return out
+
+
+def none_eligible(verdicts: list[dict[str, Any]]) -> str:
+    why = " ".join(f"« {v['name']} » : {v['reason']}" for v in verdicts)
+    return ("Aucun des portfolios choisis n’a de sens en Monte Carlo (il faut du momentum ou une pondération égale "
+            f"entre les titres). {why}")
+
+
+def check_portfolios(portfolios: list[dict], mc_options: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Verdicts of the portfolios as the Monte Carlo would see them (used by the site before launching)."""
+    from .config import normalize_portfolio_configs
+
+    o = clean_options(mc_options)
+    raw = [p for p in portfolios if isinstance(p, dict)]
+    if not raw:
+        return []
+    return [classify(c, o["n_pick"]) for c in normalize_portfolio_configs(copy.deepcopy(raw))]
+
+
 def baseline_config(first: dict) -> dict:
     return {
         "name": BASELINE_NAME,
@@ -193,7 +281,11 @@ def prepare(job_dir: Path, portfolios: list[dict], run_options: dict[str, Any], 
     raw = [p for p in portfolios if isinstance(p, dict)]
     if not raw:
         raise ValueError("Aucun portfolio à simuler.")
-    base = normalize_portfolio_configs(copy.deepcopy(raw))
+    base_all = normalize_portfolio_configs(copy.deepcopy(raw))
+    verdicts = [classify(c, o["n_pick"]) for c in base_all]
+    base = [c for c, v in zip(base_all, verdicts) if v["status"] == "included"]
+    if not base:
+        raise ValueError(none_eligible(verdicts))
     names = {c["name"] for c in base}
     if o["baseline"] and BASELINE_NAME not in names:
         base += normalize_portfolio_configs([baseline_config(base[0])])
@@ -249,7 +341,7 @@ def prepare(job_dir: Path, portfolios: list[dict], run_options: dict[str, Any], 
     return {
         "universe": kept, "label": label, "missing": missing, "stale": stale, "short": short,
         "start": simulation_index[0], "end": simulation_index[-1], "display_start": display_start,
-        "warnings": list(ctx.warnings),
+        "warnings": list(ctx.warnings), "portfolios": verdicts,
     }
 
 
@@ -635,6 +727,7 @@ def run_montecarlo(portfolios: list[dict], run_options: dict[str, Any] | None, m
             "window": {"start": prep.simulation_index[0].strftime("%Y-%m-%d"), "end": prep.simulation_index[-1].strftime("%Y-%m-%d")},
             "dates": grid,
             "warnings": info["warnings"][:20],
+            "portfolios": info["portfolios"],
             "elapsed_s": round(elapsed, 3),
             "busy_s": round(busy_s, 3),
             **agg,

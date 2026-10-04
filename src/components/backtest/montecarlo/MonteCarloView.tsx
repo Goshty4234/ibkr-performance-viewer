@@ -1,12 +1,20 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { useBacktestStore } from '@/lib/backtest/store';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import DrawdownChart from '@/components/DrawdownChart';
+import PerformanceChart from '@/components/PerformanceChart';
+import type { ChartsResult } from '@/lib/backtest/analytics';
+import { portfolioColor, portfolioSeriesId } from '@/lib/backtest/chart-data';
 import { toEngineConfig } from '@/lib/backtest/portfolio';
+import { okSummaries } from '@/lib/backtest/result-data';
+import { useBacktestStore } from '@/lib/backtest/store';
+import { useAnalytics } from '@/lib/backtest/worker/use-analytics';
+import type { ChartBrushSelection } from '@/lib/chart-range';
+import { toggleSeriesVisibility } from '@/lib/chart-series';
 import { EngineClient, engineOutdated } from '@/lib/engine/client';
 import {
-  histogram, mcCancel, mcJob, mcResult, mcSubmit, MC_DEFAULTS, pairOf, parseTickers,
-  type McJob, type McOptions, type McResult, type McStatKey, type McUniverseSource,
+  addDays, daysBetween, histogram, mcCancel, mcCheck, mcJob, mcResult, mcSubmit, MC_DEFAULTS, pairOf, parseTickers, windowOf,
+  type McJob, type McOptions, type McResult, type McStatKey, type McUniverseSource, type McVerdict, type McWindow,
 } from '@/lib/engine/montecarlo';
 import { useEngineStore } from '@/lib/engine/store';
 import EChart from '../charts/EChart';
@@ -35,6 +43,12 @@ const METRICS: { id: McStatKey; label: string; kind: 'pct' | 'num' | 'frac'; hig
   { id: 'holdings', label: 'Positions moyennes', kind: 'num', higherIsBetter: true },
   { id: 'cash', label: 'Part en cash', kind: 'frac', higherIsBetter: false },
 ];
+
+const KIND_LABEL: Record<string, string> = { momentum: 'momentum', equal_weight: 'équipondéré' };
+const KIND_TIP: Record<string, string> = {
+  momentum: 'Stratégie momentum : elle choisit parmi les actions tirées, comme dans un run normal.',
+  equal_weight: 'Pondérations égales : traité comme un panier équipondéré des actions tirées.',
+};
 
 const nf = (v: number, d: number) => v.toLocaleString('fr-CA', { minimumFractionDigits: d, maximumFractionDigits: d });
 const pct = (v: number | null | undefined, d = 1) => (v === null || v === undefined || !Number.isFinite(v) ? '—' : `${nf(v, d)} %`);
@@ -72,19 +86,37 @@ export default function MonteCarloView() {
   }, [portfolios]);
 
   const running = job !== null && (job.status === 'queued' || job.status === 'running');
-  const chosen = portfolios.filter((p) => selected.has(p._id));
+  const chosen = useMemo(() => portfolios.filter((p) => selected.has(p._id)), [portfolios, selected]);
+  const chosenConfigs = useMemo(() => chosen.map(toEngineConfig), [chosen]);
+  // What the engine thinks of each chosen portfolio (momentum / equal weight are kept, the rest left out and explained).
+  const [verdicts, setVerdicts] = useState<McVerdict[] | null>(null);
+  useEffect(() => {
+    if (!client || outdated || !chosenConfigs.length) { setVerdicts(null); return; }
+    let alive = true;
+    const t = setTimeout(() => {
+      mcCheck(client, chosenConfigs, { n_pick: opt.n_pick })
+        .then((v) => { if (alive) setVerdicts(v.length === chosenConfigs.length ? v : null); })
+        .catch(() => { if (alive) setVerdicts(null); });
+    }, 300);
+    return () => { alive = false; clearTimeout(t); };
+  }, [client, outdated, chosenConfigs, opt.n_pick]);
+  const verdictOf = (i: number): McVerdict | undefined => verdicts?.[i];
+  const usable = useMemo(
+    () => chosen.filter((_, i) => verdicts?.[i]?.status !== 'excluded'),
+    [chosen, verdicts],
+  );
   const set = <K extends keyof McOptions>(k: K, v: McOptions[K]) => setOpt((o) => ({ ...o, [k]: v }));
   const listTickers = useMemo(() => parseTickers(listText), [listText]);
   const portfolioTickers = useMemo(
-    () => [...new Set(chosen.flatMap((p) => p.stocks.map((s) => s.ticker.trim().toUpperCase()).filter((t) => t && t !== 'CASH')))],
-    [chosen],
+    () => [...new Set(usable.flatMap((p) => p.stocks.map((s) => s.ticker.trim().toUpperCase()).filter((t) => t && t !== 'CASH')))],
+    [usable],
   );
   const universeCount = opt.universe.source === 'list' ? listTickers.length : opt.universe.source === 'portfolios' ? portfolioTickers.length : null;
   const tooSmall = universeCount !== null && universeCount < opt.n_pick;
-  const runsPerDraw = chosen.length + (opt.baseline ? 1 : 0);
+  const runsPerDraw = usable.length + (opt.baseline ? 1 : 0);
 
   const run = useCallback(async () => {
-    if (!client || !chosen.length) return;
+    if (!client || !usable.length) return;
     setError(null);
     setResult(null);
     const mc: McOptions = {
@@ -97,7 +129,7 @@ export default function MonteCarloView() {
       price_update: 'topup' as const,
     };
     try {
-      let j = await mcSubmit(client, chosen.map(toEngineConfig), options, mc);
+      let j = await mcSubmit(client, usable.map(toEngineConfig), options, mc);
       setJob(j);
       if (timer.current) clearInterval(timer.current);
       timer.current = setInterval(async () => {
@@ -120,7 +152,7 @@ export default function MonteCarloView() {
       setJob(null);
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [client, chosen, opt, listTickers, runOptions.first_rebalance_strategy, runOptions.auto_adjust_momentum_start]);
+  }, [client, usable, opt, listTickers, runOptions.first_rebalance_strategy, runOptions.auto_adjust_momentum_start]);
 
   const cancel = () => {
     if (client && job) mcCancel(client, job.id).catch(() => {});
@@ -143,14 +175,33 @@ export default function MonteCarloView() {
 
         <div className={styles.pick}>
           <span className={styles.pickLabel}>Portfolios comparés :</span>
-          {portfolios.map((p) => (
-            <label key={p._id} className={styles.chip}>
-              <input type="checkbox" checked={selected.has(p._id)} onChange={(e) => setSelected((s) => { const n = new Set(s); if (e.target.checked) n.add(p._id); else n.delete(p._id); return n; })} />
-              {p.name}
-            </label>
-          ))}
+          {portfolios.map((p) => {
+            const i = chosen.findIndex((c) => c._id === p._id);
+            const v = i >= 0 ? verdictOf(i) : undefined;
+            const out = v?.status === 'excluded';
+            return (
+              <label key={p._id} className={`${styles.chip} ${out ? styles.chipOut : ''}`} title={out ? v?.reason ?? undefined : v ? KIND_TIP[v.kind ?? 'momentum'] : undefined}>
+                <input type="checkbox" checked={selected.has(p._id)} onChange={(e) => setSelected((s) => { const n = new Set(s); if (e.target.checked) n.add(p._id); else n.delete(p._id); return n; })} />
+                {p.name}
+                {v && <span className={out ? styles.tagOut : styles.tagIn}>{out ? 'laissé de côté' : KIND_LABEL[v.kind ?? 'momentum']}</span>}
+              </label>
+            );
+          })}
           {!portfolios.length && <span className={styles.hint}>Aucun portfolio : crée-en dans l’onglet Construire.</span>}
         </div>
+        {verdicts && verdicts.some((v) => v.status === 'excluded' || v.notes.length > 0) && (
+          <ul className={styles.verdicts}>
+            {verdicts.map((v, i) => (
+              <Fragment key={`${v.name}-${i}`}>
+                {v.status === 'excluded' && <li className={styles.verdictOut}><strong>{v.name}</strong> est laissé de côté. {v.reason}</li>}
+                {v.status === 'included' && v.notes.map((n, k) => <li key={k} className={styles.verdictNote}><strong>{v.name}</strong> : {n}</li>)}
+              </Fragment>
+            ))}
+          </ul>
+        )}
+        {verdicts && usable.length === 0 && chosen.length > 0 && (
+          <div className={styles.warn}>Aucun des portfolios cochés n’a de sens ici : il faut du momentum, ou une pondération égale entre les titres.</div>
+        )}
 
         <div className={styles.grid}>
           <label className={styles.field} title={UNIVERSES.find((u) => u.id === opt.universe.source)?.tip}>Univers
@@ -198,7 +249,7 @@ export default function MonteCarloView() {
 
         <div className={styles.actions}>
           {!running ? (
-            <button type="button" className="btn btn-primary" disabled={!client || outdated || !chosen.length || tooSmall} onClick={run}
+            <button type="button" className="btn btn-primary" disabled={!client || outdated || !usable.length || tooSmall} onClick={run}
               title={!client ? 'Aucun moteur détecté' : outdated ? 'Mets le moteur à jour' : tooSmall ? 'Univers plus petit que le nombre d’actions par tirage' : undefined}>
               Lancer {opt.n_draws.toLocaleString('fr-CA')} tirages
             </button>
@@ -232,12 +283,61 @@ function seriesColor(result: McResult, i: number): string {
   return COLORS[k % COLORS.length];
 }
 
+function useDebounced<T>(value: T, ms: number): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
+
+const PRESETS: { label: string; years: number | null }[] = [
+  { label: '1 an', years: 1 }, { label: '3 ans', years: 3 }, { label: '5 ans', years: 5 }, { label: '10 ans', years: 10 }, { label: 'Tout', years: null },
+];
+
 function McResults({ result }: { result: McResult }) {
   const [metricId, setMetricId] = useState<McStatKey>('CAGR');
-  const [log, setLog] = useState(true);
+  const [log, setLog] = useState(false);
   const [highlight, setHighlight] = useState<number | null>(null);
   const series = result.series;
-  const color = (i: number) => seriesColor(result, i);
+  const realResult = useBacktestStore((s) => s.result);
+  const realPfs = useMemo(() => (realResult ? okSummaries(realResult.summary) : []), [realResult]);
+  // A portfolio keeps the colour it has in Résultats, so the real curve and its Monte Carlo cloud match.
+  const color = (i: number) => {
+    const real = realPfs.find((p) => p.name === series[i]?.name);
+    return real && series[i].kind === 'portfolio' ? portfolioColor(real.index) : seriesColor(result, i);
+  };
+
+  // One period for everything: the real results, the Monte Carlo curves and the table below.
+  const bounds = useMemo(() => {
+    const all = [result.dates[0], result.dates[result.dates.length - 1], ...(realResult?.summary.dates.length ? [realResult.summary.dates[0], realResult.summary.dates[realResult.summary.dates.length - 1]] : [])].filter(Boolean).sort();
+    return { min: all[0] ?? '', max: all[all.length - 1] ?? '' };
+  }, [result, realResult]);
+  const [start, setStart] = useState(bounds.min);
+  const [end, setEnd] = useState(bounds.max);
+  useEffect(() => { setStart(bounds.min); setEnd(bounds.max); }, [bounds]);
+  const range = useDebounced({ start, end }, 200);
+  const valid = !!range.start && !!range.end && range.start < range.end;
+  const win: McWindow | null = useMemo(() => (valid ? windowOf(result, range.start, range.end) : null), [result, range, valid]);
+  const [brush, setBrush] = useState<ChartBrushSelection | null>(null);
+  useEffect(() => { setBrush(null); }, [range.start, range.end]);
+  const setPreset = (years: number | null) => {
+    setEnd(bounds.max);
+    if (years === null) { setStart(bounds.min); return; }
+    const d = new Date(`${bounds.max}T00:00:00Z`);
+    d.setUTCFullYear(d.getUTCFullYear() - years);
+    const sIso = d.toISOString().slice(0, 10);
+    setStart(sIso < bounds.min ? bounds.min : sIso);
+  };
+  const spanDays = bounds.min && bounds.max ? daysBetween(bounds.min, bounds.max) : 0;
+  const lenDays = start && end ? Math.max(1, daysBetween(start, end)) : 0;
+  const offset = start && bounds.min ? Math.max(0, daysBetween(bounds.min, start)) : 0;
+  const slide = (days: number) => {
+    const s0 = addDays(bounds.min, days);
+    setStart(s0);
+    setEnd(addDays(s0, lenDays));
+  };
   const metric = METRICS.find((m) => m.id === metricId) ?? METRICS[0];
   const ports = series.map((s, i) => ({ s, i })).filter((x) => x.s.kind === 'portfolio');
   const baseIdx = series.findIndex((s) => s.kind === 'baseline');
@@ -245,49 +345,51 @@ function McResults({ result }: { result: McResult }) {
   const shownDraws = Math.min(nDraws, MAX_DRAWN_CURVES);
 
   const curvesOption = useMemo(() => {
-    const clean = (v: number | null) => (v === null ? null : log && v <= 0 ? null : v);
+    if (!win) return {};
+    // Re-based curves (1 = first day of the period). Linear: gain in %. Log: the growth multiple, labelled in %.
+    const conv = (v: number | null) => (v === null || v === undefined ? null : log ? (v > 0 ? v : null) : (v - 1) * 100);
+    const toPct = (v: number) => (log ? (v - 1) * 100 : v);
     const out: Record<string, unknown>[] = [];
-    series.forEach((s, i) => {
-      for (let d = 0; d < shownDraws; d += 1) {
+    win.series.forEach((s, i) => {
+      let drawn = 0;
+      for (let d = 0; d < s.curves.length && drawn < shownDraws; d += 1) {
+        const c = s.curves[d];
+        if (!c) continue;
+        drawn += 1;
         const hot = highlight === d;
         out.push({
-          id: `c-${i}-${d}`, name: s.name, type: 'line', data: s.curves[d].map(clean), showSymbol: false, silent: !hot,
+          id: `c-${i}-${d}`, name: s.name, type: 'line', data: c.map(conv), showSymbol: false, silent: !hot,
           lineStyle: { width: hot ? 2.2 : 0.7, color: color(i), opacity: highlight === null ? 0.22 : hot ? 1 : 0.07 },
           itemStyle: { color: color(i) }, z: hot ? 5 : 1, emphasis: { disabled: true }, animation: false,
         });
       }
       out.push({
-        id: `m-${i}`, name: s.name, type: 'line', data: s.fan.p50.map(clean), showSymbol: false,
+        id: `m-${i}`, name: s.name, type: 'line', data: s.fan.p50.map(conv), showSymbol: false,
         lineStyle: { width: 2.6, color: color(i), type: s.kind === 'baseline' ? 'dashed' : 'solid' }, itemStyle: { color: color(i) }, z: 4,
       });
     });
-    if (result.benchmark) {
-      out.push({
-        id: 'bench', name: `${result.benchmark.ticker} réel (prix)`, type: 'line', data: result.benchmark.curve.map(clean), showSymbol: false,
-        lineStyle: { width: 1.8, color: '#f4f7fb', type: 'dotted' }, itemStyle: { color: '#f4f7fb' }, z: 3,
-      });
-    }
+    const span = win.dates.length > 1 ? daysBetween(win.dates[0], win.dates[win.dates.length - 1]) : 0;
     return {
       animation: false,
-      grid: { left: 58, right: 18, top: 40, bottom: 56 },
-      legend: { top: 0, type: 'scroll' },
-      dataZoom: [{ type: 'inside' }, { type: 'slider', height: 18, bottom: 8 }],
+      grid: { left: 62, right: 18, top: 40, bottom: 34 },
+      legend: { top: 0, type: 'scroll', data: win.series.map((s) => s.name) },
+      dataZoom: [{ type: 'inside' }],
       tooltip: {
         trigger: 'axis',
         formatter: (params: { seriesId: string; seriesName: string; value: number | null; color: string; axisValue: string }[]) => {
-          const rows = params.filter((p) => p.value !== null && (p.seriesId.startsWith('m-') || p.seriesId === 'bench' || (highlight !== null && p.seriesId.endsWith(`-${highlight}`) && p.seriesId.startsWith('c-'))));
+          const rows = params.filter((p) => p.value !== null && p.value !== undefined && (p.seriesId.startsWith('m-') || (highlight !== null && p.seriesId.endsWith(`-${highlight}`) && p.seriesId.startsWith('c-'))));
           const head = `<div style="margin-bottom:4px">${params[0]?.axisValue ?? ''}</div>`;
-          return head + rows.map((p) => `<div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:6px"></span>${p.seriesName}${p.seriesId.startsWith('m-') ? ' (médiane)' : p.seriesId.startsWith('c-') ? ` (tirage ${highlight! + 1})` : ''} : ×${num(p.value, 2)}</div>`).join('');
+          return head + rows.map((p) => `<div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:6px"></span>${p.seriesName}${p.seriesId.startsWith('m-') ? ' (médiane)' : ` (tirage ${highlight! + 1})`} : ${pts(toPct(p.value as number), 1).replace(' pt', ' %')}</div>`).join('');
         },
       },
-      xAxis: { type: 'category', data: result.dates, axisLabel: { formatter: (v: string) => v.slice(0, 4) } },
+      xAxis: { type: 'category', data: win.dates, axisLabel: { formatter: (v: string) => (span > 365 * 4 ? v.slice(0, 4) : v.slice(0, 7)) } },
       yAxis: log
-        ? { type: 'log', min: 'dataMin', axisLabel: { formatter: (v: number) => `×${v}` } }
-        : { type: 'value', axisLabel: { formatter: (v: number) => `×${v}` } },
+        ? { type: 'log', min: 'dataMin', axisLabel: { formatter: (v: number) => `${((v - 1) * 100).toFixed(0)} %` } }
+        : { type: 'value', axisLabel: { formatter: (v: number) => `${v.toFixed(0)} %` } },
       series: out,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result, log, highlight, shownDraws]);
+  }, [win, log, highlight, shownDraws, realPfs]);
 
   const histOption = useMemo(() => {
     const h = histogram(series.map((s) => s.stats[metricId]), 30);
@@ -363,10 +465,50 @@ function McResults({ result }: { result: McResult }) {
       <section className={`card ${styles.card}`}>
         <div className={styles.head}>
           <div>
-            <div className={styles.title}>Toutes les courbes (valeur sans ajouts, départ = 1)</div>
+            <div className={styles.title}>Période affichée</div>
             <div className={styles.sub}>
-              Une ligne fine par tirage et par portfolio, la médiane en gras{result.benchmark ? `, ${result.benchmark.ticker} réel en pointillé` : ''}.
+              Tout repart de 0 % au premier jour de la période, comme dans l’Analyse ciblée : les graphiques de tes résultats réels, les
+              courbes du Monte Carlo et le tableau « Sur la période » se règlent ensemble. Fais glisser la fenêtre pour voir comment
+              chaque époque a traité tes portfolios.
+            </div>
+          </div>
+        </div>
+        <div className={styles.period}>
+          <label className={styles.field}>Début
+            <input type="date" value={start} min={bounds.min} max={bounds.max} onChange={(e) => setStart(e.target.value)} />
+          </label>
+          <label className={styles.field}>Fin
+            <input type="date" value={end} min={bounds.min} max={bounds.max} onChange={(e) => setEnd(e.target.value)} />
+          </label>
+          <div className={styles.presets}>
+            {PRESETS.map((p) => <button key={p.label} type="button" className="btn btn-ghost btn-sm" onClick={() => setPreset(p.years)}>{p.label}</button>)}
+          </div>
+          {brush && (
+            <button type="button" className="btn btn-secondary btn-sm" title="Les courbes repartent de 0 % au début de la sélection"
+              onClick={() => { setStart(brush.startDate); setEnd(brush.endDate); setBrush(null); }}>
+              Utiliser la sélection ({brush.startDate} → {brush.endDate})
+            </button>
+          )}
+        </div>
+        <label className={styles.slide} title="Déplace la fenêtre sans changer sa durée">
+          <span>Fenêtre glissante ({nf(lenDays / 365.25, 1)} an{lenDays / 365.25 >= 1.5 ? 's' : ''})</span>
+          <input type="range" min={0} max={Math.max(0, spanDays - lenDays)} step={7} value={Math.min(offset, Math.max(0, spanDays - lenDays))}
+            disabled={spanDays - lenDays <= 0} onChange={(e) => slide(Number(e.target.value))} />
+        </label>
+        {!valid && <div className={styles.warn}>La date de début doit précéder la date de fin.</div>}
+      </section>
+
+      <RealResults start={range.start} end={range.end} valid={valid} names={series.filter((s) => s.kind === 'portfolio').map((s) => s.name)}
+        brush={brush} onBrush={setBrush} />
+
+      <section className={`card ${styles.card}`}>
+        <div className={styles.head}>
+          <div>
+            <div className={styles.title}>Monte Carlo sur la même période (sans ajouts, 0 % au départ)</div>
+            <div className={styles.sub}>
+              Une ligne fine par tirage et par portfolio, la médiane en gras.
               {nDraws > shownDraws ? ` Les ${shownDraws} premiers tirages sont tracés (les statistiques couvrent les ${nDraws}).` : ''} Clique un tirage dans le tableau du bas pour le surligner.
+              {win && win.series.some((s) => s.covered < nDraws) ? ` Seuls les tirages dont les actions existent déjà au début de la période sont gardés (${win.series.map((s) => `${shortName(s.name)} : ${s.covered}/${nDraws}`).join(', ')}).` : ''}
             </div>
           </div>
           <div className={styles.inline}>
@@ -374,8 +516,47 @@ function McResults({ result }: { result: McResult }) {
             {highlight !== null && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setHighlight(null)}>Tirage {highlight + 1} ✕</button>}
           </div>
         </div>
-        <EChart option={curvesOption} height={460} />
+        {win && win.series.some((s) => s.covered > 0)
+          ? <EChart option={curvesOption} height={460} />
+          : <div className={styles.warn}>Aucun tirage ne couvre cette période : choisis une période qui commence plus tard.</div>}
       </section>
+
+      {win && win.series.some((s) => s.covered > 0) && (
+        <section className={`card ${styles.card}`}>
+          <div className={styles.title}>Sur la période choisie ({range.start} → {range.end})</div>
+          <div className={styles.scroll}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>Portfolio</th><th title="Tirages dont les actions existent au début de la période">Tirages</th>
+                  <th>Rendement médian</th><th>Rendement 5 % – 95 %</th>
+                  <th>CAGR médian</th><th>Drawdown max médian</th><th>Drawdown max (pire 5 %)</th>
+                  <th title="Part des tirages où le rendement du portfolio dépasse celui de la référence équipondérée">Bat la référence</th>
+                </tr>
+              </thead>
+              <tbody>
+                {win.series.map((s, i) => (
+                  <tr key={s.name} className={s.kind === 'baseline' ? styles.base : undefined}>
+                    <td><span className={styles.dot} style={{ background: color(i) }} />{s.name}</td>
+                    <td className={styles.n}>{s.covered}/{nDraws}</td>
+                    <td className={styles.n}>{pct(s.ret.p50)}</td>
+                    <td className={styles.n}>{pct(s.ret.p5, 0)} à {pct(s.ret.p95, 0)}</td>
+                    <td className={styles.n}>{pct(s.cagr.p50)}</td>
+                    <td className={styles.n}>{pct(s.drawdown.p50)}</td>
+                    <td className={styles.n}>{pct(s.drawdown.p5)}</td>
+                    <td className={styles.n} style={winStyle(win.beatBaseline[i])}>{share(win.beatBaseline[i])}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className={styles.hint}>
+            Mesuré sur les ~{win.gridPoints} points de la période (une grille régulière) : le drawdown et le CAGR sont donc très proches
+            du calcul jour par jour sans être exactement identiques. Ce tableau est celui du Monte Carlo ; les chiffres exacts de tes
+            vrais portfolios sont dans Résultats → Analyse ciblée.
+          </div>
+        </section>
+      )}
 
       {series.length > 1 && (
         <section className={`card ${styles.card}`}>
@@ -455,6 +636,83 @@ function McResults({ result }: { result: McResult }) {
       </section>
 
       <DrawsTable result={result} highlight={highlight} onPick={setHighlight} color={color} />
+    </>
+  );
+}
+
+/** The latest normal backtest of Construire (the real portfolios, their own stocks) over the chosen period, to compare with the cloud below. */
+function RealResults({ start, end, valid, names, brush, onBrush }: {
+  start: string; end: string; valid: boolean; names: string[];
+  brush: ChartBrushSelection | null; onBrush: (b: ChartBrushSelection | null) => void;
+}) {
+  const real = useBacktestStore((s) => s.result);
+  const pfs = useMemo(() => (real ? okSummaries(real.summary) : []), [real]);
+  const benchKeys = useMemo(() => (real ? Object.keys(real.summary.benchmarks).sort() : []), [real]);
+  const [benchmarks, setBenchmarks] = useState<string[]>([]);
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const namesKey = names.join('\u0001');
+  useEffect(() => {
+    setBenchmarks(benchKeys.slice(0, 1));
+    const mine = pfs.filter((p) => names.includes(p.name));
+    // Only the portfolios of this Monte Carlo are shown at first; if none matches by name, show them all.
+    setHidden(new Set(mine.length ? pfs.filter((p) => !names.includes(p.name)).map((p) => portfolioSeriesId(p.index)) : []));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [real, benchKeys, pfs, namesKey]);
+  const charts = useAnalytics<ChartsResult>(real, real && valid && pfs.length ? { op: 'rangeCharts', mode: 'no_additions', benchmarks, start, end } : null);
+  const cd = charts.data?.charts ?? null;
+  const firstDay = cd?.pctData[0]?.date;
+  const lastDay = cd?.pctData[cd.pctData.length - 1]?.date;
+
+  if (!real || !pfs.length) {
+    return (
+      <section className={`card ${styles.card}`}>
+        <div className={styles.title}>Résultats réels de tes portfolios</div>
+        <div className={styles.sub}>
+          Lance un backtest normal dans l’onglet Construire : ses courbes (tes vrais portfolios, avec leurs vraies actions) apparaîtront ici,
+          sur la même période, pour les comparer au nuage du Monte Carlo.
+        </div>
+      </section>
+    );
+  }
+  return (
+    <>
+      <section className={`card ${styles.card}`}>
+        <div className={styles.head}>
+          <div>
+            <div className={styles.title}>Résultats réels de tes portfolios</div>
+            <div className={styles.sub}>
+              Dernier backtest affiché dans Résultats ({pfs.length} portfolio{pfs.length > 1 ? 's' : ''}), avec leurs vraies actions, sur la période
+              choisie : à comparer avec le nuage de tirages plus bas.
+            </div>
+          </div>
+          {benchKeys.length > 0 && (
+            <div className={styles.inline}>
+              <span className={styles.faint}>Benchmarks</span>
+              {benchKeys.map((t) => {
+                const on = benchmarks.includes(t);
+                return (
+                  <button key={t} type="button" className={`${styles.chip} ${on ? styles.chipOn : ''}`}
+                    onClick={() => setBenchmarks((b) => (on ? b.filter((x) => x !== t) : [...b, t].sort()))}>{t}</button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
+      {cd ? (
+        <div className={styles.stack}>
+          <PerformanceChart
+            series={cd.defs} data={cd.pctData} hidden={hidden} onToggleSeries={(id) => setHidden((h) => toggleSeriesVisibility(h, id))}
+            brush={brush} onBrushChange={onBrush} loading={false} hasStatements noDataInRange={cd.pctData.length === 0} stacked logToggle
+            title="Performance réelle sur la période (sans ajouts)"
+            subtitle={firstDay && lastDay ? `0 % le ${firstDay} · jusqu’au ${lastDay} · benchmarks en pointillés` : 'Série « no_additions » du moteur'}
+            hint="Cliquez-glissez pour mesurer une sous-période, puis « Utiliser la sélection » (en haut) pour repartir de 0 % dessus · Échap pour effacer."
+          />
+          <DrawdownChart series={cd.defs} data={cd.pctData} hidden={hidden} loading={false} show stacked />
+        </div>
+      ) : (
+        <div className={`card ${styles.card}`}>{charts.error ?? 'Préparation des graphiques…'}</div>
+      )}
     </>
   );
 }

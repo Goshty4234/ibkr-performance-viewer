@@ -38,3 +38,16 @@
 .tickers { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 0.72rem; color: var(--text-muted); }
 .faint { color: var(--text-faint); font-size: 0.72rem; }
 .tall { max-height: 460px; }
+.chipOut { opacity: 0.6; border-style: dashed; }
+.chipOn { background: rgba(77, 141, 255, 0.18); border-color: rgba(77, 141, 255, 0.5); }
+.tagIn, .tagOut { font-size: 0.66rem; padding: 0.05rem 0.4rem; border-radius: 999px; margin-left: 0.2rem; }
+.tagIn { background: rgba(45, 212, 168, 0.14); color: #2dd4a8; }
+.tagOut { background: rgba(255, 176, 32, 0.14); color: var(--orange); }
+.verdicts { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.78rem; line-height: 1.45; }
+.verdictOut { color: var(--orange); }
+.verdictNote { color: var(--text-muted); }
+.period { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.7rem 1rem; }
+.presets { display: inline-flex; gap: 0.25rem; flex-wrap: wrap; }
+.slide { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.76rem; color: var(--text-muted); }
+.slide input[type='range'] { width: 100%; }
+.stack { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }

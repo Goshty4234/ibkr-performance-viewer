@@ -13,6 +13,7 @@
     POST   /fundamentals/pe      {tickers} -> trailing PE per ticker
     GET    /universe/{name}      sp500 | us ticker lists
     GET    /prices?ticker=&job=  close history (from the job snapshot when possible)
+    POST   /montecarlo/check     which portfolios make sense in a Monte Carlo (momentum / equal weight) and why not
     POST   /montecarlo           queue a Monte Carlo study (random draws of real stocks) -> {id}
     GET    /montecarlo/{id}      status / progress
     GET    /montecarlo/{id}/result  gzip JSON (curves of every draw, distributions, head-to-head)
@@ -332,10 +333,24 @@ def _mc(request: Request) -> McManager:
     return request.app.state.mc
 
 
+@app.post("/montecarlo/check")
+def mc_check(body: McRequest, user: str = Depends(current_user)) -> dict:
+    """Which of the portfolios make sense in a Monte Carlo, and why not for the others (no job is started)."""
+    from backtest_engine.montecarlo import check_portfolios
+
+    portfolios = body.portfolios if isinstance(body.portfolios, list) else []
+    try:
+        return {"portfolios": check_portfolios(portfolios, body.mc)}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, f"Invalid portfolio configuration: {exc}") from exc
+
+
 @app.post("/montecarlo")
 def mc_create(body: McRequest, request: Request, user: str = Depends(current_user)) -> dict:
     from backtest_engine.config import normalize_portfolio_configs
-    from backtest_engine.montecarlo import clean_options
+    from backtest_engine.montecarlo import check_portfolios, clean_options, none_eligible
 
     portfolios = body.portfolios if isinstance(body.portfolios, list) else []
     try:
@@ -345,6 +360,9 @@ def mc_create(body: McRequest, request: Request, user: str = Depends(current_use
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(400, f"Invalid portfolio configuration: {exc}") from exc
+    verdicts = check_portfolios(portfolios, body.mc)
+    if not any(v["status"] == "included" for v in verdicts):
+        raise HTTPException(400, none_eligible(verdicts))
     label = (body.label or "Monte Carlo : " + ", ".join(c["name"] for c in configs[:3]))[:200]
     try:
         job = _mc(request).submit(user, portfolios, body.options or {}, mc, label)

@@ -31,7 +31,7 @@ export class EngineError extends Error {
 
 /** Contract number this site needs (API_VERSION in engine/backtest_engine/__init__.py): an older
  * engine could misread a request or a result, so runs are refused until it is updated. */
-export const ENGINE_API = 4;
+export const ENGINE_API = 5;
 
 export function engineOutdated(health: EngineHealth | null | undefined): boolean {
   return !!health && (health.api ?? 0) < ENGINE_API;
@@ -42,8 +42,6 @@ const CLOUD_PROBE_MS = 6000;
 const LOCAL_SEEN_KEY = 'engine-local-seen';
 /** Registered on the PC by the portable engine at each start (portable.register_launch_link). */
 export const LAUNCH_URL = 'momentum-engine://start';
-/** Same registration: opens the engine's folder in Explorer (works with the engine stopped). */
-export const FOLDER_URL = 'momentum-engine-dossier://open';
 
 function isLoopback(url: string): boolean {
   return /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/i.test(url);
