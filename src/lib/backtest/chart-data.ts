@@ -168,6 +168,33 @@ export function prepareCharts(dates: string[], series: ResultSeries[], maxPoints
   return { defs, pctData, valueData, monthEndData };
 }
 
+/**
+ * Restricts the common date axis and every series to [start, end] ('' = open side), on the full-resolution
+ * data. Each series is cut on its own dates before alignment, so `prepareCharts` bases it on its first value
+ * inside the window (0 % there) exactly like the "Analyse ciblée" metrics do.
+ */
+export function sliceWindow(
+  dates: string[],
+  series: ResultSeries[],
+  start: string,
+  end: string,
+): { dates: string[]; series: ResultSeries[] } {
+  const inside = (d: string) => (!start || d >= start) && (!end || d <= end);
+  return {
+    dates: dates.filter(inside),
+    series: series.map((s) => {
+      const d: string[] = [];
+      const v: (number | null)[] = [];
+      for (let i = 0; i < s.dates.length; i++) {
+        if (!inside(s.dates[i])) continue;
+        d.push(s.dates[i]);
+        v.push(s.values[i]);
+      }
+      return { ...s, dates: d, values: v };
+    }),
+  };
+}
+
 export function sliceByDate<T extends { date: string }>(rows: T[], start: string | null, end: string | null): T[] {
   if (!start && !end) return rows;
   return rows.filter((r) => (!start || r.date >= start) && (!end || r.date <= end));

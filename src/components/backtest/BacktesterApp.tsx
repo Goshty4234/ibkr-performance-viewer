@@ -128,7 +128,7 @@ export default function BacktesterApp() {
       )}
       {mounted('tickers') && (
         <div style={view === 'tickers' ? undefined : HIDDEN}>
-          <TickersView />
+          <TickersView active={view === 'tickers'} />
         </div>
       )}
 

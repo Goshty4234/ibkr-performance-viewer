@@ -42,7 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import Response  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
-from backtest_engine import API_VERSION, __version__, updater  # noqa: E402
+from backtest_engine import API_VERSION, __version__, activate_engine_home, updater  # noqa: E402
 from backtest_engine.library import Library, start_auto_clean  # noqa: E402
 from backtest_engine.certs import ensure_system_ca_bundle  # noqa: E402
 
@@ -59,6 +59,10 @@ STARTED_AT = time.time()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # The ticker stores (marketdata/...) and Complete_Tickers are opened through paths relative to the
+    # data home. Until a request happened to switch the working directory (a search, a run), the first
+    # read of the store used the folder the engine was started from: an empty store, "0 tickers".
+    activate_engine_home()
     manager = JobManager(settings)
     manager.start()
     app.state.manager = manager

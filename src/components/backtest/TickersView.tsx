@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PriceHistory, PriceUpdate, StoredTicker } from '@/lib/engine/client';
+import { dateWindow, pctVersus, windowStats } from '@/lib/backtest/price-window';
 import { useEngineStore } from '@/lib/engine/store';
 import EChart from './charts/EChart';
 import { CHART_COLORS } from './charts/echarts-setup';
@@ -77,7 +78,7 @@ function stats(h: PriceHistory) {
 }
 
 /** Every ticker the engine has ever downloaded: browse, chart and bring up to date. Stored histories work without internet. */
-export default function TickersView() {
+export default function TickersView({ active = true }: { active?: boolean }) {
   const client = useEngineStore((s) => s.client);
   const [list, setList] = useState<StoredTicker[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -93,6 +94,9 @@ export default function TickersView() {
   const [log, setLog] = useState(false);
   const [candles, setCandles] = useState(false);
   const [range, setRange] = useState<RangeId>('Max');
+  const [view, setView] = useState<'price' | 'pct'>('price');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const stopRef = useRef(false);
@@ -108,9 +112,11 @@ export default function TickersView() {
     }
   }, [client]);
 
+  // The tab stays mounted while hidden: read the list again each time it is shown, so a list fetched
+  // while the engine was still starting, or filled by a run since, is never left stale.
   useEffect(() => {
-    refreshList();
-  }, [refreshList]);
+    if (active) void refreshList();
+  }, [active, refreshList]);
 
   const load = useCallback(async (t: string, mode: PriceUpdate = 'stored') => {
     if (!client) return;
@@ -209,14 +215,53 @@ export default function TickersView() {
   const meta = ticker ? list?.find((t) => t.ticker === ticker) : undefined;
   const s = useMemo(() => (hist && hist.close.length ? stats(hist) : null), [hist]);
 
-  const option = useMemo(() => {
+  const custom = !!(from || to);
+  /** Days shown: the dates typed in, otherwise the preset (1A, 5A, 10A, Max). */
+  const win = useMemo(() => {
     if (!hist || !hist.dates.length) return null;
+    if (custom) return dateWindow(hist.dates, from, to);
+    const years = RANGES.find((r) => r.id === range)?.years ?? 0;
+    return dateWindow(hist.dates, years ? shiftYears(hist.dates[hist.dates.length - 1], years) : '', '');
+  }, [hist, range, custom, from, to]);
+  const rangeStats = useMemo(() => (hist && win ? windowStats(hist.close, win) : null), [hist, win]);
+
+  const option = useMemo(() => {
+    if (!hist || !hist.dates.length || !win) return null;
     const a = movingAverage(hist.close, ma1, maType);
     const b = movingAverage(hist.close, ma2, maType);
-    const years = RANGES.find((r) => r.id === range)?.years ?? 0;
-    const start = years ? shiftYears(hist.dates[hist.dates.length - 1], years) : null;
-    const startIndex = start ? Math.max(0, hist.dates.findIndex((d) => d >= start)) : 0;
     const lastOf = (arr: (number | null)[]) => arr[arr.length - 1];
+    if (view === 'pct') {
+      // Same chart as the price one, as % change from the first day of the window (0 % there).
+      const base = hist.close[win.start];
+      const cut = (arr: (number | null)[]) => pctVersus(arr.slice(win.start, win.end + 1), base);
+      const closeP = cut(hist.close);
+      const aP = cut(a);
+      const bP = cut(b);
+      const lastPct = lastOf(closeP);
+      return {
+        grid: [{ left: 64, right: 20, top: 40, bottom: 60 }],
+        legend: { top: 4 },
+        tooltip: { trigger: 'axis', valueFormatter: (v: number | null) => (v === null || v === undefined ? '' : `${Number(v).toFixed(2)} %`) },
+        xAxis: [{ type: 'category', data: hist.dates.slice(win.start, win.end + 1), boundaryGap: false }],
+        yAxis: [{ type: 'value', scale: true, axisLabel: { formatter: (v: number) => `${v} %` } }],
+        dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 10 }],
+        series: [
+          {
+            name: `${hist.ticker}${lastPct === null ? '' : ` (${pct(lastPct / 100)})`}`,
+            type: 'line',
+            data: closeP,
+            showSymbol: false,
+            lineStyle: { width: 1.4, color: CHART_COLORS.accent },
+            sampling: 'lttb',
+            markLine: { silent: true, symbol: 'none', label: { show: false }, lineStyle: { color: CHART_COLORS.faint, type: 'dashed' }, data: [{ yAxis: 0 }] },
+          },
+          { name: `${maType} ${ma1}`, type: 'line', data: aP, showSymbol: false, lineStyle: { width: 1.3, color: CHART_COLORS.orange }, sampling: 'lttb' },
+          { name: `${maType} ${ma2}`, type: 'line', data: bP, showSymbol: false, lineStyle: { width: 1.3, color: CHART_COLORS.green }, sampling: 'lttb' },
+        ],
+      };
+    }
+    const startIndex = win.start;
+    const endIndex = win.end;
     const bars = hist.bars;
     const name = `${hist.ticker} (${money(hist.close[hist.close.length - 1])})`;
     const price = candles && bars
@@ -247,8 +292,8 @@ export default function TickersView() {
           ]
         : [{ type: log ? 'log' : 'value', scale: true }],
       dataZoom: [
-        { type: 'inside', startValue: startIndex, xAxisIndex: bars ? [0, 1] : [0] },
-        { type: 'slider', height: 16, bottom: 10, startValue: startIndex, xAxisIndex: bars ? [0, 1] : [0] },
+        { type: 'inside', startValue: startIndex, endValue: endIndex, xAxisIndex: bars ? [0, 1] : [0] },
+        { type: 'slider', height: 16, bottom: 10, startValue: startIndex, endValue: endIndex, xAxisIndex: bars ? [0, 1] : [0] },
       ],
       series: [
         price,
@@ -257,7 +302,7 @@ export default function TickersView() {
         ...(bars ? [{ name: 'Volume', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: bars.volume, itemStyle: { color: 'rgba(120,140,180,0.55)' }, large: true }] : []),
       ],
     };
-  }, [hist, ma1, ma2, maType, log, range, candles]);
+  }, [hist, ma1, ma2, maType, log, win, view, candles]);
 
   const position = useMemo(() => {
     if (!hist || !hist.close.length) return null;
@@ -354,8 +399,30 @@ export default function TickersView() {
             <div className={styles.toolbarInline}>
               <div className={styles.segment}>
                 {RANGES.map((r) => (
-                  <button key={r.id} type="button" className={range === r.id ? styles.segOn : ''} onClick={() => setRange(r.id)}>{r.id}</button>
+                  <button
+                    key={r.id}
+                    type="button"
+                    className={range === r.id && !custom ? styles.segOn : ''}
+                    onClick={() => { setRange(r.id); setFrom(''); setTo(''); }}
+                  >
+                    {r.id}
+                  </button>
                 ))}
+              </div>
+              <label className={styles.inlineField}>
+                Du
+                <input type="date" className="input" value={from} min={hist?.dates[0]} max={hist?.dates[hist.dates.length - 1]} onChange={(e) => setFrom(e.target.value)} />
+              </label>
+              <label className={styles.inlineField}>
+                Au
+                <input type="date" className="input" value={to} min={hist?.dates[0]} max={hist?.dates[hist.dates.length - 1]} onChange={(e) => setTo(e.target.value)} />
+              </label>
+              {custom && (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setFrom(''); setTo(''); }}>Effacer les dates</button>
+              )}
+              <div className={styles.segment}>
+                <button type="button" className={view === 'price' ? styles.segOn : ''} onClick={() => setView('price')} title="Cours de clôture en $">Prix $</button>
+                <button type="button" className={view === 'pct' ? styles.segOn : ''} onClick={() => setView('pct')} title="Variation en % depuis le premier jour de la plage (0 % au départ)">Variation %</button>
               </div>
               <div className={styles.segment}>
                 {(['SMA', 'EMA'] as MaType[]).map((t) => (
@@ -368,12 +435,12 @@ export default function TickersView() {
                 <input type="number" className="input" style={{ width: 70 }} min={2} max={2000} value={ma2} onChange={(e) => setMa2(Math.max(2, Number(e.target.value) || 200))} />
               </label>
               <label className={styles.inlineCheck}>
-                <input type="checkbox" checked={log} onChange={(e) => setLog(e.target.checked)} />
+                <input type="checkbox" checked={log} disabled={view === 'pct'} onChange={(e) => setLog(e.target.checked)} />
                 Log
               </label>
               {hist?.bars && (
                 <label className={styles.inlineCheck} title="Ouverture, haut, bas, clôture de chaque jour (plus lisible sur 1 an ou moins)">
-                  <input type="checkbox" checked={candles} onChange={(e) => setCandles(e.target.checked)} />
+                  <input type="checkbox" checked={candles} disabled={view === 'pct'} onChange={(e) => setCandles(e.target.checked)} />
                   Bougies
                 </label>
               )}
@@ -397,6 +464,12 @@ export default function TickersView() {
               <div><span>1 an</span><strong>{pct(s.y1)}</strong></div>
               <div><span>Croissance annuelle (prix)</span><strong>{pct(s.cagr)}</strong></div>
               <div><span>Pire baisse</span><strong>{pct(s.maxDd)}</strong></div>
+              {rangeStats && win && hist && (
+                <>
+                  <div title={`${hist.dates[win.start]} → ${hist.dates[win.end]}`}><span>Variation sur la plage</span><strong>{pct(rangeStats.change)}</strong></div>
+                  <div><span>Pire baisse sur la plage</span><strong>{pct(rangeStats.maxDrawdown)}</strong></div>
+                </>
+              )}
               <div><span>Dividendes 12 mois</span><strong>{s.divYield === null ? '—' : `${(s.divYield * 100).toFixed(2)} %`}</strong></div>
               {position?.map((p) => (
                 <div key={p.w}><span>vs {maType} {p.w}</span><strong style={{ color: p.gap === null ? undefined : p.gap >= 0 ? 'var(--green)' : 'var(--red, #ff6b7a)' }}>{pct(p.gap)}</strong></div>
@@ -410,7 +483,7 @@ export default function TickersView() {
           ) : option ? (
             <EChart option={option} height={hist?.bars ? 560 : 460} />
           ) : (
-            <div className={styles.padded}>Aucune donnée.</div>
+            <div className={styles.padded}>{hist && custom && !win ? 'Aucun jour de cotation dans cette plage de dates.' : 'Aucune donnée.'}</div>
           )}
         </div>
         {ticker && <TickerQuoteCard client={client} ticker={ticker} canRefresh />}

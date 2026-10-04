@@ -1,5 +1,5 @@
 import type { ResultSummary } from '@/lib/engine/types';
-import { buildResultSeries, prepareCharts, type PreparedCharts } from '../chart-data';
+import { buildResultSeries, prepareCharts, sliceWindow, type PreparedCharts } from '../chart-data';
 import { focusedAnalysis, type FocusedRow } from './focused';
 import { monthlyHeatmap, variationSummary, type Heatmap, type VariationRow } from './overview';
 import { periodTable, robustStats, type PeriodKind, type PeriodTable, type RobustRow } from './periods';
@@ -15,6 +15,8 @@ export class ResultAnalytics {
   readonly pfs: PfSeries[];
   private bench = new Map<string, Map<number, number> | null>();
   private memo = new Map<string, unknown>();
+  /** Last few window computations (the date pickers produce many while typing). */
+  private ranges = new Map<string, ChartsResult>();
 
   constructor(readonly summary: ResultSummary) {
     this.pfs = decodePortfolios(summary);
@@ -51,11 +53,38 @@ export class ResultAnalytics {
     return focusedAnalysis(this.pfs, (t) => this.benchReturns(t), start, end);
   }
 
+  private built(mode: 'no_additions' | 'with_additions', benchmarks: string[]) {
+    return this.cached(`built:${mode}:${benchmarks.join(',')}`, () => buildResultSeries(this.summary, mode, benchmarks));
+  }
+
   charts(mode: 'no_additions' | 'with_additions', benchmarks: string[], maxPoints?: number): ChartsResult {
     return this.cached(`charts:${mode}:${benchmarks.join(',')}:${maxPoints ?? ''}`, () => {
-      const { dates, series } = buildResultSeries(this.summary, mode, benchmarks);
+      const { dates, series } = this.built(mode, benchmarks);
       return { dates, charts: prepareCharts(dates, series, maxPoints) };
     });
+  }
+
+  /**
+   * The same charts over [start, end] only: every curve restarts at 0 % on the first day of the window and
+   * the drawdown is measured from there. Cut from the full-resolution series before any sampling, so a short
+   * window is never a coarse sample of the whole run.
+   */
+  rangeCharts(
+    mode: 'no_additions' | 'with_additions',
+    benchmarks: string[],
+    start: string,
+    end: string,
+    maxPoints?: number,
+  ): ChartsResult {
+    const key = `${mode}|${benchmarks.join(',')}|${start}|${end}|${maxPoints ?? ''}`;
+    const hit = this.ranges.get(key);
+    if (hit) return hit;
+    const full = this.built(mode, benchmarks);
+    const w = sliceWindow(full.dates, full.series, start, end);
+    const out: ChartsResult = { dates: w.dates, charts: prepareCharts(w.dates, w.series, maxPoints) };
+    this.ranges.set(key, out);
+    if (this.ranges.size > 6) this.ranges.delete(this.ranges.keys().next().value as string);
+    return out;
   }
 }
 

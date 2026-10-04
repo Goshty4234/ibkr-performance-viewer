@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { dateWindow, pctVersus, windowStats } from '@/lib/backtest/price-window';
 import type { PriceHistory } from '@/lib/engine/client';
 import { useEngineStore } from '@/lib/engine/store';
 import type { LoadedResult } from '@/lib/backtest/result-data';
@@ -12,6 +13,8 @@ import DataGrid, { type GridColumn } from '../grid/DataGrid';
 import { money, num } from './format';
 import PeEvolution from './PeEvolution';
 import styles from '../Results.module.css';
+
+const signedPct = (v: number | null) => (v === null || !Number.isFinite(v) ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)} %`);
 
 function jobIdOf(result: LoadedResult): string | undefined {
   return result.key.startsWith('job:') ? result.key.slice(4) : undefined;
@@ -30,6 +33,9 @@ export default function TickersTab({ result, portfolios }: { result: LoadedResul
   const [window, setWindow] = useState<number>(Number(firstMa?.sma_window) || 200);
   const [maType, setMaType] = useState<MaType>((firstMa?.ma_type as MaType) === 'EMA' ? 'EMA' : 'SMA');
   const [log, setLog] = useState(false);
+  const [view, setView] = useState<'price' | 'pct'>('price');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [hist, setHist] = useState<PriceHistory | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,9 +57,50 @@ export default function TickersTab({ result, portfolios }: { result: LoadedResul
     };
   }, [ticker, client, result]);
 
-  const option = useMemo(() => {
+  const ranged = !!(from || to);
+  /** Days shown: the dates typed in, otherwise the whole history. */
+  const win = useMemo(() => {
     if (!hist || !hist.dates.length) return null;
+    return ranged ? dateWindow(hist.dates, from, to) : { start: 0, end: hist.dates.length - 1 };
+  }, [hist, ranged, from, to]);
+  const rangeStats = useMemo(() => (hist && win ? windowStats(hist.close, win) : null), [hist, win]);
+  /** Dates of the run itself, to look at a ticker over exactly the backtested period. */
+  const runDates = result.summary.dates;
+  const runFrom = runDates[0] ?? '';
+  const runTo = runDates[runDates.length - 1] ?? '';
+
+  const option = useMemo(() => {
+    if (!hist || !hist.dates.length || !win) return null;
     const ma = movingAverage(hist.close, window, maType);
+    if (view === 'pct') {
+      // Same chart as the price one, as % change from the first day of the window (0 % there).
+      const base = hist.close[win.start];
+      const cut = (arr: (number | null)[]) => pctVersus(arr.slice(win.start, win.end + 1), base);
+      const closeP = cut(hist.close);
+      const maP = cut(ma);
+      const lastPct = closeP[closeP.length - 1];
+      const lastMaPct = maP[maP.length - 1];
+      return {
+        grid: { left: 64, right: 20, top: 40, bottom: 60 },
+        legend: { top: 4 },
+        tooltip: { trigger: 'axis', valueFormatter: (v: number | null) => (v === null || v === undefined ? '' : `${Number(v).toFixed(2)} %`) },
+        xAxis: { type: 'category', data: hist.dates.slice(win.start, win.end + 1), boundaryGap: false },
+        yAxis: { type: 'value', scale: true, axisLabel: { formatter: (v: number) => `${v} %` } },
+        dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 10 }],
+        series: [
+          {
+            name: `${hist.ticker}${lastPct === null ? '' : ` (${signedPct(lastPct / 100)})`}`,
+            type: 'line',
+            data: closeP,
+            showSymbol: false,
+            lineStyle: { width: 1.4, color: CHART_COLORS.accent },
+            sampling: 'lttb',
+            markLine: { silent: true, symbol: 'none', label: { show: false }, lineStyle: { color: CHART_COLORS.faint, type: 'dashed' }, data: [{ yAxis: 0 }] },
+          },
+          { name: `${maType} ${window}${lastMaPct === null ? '' : ` (${signedPct(lastMaPct / 100)})`}`, type: 'line', data: maP, showSymbol: false, lineStyle: { width: 1.4, color: CHART_COLORS.orange }, sampling: 'lttb' },
+        ],
+      };
+    }
     const lastClose = hist.close[hist.close.length - 1];
     const lastMa = ma[ma.length - 1];
     return {
@@ -62,13 +109,15 @@ export default function TickersTab({ result, portfolios }: { result: LoadedResul
       tooltip: { trigger: 'axis', valueFormatter: (v: number | null) => (v === null || v === undefined ? '' : v.toFixed(2)) },
       xAxis: { type: 'category', data: hist.dates, boundaryGap: false },
       yAxis: { type: log ? 'log' : 'value', scale: true },
-      dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 10 }],
+      dataZoom: ranged
+        ? [{ type: 'inside', startValue: win.start, endValue: win.end }, { type: 'slider', height: 16, bottom: 10, startValue: win.start, endValue: win.end }]
+        : [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 10 }],
       series: [
         { name: `${hist.ticker} (${money(lastClose)})`, type: 'line', data: hist.close, showSymbol: false, lineStyle: { width: 1.4, color: CHART_COLORS.accent }, sampling: 'lttb' },
         { name: `${maType} ${window}${lastMa ? ` (${money(lastMa)})` : ''}`, type: 'line', data: ma, showSymbol: false, lineStyle: { width: 1.4, color: CHART_COLORS.orange }, sampling: 'lttb' },
       ],
     };
-  }, [hist, window, maType, log]);
+  }, [hist, window, maType, log, win, view, ranged]);
 
   const status = useMemo(() => {
     if (!hist || !hist.close.length) return null;
@@ -142,6 +191,26 @@ export default function TickersTab({ result, portfolios }: { result: LoadedResul
             >
               <input className="input" style={{ width: 110 }} placeholder="Autre ticker" value={custom} onChange={(e) => setCustom(e.target.value)} />
             </form>
+            <label className={styles.inlineField}>
+              Du
+              <input type="date" className="input" value={from} min={hist?.dates[0]} max={hist?.dates[hist.dates.length - 1]} onChange={(e) => setFrom(e.target.value)} />
+            </label>
+            <label className={styles.inlineField}>
+              Au
+              <input type="date" className="input" value={to} min={hist?.dates[0]} max={hist?.dates[hist.dates.length - 1]} onChange={(e) => setTo(e.target.value)} />
+            </label>
+            {runFrom && (
+              <button type="button" className="btn btn-ghost btn-sm" title="Affiche le ticker sur les dates du backtest" onClick={() => { setFrom(runFrom); setTo(runTo); }}>
+                Période du run
+              </button>
+            )}
+            {ranged && (
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setFrom(''); setTo(''); }}>Effacer les dates</button>
+            )}
+            <div className={styles.segment}>
+              <button type="button" className={view === 'price' ? styles.segOn : ''} onClick={() => setView('price')} title="Cours de clôture en $">Prix $</button>
+              <button type="button" className={view === 'pct' ? styles.segOn : ''} onClick={() => setView('pct')} title="Variation en % depuis le premier jour de la plage (0 % au départ)">Variation %</button>
+            </div>
             <div className={styles.segment}>
               {(['SMA', 'EMA'] as MaType[]).map((t) => (
                 <button key={t} type="button" className={maType === t ? styles.segOn : ''} onClick={() => setMaType(t)}>{t}</button>
@@ -152,15 +221,25 @@ export default function TickersTab({ result, portfolios }: { result: LoadedResul
               <input type="number" className="input" style={{ width: 80 }} min={2} max={2000} value={window} onChange={(e) => setWindow(Math.max(2, Number(e.target.value) || 200))} />
             </label>
             <label className={styles.inlineCheck}>
-              <input type="checkbox" checked={log} onChange={(e) => setLog(e.target.checked)} />
+              <input type="checkbox" checked={log} disabled={view === 'pct'} onChange={(e) => setLog(e.target.checked)} />
               Log
             </label>
           </div>
         </div>
-        {status && (
+        {(status || rangeStats) && (
           <div className={styles.kpis}>
-            <div><span>Position vs {maType} {window}</span><strong style={{ color: status.above ? 'var(--green)' : 'var(--red, #ff6b7a)' }}>{status.above ? 'Au-dessus' : 'En dessous'}</strong></div>
-            <div><span>Écart</span><strong>{status.gap.toFixed(2)}%</strong></div>
+            {status && (
+              <>
+                <div><span>Position vs {maType} {window}</span><strong style={{ color: status.above ? 'var(--green)' : 'var(--red, #ff6b7a)' }}>{status.above ? 'Au-dessus' : 'En dessous'}</strong></div>
+                <div><span>Écart</span><strong>{status.gap.toFixed(2)}%</strong></div>
+              </>
+            )}
+            {rangeStats && win && hist && (
+              <>
+                <div title={`${hist.dates[win.start]} → ${hist.dates[win.end]}`}><span>Variation {ranged ? 'sur la plage' : 'totale'}</span><strong>{signedPct(rangeStats.change)}</strong></div>
+                <div><span>Pire baisse {ranged ? 'sur la plage' : 'totale'}</span><strong>{signedPct(rangeStats.maxDrawdown)}</strong></div>
+              </>
+            )}
           </div>
         )}
         {loading ? (
@@ -170,7 +249,7 @@ export default function TickersTab({ result, portfolios }: { result: LoadedResul
         ) : option ? (
           <EChart option={option} height={420} />
         ) : (
-          <div className={styles.padded}>Aucune donnée.</div>
+          <div className={styles.padded}>{hist && ranged && !win ? 'Aucun jour de cotation dans cette plage de dates.' : 'Aucune donnée.'}</div>
         )}
       </div>
 

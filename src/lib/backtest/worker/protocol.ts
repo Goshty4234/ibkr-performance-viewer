@@ -4,7 +4,8 @@ export type AnalyticsCall =
   | { op: 'periods'; kind: 'year' | 'month' }
   | { op: 'overview' }
   | { op: 'focused'; start: string; end: string }
-  | { op: 'charts'; mode: 'no_additions' | 'with_additions'; benchmarks: string[]; maxPoints?: number };
+  | { op: 'charts'; mode: 'no_additions' | 'with_additions'; benchmarks: string[]; maxPoints?: number }
+  | { op: 'rangeCharts'; mode: 'no_additions' | 'with_additions'; benchmarks: string[]; start: string; end: string; maxPoints?: number };
 
 export type WorkerRequest =
   | { id: number; type: 'load'; key: string; summary: ResultSummary }

@@ -257,7 +257,7 @@ export default function ResultsView() {
             />
           </TabPane>
           <TabPane active={tab === 'focused'} visited={visited.has('focused')}>
-            <FocusedTab result={result} portfolios={pfs} />
+            <FocusedTab result={result} portfolios={pfs} hidden={hidden} onToggle={toggle} benchmarks={benchmarks} />
           </TabPane>
           <TabPane active={tab === 'periods'} visited={visited.has('periods')}>
             <PeriodsTab result={result} hidden={hidden} />

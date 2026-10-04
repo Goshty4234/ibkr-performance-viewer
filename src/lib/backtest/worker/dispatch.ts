@@ -11,5 +11,7 @@ export function dispatch(a: ResultAnalytics, call: AnalyticsCall): unknown {
       return a.focused(call.start, call.end);
     case 'charts':
       return a.charts(call.mode, call.benchmarks, call.maxPoints);
+    case 'rangeCharts':
+      return a.rangeCharts(call.mode, call.benchmarks, call.start, call.end, call.maxPoints);
   }
 }
