@@ -23,7 +23,7 @@ export { isFlexCombinedCsv } from './flex-csv';
 export function parseFlexCombinedCsv(
   text: string,
   filename: string,
-): { nav: ParsedNavSeries; cashFlows: CashFlow[]; twrDaily: DailyTwrPoint[] } {
+): { nav: ParsedNavSeries; cashFlows: CashFlow[]; twrDaily: DailyTwrPoint[]; warnings: string[] } {
   const sections = scanFlexSections(text);
   const navSections = sections.filter((s) => s.kind === 'nav');
   const cashSections = sections.filter((s) => s.kind === 'cash');
@@ -34,6 +34,7 @@ export function parseFlexCombinedCsv(
     throw new Error(`Aucune section NAV dans ${filename}`);
   }
 
+  const warnings: string[] = [];
   const byDate = new Map<string, DailyNavPoint>();
   let accountId = '';
   let accountAlias = '';
@@ -49,6 +50,13 @@ export function parseFlexCombinedCsv(
     const accountCol = headers.findIndex((h) => h.toLowerCase() === 'clientaccountid');
     const aliasCol = headers.findIndex((h) => h.toLowerCase() === 'accountalias');
     const currencyCol = headers.findIndex((h) => h.toLowerCase() === 'currencyprimary');
+
+    const missingNav = [
+      ['Cash', cashCol], ['Stock', stockCol], ['Total', totalCol],
+    ].filter(([, i]) => (i as number) < 0).map(([n]) => n as string);
+    if (missingNav.length) {
+      warnings.push(`Section NAV : colonne(s) manquante(s) (${missingNav.join(', ')}). Coche-les dans la Flex Query (étape 3 du guide).`);
+    }
 
     for (const row of section.rows) {
       const rawAccount = accountCol >= 0 ? row[accountCol] : '';
@@ -154,6 +162,9 @@ export function parseFlexCombinedCsv(
   // the flows read from the other sections (same events, would otherwise be counted twice).
   const twrDaily: DailyTwrPoint[] = [];
   const changeFlows: CashFlow[] = [];
+  let endingMismatch = 0;
+  let endingChecked = 0;
+  let periodRowsOnly = false;
   for (const section of changeSections) {
     const headers = section.headers;
     const col = (name: string) => headers.findIndex((h) => h.toLowerCase() === name);
@@ -161,14 +172,34 @@ export function parseFlexCombinedCsv(
     const toCol = col('todate');
     const twrCol = col('twr');
     const flowCols = ['depositswithdrawals', 'assettransfers', 'internalcashtransfers'].map(col).filter((i) => i >= 0);
+    const endCol = col('endingvalue');
+    const missingChange = [
+      ['From Date', fromCol], ['To Date', toCol], ['TWR', twrCol],
+      ['Deposits/Withdrawals', col('depositswithdrawals')],
+      ['Asset Transfers', col('assettransfers')],
+      ['Internal Cash Transfers', col('internalcashtransfers')],
+      ['Ending Value', endCol],
+    ].filter(([, i]) => (i as number) < 0).map(([n]) => n as string);
+    if (missingChange.length) {
+      warnings.push(`Section Change in NAV : colonne(s) manquante(s) (${missingChange.join(', ')}). Coche-les dans la Flex Query (étape 4 du guide).`);
+    }
     if (fromCol < 0 || toCol < 0 || twrCol < 0) continue;
 
     for (const row of section.rows) {
       const from = row[fromCol] ?? '';
       const to = row[toCol] ?? '';
-      if (!isNavReportDate(to) || from !== to) continue; // daily rows only (period totals are skipped)
+      if (!isNavReportDate(to)) continue;
+      if (from !== to) { periodRowsOnly = true; continue; } // daily rows only (period totals are skipped)
       const date = parseReportDate(to);
       twrDaily.push({ date, returnPct: parseNumber(row[twrCol]) });
+      if (endCol >= 0) {
+        const nav = byDate.get(date);
+        const end = parseNumber(row[endCol]);
+        if (nav && end > 0) {
+          endingChecked++;
+          if (Math.abs(end - nav.total) > Math.max(1, 0.005 * nav.total)) endingMismatch++;
+        }
+      }
       const amount = flowCols.reduce((sum, i) => sum + parseNumber(row[i]), 0);
       if (Math.abs(amount) > 0.005) {
         changeFlows.push({ date, amount, description: 'Flux IBKR (Change in NAV)', isExternal: true });
@@ -176,6 +207,28 @@ export function parseFlexCombinedCsv(
     }
   }
   twrDaily.sort((a, b) => a.date.localeCompare(b.date));
+
+  if (!changeSections.length) {
+    warnings.push('Section Change in NAV absente : pas de TWR officiel IBKR ni de flux exacts. Le rendement sera calculé depuis la NAV et les transferts de titres ne seront pas exclus. Ajoute Change in NAV à ta Flex Query (guide) et réimporte.');
+  } else if (twrDaily.length < 2) {
+    warnings.push(periodRowsOnly
+      ? 'Change in NAV ne contient pas de lignes journalières : mets « Breakout by Day » à Yes dans la Flex Query.'
+      : 'Change in NAV ne contient pas assez de lignes pour un TWR (2 jours minimum).');
+  } else {
+    const navDates = new Set(points.map((p) => p.date));
+    const twrDates = new Set(twrDaily.map((p) => p.date));
+    const missing = points.slice(1).filter((p) => !twrDates.has(p.date)).map((p) => p.date);
+    if (missing.length) {
+      warnings.push(`TWR officiel absent pour ${missing.length} jour(s) de NAV (ex. ${missing.slice(0, 3).join(', ')}) : ces jours comptent pour 0 % dans la courbe.`);
+    }
+    const extra = twrDaily.filter((p) => !navDates.has(p.date)).length;
+    if (extra) warnings.push(`${extra} jour(s) de TWR sans valeur de NAV correspondante.`);
+    const wild = twrDaily.filter((p) => Math.abs(p.returnPct) > 25).map((p) => p.date);
+    if (wild.length) warnings.push(`Rendement journalier supérieur à 25 % le ${wild.slice(0, 3).join(', ')} : à vérifier.`);
+    if (endingChecked > 0 && endingMismatch > 0) {
+      warnings.push(`Change in NAV et la section NAV ne concordent pas pour ${endingMismatch} jour(s) sur ${endingChecked} : vérifie que les deux sections viennent de la même requête.`);
+    }
+  }
   if (changeFlows.length || twrDaily.length) {
     cashFlows.length = 0;
     cashFlows.push(...changeFlows);
@@ -193,5 +246,6 @@ export function parseFlexCombinedCsv(
     },
     cashFlows,
     twrDaily: twrDaily.length >= 2 ? twrDaily : [],
+    warnings: [...new Set(warnings)],
   };
 }

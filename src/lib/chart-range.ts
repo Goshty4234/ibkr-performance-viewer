@@ -23,15 +23,18 @@ export function sliceAndRebaseChartData(
   const slice = data.slice(startIdx, endIdx + 1);
   if (slice.length < 2) return slice;
 
+  // A series may start later or end earlier than the others: base on its first real value.
   const bases = new Map<string, number>();
   for (const id of seriesIds) {
-    bases.set(id, 1 + ((slice[0][id] as number) ?? 0) / 100);
+    const first = slice.find((p) => typeof p[id] === 'number');
+    bases.set(id, 1 + ((first?.[id] as number | undefined) ?? 0) / 100);
   }
 
   return slice.map((p) => {
     const row: MultiSeriesChartPoint = { date: p.date };
     for (const id of seriesIds) {
-      const level = 1 + ((p[id] as number) ?? 0) / 100;
+      if (typeof p[id] !== 'number') continue; // outside this series' dates: stays empty
+      const level = 1 + (p[id] as number) / 100;
       const base = bases.get(id) ?? 1;
       row[id] = base > 0 ? (level / base - 1) * 100 : 0;
     }
@@ -60,16 +63,24 @@ export function computeBrushRangeReturns(
   startIdx: number,
   endIdx: number,
 ): RangeReturnRow[] {
-  const start = data[startIdx];
-  const end = data[endIdx];
-  if (!start || !end) return [];
+  if (!data[startIdx] || !data[endIdx]) return [];
 
-  return series.map((s) => ({
-    seriesId: s.id,
-    label: s.label,
-    color: s.color,
-    totalReturn: rangeTotalReturn((start[s.id] as number) ?? 0, (end[s.id] as number) ?? 0),
-  }));
+  // First and last real value inside the selection (a series can start late or end early).
+  return series.map((s) => {
+    let a = startIdx;
+    while (a <= endIdx && typeof data[a][s.id] !== 'number') a++;
+    let b = endIdx;
+    while (b >= startIdx && typeof data[b][s.id] !== 'number') b--;
+    const hasRange = a <= b;
+    return {
+      seriesId: s.id,
+      label: s.label,
+      color: s.color,
+      totalReturn: hasRange
+        ? rangeTotalReturn(data[a][s.id] as number, data[b][s.id] as number)
+        : 0,
+    };
+  });
 }
 
 export const CHART_SYNC_ID = 'ibkr-portfolio-charts';

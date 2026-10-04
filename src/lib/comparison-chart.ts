@@ -2,6 +2,7 @@ import type { BenchmarkSymbol } from './types';
 import { effectiveSeriesStart } from './analysis-lock';
 import {
   accountSeriesId,
+  backtestSeriesId,
   alignBenchmarkToDates,
   alignCurvePointsToDates,
   benchmarkSeriesId,
@@ -22,12 +23,15 @@ import {
   type AccountCurveBundle,
 } from './portfolio-curve';
 import { fetchBenchmark } from './performance';
+import { loadBacktestCurve, type BacktestPick } from './backtest/compare-curves';
 
 export interface ComparisonChartBuildInput {
   primaryAccountId: string;
   primaryBundle: AccountCurveBundle;
   comparisonAccountIds: string[];
   comparisonBenchmarks: BenchmarkSymbol[];
+  /** Backtester portfolios drawn over the account (cumulative % of their own run). */
+  comparisonBacktests?: BacktestPick[];
   rangeStart: string;
   rangeEnd: string;
   /** Verrou par portfolioAccountId (analysisStartLock, Supabase). */
@@ -56,6 +60,7 @@ export async function buildComparisonChartData(
     primaryBundle,
     comparisonAccountIds,
     comparisonBenchmarks,
+    comparisonBacktests = [],
     rangeStart,
     rangeEnd,
     accountLocksById = new Map(),
@@ -82,6 +87,15 @@ export async function buildComparisonChartData(
     );
     if (raw.length) {
       comparisonCurves.push({ id: accountSeriesId(accId), curve: raw });
+    }
+  }
+
+  for (const pick of comparisonBacktests) {
+    try {
+      const raw = (await loadBacktestCurve(pick)).filter((p) => p.date <= rangeEnd);
+      if (raw.length) comparisonCurves.push({ id: backtestSeriesId(pick.runId, pick.index), curve: raw });
+    } catch {
+      // a run that can no longer be opened is simply left out of the chart
     }
   }
 

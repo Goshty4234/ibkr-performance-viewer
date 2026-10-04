@@ -1,6 +1,6 @@
 'use client';
 
-import { type CSSProperties, type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import styles from './DataGrid.module.css';
 
 export interface GridColumn<T> {
@@ -59,6 +59,9 @@ export default function DataGrid<T>({
 }: DataGridProps<T>) {
   const [sort, setSort] = useState(initialSort);
   const [scrollTop, setScrollTop] = useState(0);
+  // Column widths dragged by the person (key -> px); the column's own width is the default.
+  const [widths, setWidths] = useState<Record<string, number>>({});
+  const widthOf = useCallback((c: GridColumn<T>) => widths[c.key] ?? c.width ?? 120, [widths]);
   const scroller = useRef<HTMLDivElement>(null);
   const frame = useRef<number | null>(null);
 
@@ -80,8 +83,8 @@ export default function DataGrid<T>({
     return keyed;
   }, [rows, columns, sort]);
 
-  const template = useMemo(() => columns.map((c) => `${c.width ?? 120}px`).join(' '), [columns]);
-  const totalWidth = useMemo(() => columns.reduce((a, c) => a + (c.width ?? 120), 0), [columns]);
+  const template = useMemo(() => columns.map((c) => `${widthOf(c)}px`).join(' '), [columns, widthOf]);
+  const totalWidth = useMemo(() => columns.reduce((a, c) => a + widthOf(c), 0), [columns, widthOf]);
   const bodyHeight = sorted.length * rowHeight;
   // Height taken by the horizontal scrollbar, so short tables are not cut by it.
   const [hbar, setHbar] = useState(0);
@@ -126,6 +129,25 @@ export default function DataGrid<T>({
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
 
+  const startResize = (e: ReactPointerEvent<HTMLSpanElement>, c: GridColumn<T>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = widthOf(c);
+    const target = e.currentTarget;
+    target.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) =>
+      setWidths((w) => ({ ...w, [c.key]: Math.max(48, Math.round(startW + ev.clientX - startX)) }));
+    const up = () => {
+      target.removeEventListener('pointermove', move);
+      target.removeEventListener('pointerup', up);
+      target.removeEventListener('pointercancel', up);
+    };
+    target.addEventListener('pointermove', move);
+    target.addEventListener('pointerup', up);
+    target.addEventListener('pointercancel', up);
+  };
+
   const cellClass = (c: GridColumn<T>, k: number) =>
     `${styles.cell} ${c.align === 'right' ? styles.right : c.align === 'center' ? styles.center : ''} ${freezeFirst && k === 0 ? styles.frozen : ''}`;
 
@@ -152,13 +174,27 @@ export default function DataGrid<T>({
                   key={c.key}
                   role="columnheader"
                   title={c.title ?? c.label}
-                  className={`${cellClass(c, k)} ${c.sortable === false ? '' : styles.sortable}`}
+                  className={`${cellClass(c, k)} ${styles.headCell} ${c.sortable === false ? '' : styles.sortable}`}
                   onClick={() => toggleSort(c)}
                 >
                   <span className={styles.headLabel}>{c.label}</span>
                   {sort?.key === c.key
                     ? <span className={styles.sortMark}>{sort.dir === 'desc' ? '▼' : '▲'}</span>
                     : c.sortable !== false && <span className={styles.sortHint} aria-hidden>⇅</span>}
+                  <span
+                    className={styles.resizer}
+                    title="Glisser pour redimensionner · double-clic pour réinitialiser"
+                    onPointerDown={(e) => startResize(e, c)}
+                    onClick={(e) => e.stopPropagation()}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      setWidths((w) => {
+                        const next = { ...w };
+                        delete next[c.key];
+                        return next;
+                      });
+                    }}
+                  />
                 </div>
               ))}
             </div>

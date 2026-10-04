@@ -1,4 +1,5 @@
 import Header from './Header';
+import ResizableTables from './ResizableTables';
 import styles from './AppShell.module.css';
 
 interface Props {
@@ -12,6 +13,7 @@ export default function AppShell({ children, email, guest = false }: Props) {
     <div className={styles.shell}>
       <Header email={email} guest={guest} />
       <main className={styles.main}>{children}</main>
+      <ResizableTables />
     </div>
   );
 }

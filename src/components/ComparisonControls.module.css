@@ -45,3 +45,38 @@
   font-size: 0.8rem;
   color: var(--text-muted);
 }
+
+.chipX {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.1rem;
+}
+.chipX:hover { color: var(--text); }
+
+.addRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+.addRow select { min-width: 200px; max-width: 100%; }
+.addBtn {
+  padding: 0.35rem 0.8rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(77, 141, 255, 0.45);
+  background: rgba(77, 141, 255, 0.1);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.addBtn:disabled { opacity: 0.5; cursor: default; }
+
+.hint {
+  margin-top: 0.45rem;
+  font-size: 0.75rem;
+  color: var(--text-faint);
+  max-width: 70ch;
+}

@@ -18,6 +18,7 @@ import { dbToAccount, formatAccountLinkLabel, isPendingIbkrId } from '@/lib/acco
 import { formatStatementPeriod } from '@/lib/privacy';
 import {
   benchmarkSeriesId,
+  backtestSeriesId,
   buildSeriesDefs,
   primarySeriesId,
   toggleSeriesVisibility,
@@ -54,9 +55,12 @@ import StatsGrid from './StatsGrid';
 import PerformanceChart from './PerformanceChart';
 import ChartRangeBanner from './ChartRangeBanner';
 import ComparisonControls from './ComparisonControls';
+import type { BacktestPick } from '@/lib/backtest/compare-curves';
 import DrawdownChart from './DrawdownChart';
 import PeriodPerformanceTable from './PeriodPerformanceTable';
 import RiskMetricsTable from './RiskMetricsTable';
+import ExtendedMetricsTable from './ExtendedMetricsTable';
+import AccountValueChart from './AccountValueChart';
 import YearlyReturnsChart from './YearlyReturnsChart';
 import TimelineStatus from './TimelineStatus';
 import FileUpload from './FileUpload';
@@ -79,6 +83,7 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [comparisonBenchmarks, setComparisonBenchmarks] = useState<BenchmarkSymbol[]>(['SPY']);
   const [comparisonAccountIds, setComparisonAccountIds] = useState<string[]>([]);
+  const [comparisonBacktests, setComparisonBacktests] = useState<BacktestPick[]>([]);
   const [allAccounts, setAllAccounts] = useState<PortfolioAccount[]>([]);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
   const [chartBrush, setChartBrush] = useState<ChartBrushSelection | null>(null);
@@ -268,6 +273,7 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
           primaryBundle: { statements, navSeries, twrSeries },
           comparisonAccountIds,
           comparisonBenchmarks,
+          comparisonBacktests,
           rangeStart: effStart,
           rangeEnd: effEnd,
           accountLocksById,
@@ -295,6 +301,7 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
     ibkrTwrPoints,
     comparisonBenchmarks,
     comparisonAccountIds,
+    comparisonBacktests,
     rangeStart,
     rangeEnd,
     effectiveBounds,
@@ -303,7 +310,7 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
 
   useEffect(() => {
     setChartBrush(null);
-  }, [rangeStart, rangeEnd, comparisonBenchmarks, comparisonAccountIds, account.id]);
+  }, [rangeStart, rangeEnd, comparisonBenchmarks, comparisonAccountIds, comparisonBacktests, account.id]);
 
   async function handleSaveStartLock() {
     const value = lockDraft.trim() || null;
@@ -379,8 +386,14 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
   }, [allAccounts]);
 
   const chartSeries = useMemo(
-    () => buildSeriesDefs(primaryLabel, comparisonAccountIds, accountLabels, comparisonBenchmarks),
-    [primaryLabel, comparisonAccountIds, accountLabels, comparisonBenchmarks],
+    () => buildSeriesDefs(
+      primaryLabel,
+      comparisonAccountIds,
+      accountLabels,
+      comparisonBenchmarks,
+      comparisonBacktests.map((b) => ({ id: backtestSeriesId(b.runId, b.index), label: b.label })),
+    ),
+    [primaryLabel, comparisonAccountIds, accountLabels, comparisonBenchmarks, comparisonBacktests],
   );
 
   useEffect(() => {
@@ -490,7 +503,8 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
         const flexCash = !flexCombined && !flexNav && isFlexCashCsv(text);
 
         if (flexCombined) {
-          const { nav, cashFlows, twrDaily } = parseFlexCombinedCsv(text, file.name);
+          const { nav, cashFlows, twrDaily, warnings } = parseFlexCombinedCsv(text, file.name);
+          for (const w of warnings) notes.push(`⚠ ${w}`);
 
           const res = await fetch('/api/nav-series', {
             method: 'POST',
@@ -663,7 +677,7 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
   }
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-wide>
       <nav className={styles.breadcrumb}>
         <Link href="/ibkr">← Comptes IBKR</Link>
       </nav>
@@ -824,6 +838,8 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
                   otherAccounts={otherAccounts}
                   selectedAccountIds={comparisonAccountIds}
                   onAccountIdsChange={setComparisonAccountIds}
+                  backtests={comparisonBacktests}
+                  onBacktestsChange={setComparisonBacktests}
                 />
               </div>
             </div>
@@ -898,6 +914,25 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
                 timelineHealth?.rangeCoverage?.hasAnyData !== false &&
                 multiChartData.length > 0
               }
+            />
+          )}
+
+          {multiChartData.length > 0 && (
+            <ExtendedMetricsTable
+              series={chartSeries}
+              data={multiChartData}
+              hidden={hiddenSeries}
+              brush={chartBrush}
+              loading={chartLoading}
+            />
+          )}
+
+          {navSeries && navSeries.points.length >= 2 && rangeStart && rangeEnd && (
+            <AccountValueChart
+              points={navSeries.points}
+              rangeStart={rangeStart}
+              rangeEnd={rangeEnd}
+              currency={navSeries.baseCurrency}
             />
           )}
 

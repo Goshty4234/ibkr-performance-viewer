@@ -81,17 +81,17 @@ export default function FlexQueryGuide({ defaultOpen = false, prominent = false 
         </ul>
 
         <h4>Étape 4 : section « Change in NAV »</h4>
-        <p>Garde les options du haut par défaut. Dans la liste des champs (toujours sans « Select All »), coche :</p>
+        <p>Dans les options du haut, coche <b>Mark-to-Market</b> et laisse <b>Realized &amp; Unrealized</b> décoché. Dans la liste des champs (toujours sans « Select All »), coche, dans l’ordre où IBKR les affiche :</p>
         <ul className={styles.list}>
           <Yes>Account ID</Yes>
           <Yes>From Date</Yes>
           <Yes>To Date</Yes>
           <Yes>Starting Value</Yes>
-          <Yes>Ending Value</Yes>
-          <Yes note="(le rendement journalier officiel de IBKR : le champ le plus important)">TWR</Yes>
-          <Yes note="(tes dépôts et retraits d’argent)">Deposits &amp; Withdrawals</Yes>
-          <Yes note="(les titres qui entrent ou sortent de ton compte)">Asset Transfers</Yes>
+          <Yes note="(tes dépôts et retraits d’argent)">Deposits/Withdrawals</Yes>
           <Yes note="(les transferts d’argent entre tes comptes)">Internal Cash Transfers</Yes>
+          <Yes note="(les titres qui entrent ou sortent de ton compte)">Asset Transfers</Yes>
+          <Yes>Ending Value</Yes>
+          <Yes note="(tout en bas de la liste : le rendement journalier officiel de IBKR, le champ le plus important)">TWR</Yes>
           <No>Tous les autres champs (Mtm, Realized, Dividends, Commissions, Interest…)</No>
         </ul>
         <p><small>Avec « Breakout by Day » à Yes (étape 5), IBKR écrit une ligne par jour, c’est ce qu’il faut.</small></p>

@@ -220,6 +220,32 @@ select {
 }
 
 /* Allocations PDF: print only that page, dark theme kept. */
+/* Drag handle on table headers (see components/ResizableTables.tsx). */
+.col-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+  z-index: 5;
+}
+.col-resizer::after {
+  content: '';
+  position: absolute;
+  top: 25%;
+  bottom: 25%;
+  right: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+th:hover > .col-resizer::after { background: rgba(255, 255, 255, 0.18); }
+.col-resizer:hover::after, .col-resizing::after { background: var(--accent, #4d8dff); }
+
 @media print {
   body.print-allocations * { visibility: hidden; }
   body.print-allocations .alloc-print-root,

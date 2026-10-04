@@ -65,6 +65,8 @@
   justify-content: center;
 }
 
+.headCell { position: relative; }
+
 .frozen {
   position: sticky;
   left: 0;
@@ -129,3 +131,28 @@
   border-radius: var(--radius-sm);
   text-align: center;
 }
+
+.resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  z-index: 6;
+}
+.resizer::after {
+  content: '';
+  position: absolute;
+  top: 25%;
+  bottom: 25%;
+  right: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+.head:hover .resizer::after { background: rgba(255, 255, 255, 0.18); }
+.resizer:hover::after { background: var(--accent, #4d8dff); }

@@ -1,7 +1,7 @@
 import type { BenchmarkSymbol } from './types';
 import { BENCHMARK_LABELS } from './types';
 
-export type ChartSeriesKind = 'primary' | 'account' | 'benchmark';
+export type ChartSeriesKind = 'primary' | 'account' | 'benchmark' | 'backtest';
 
 export interface ChartSeriesDef {
   id: string;
@@ -36,6 +36,10 @@ export function accountSeriesId(accountId: string): string {
   return `account:${accountId}`;
 }
 
+export function backtestSeriesId(runId: string, index: number): string {
+  return `backtest:${runId}:${index}`;
+}
+
 export function benchmarkSeriesId(symbol: BenchmarkSymbol): string {
   return `benchmark:${symbol}`;
 }
@@ -46,7 +50,7 @@ export function assignSeriesColors(
   return series.map((s, i) => ({
     ...s,
     color: SERIES_PALETTE[i % SERIES_PALETTE.length],
-    strokeDasharray: s.kind === 'benchmark' ? '6 4' : undefined,
+    strokeDasharray: s.kind === 'benchmark' ? '6 4' : s.kind === 'backtest' ? '2 3' : undefined,
   }));
 }
 
@@ -55,6 +59,7 @@ export function buildSeriesDefs(
   extraAccountIds: string[],
   accountLabels: Map<string, string>,
   benchmarks: BenchmarkSymbol[],
+  backtests: { id: string; label: string }[] = [],
 ): ChartSeriesDef[] {
   const raw: Omit<ChartSeriesDef, 'color'>[] = [
     { id: primarySeriesId(), label: primaryLabel, kind: 'primary' },
@@ -63,6 +68,7 @@ export function buildSeriesDefs(
       label: accountLabels.get(id) ?? 'Compte',
       kind: 'account' as const,
     })),
+    ...backtests.map((b) => ({ id: b.id, label: b.label, kind: 'backtest' as const })),
     ...benchmarks.map((sym) => ({
       id: benchmarkSeriesId(sym),
       label: BENCHMARK_LABELS[sym],
@@ -149,6 +155,7 @@ export function alignCurvePointsToDates(
   let last = 0;
   let lastGap = false;
   let started = false;
+  const endDate = sorted[sorted.length - 1].date;
   const values: (number | null)[] = [];
   const gaps: boolean[] = [];
   for (const date of dates) {
@@ -164,8 +171,10 @@ export function alignCurvePointsToDates(
       lastGap = !!p.isGap;
       started = true;
     }
+    // Past the end of its data a curve stays flat and is flagged as a gap (drawn dashed): it is
+    // not presented as real data, and the metrics see no movement instead of a fake drop.
     values.push(started ? last : null);
-    gaps.push(started && lastGap);
+    gaps.push(started && (lastGap || date > endDate));
   }
   return { values, gaps };
 }
