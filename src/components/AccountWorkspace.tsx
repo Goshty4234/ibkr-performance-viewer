@@ -67,7 +67,7 @@ import HoldingsPanel from './HoldingsPanel';
 import YearlyReturnsChart from './YearlyReturnsChart';
 import TimelineStatus from './TimelineStatus';
 import FileUpload from './FileUpload';
-import { mirrorIbkrFile } from '@/lib/storage/mirror';
+import { mirrorAccountDataSoon, mirrorIbkrFile } from '@/lib/storage/mirror';
 import styles from './AccountWorkspace.module.css';
 
 interface Props {
@@ -172,6 +172,12 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
   }, [loadStatements, loadNavSeries, loadTwrSeries, loadHoldings, reloadAccount]);
 
   useEffect(() => { reloadData(); }, [reloadData]);
+
+  // Local copy of what was extracted from the CSVs (the raw files are copied on import).
+  useEffect(() => {
+    if (!navSeries && !twrSeries && !holdings) return;
+    mirrorAccountDataSoon(account.id, () => ({ nav: navSeries, twr: twrSeries, holdings }));
+  }, [account.id, navSeries, twrSeries, holdings]);
 
   useEffect(() => {
     fetch('/api/accounts')

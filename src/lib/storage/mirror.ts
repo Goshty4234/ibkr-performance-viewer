@@ -18,6 +18,32 @@ export async function mirrorIbkrFile(file: File, text?: string): Promise<void> {
   }
 }
 
+let accountTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Copies to the local folder what the site extracted from the CSVs of one IBKR account (NAV, TWR, flows,
+ * positions, trades), next to the raw statements. Written a moment after the last change; a silent no-op
+ * when no engine runs on this PC.
+ */
+export function mirrorAccountDataSoon(accountId: string, build: () => unknown, delayMs = 2500): void {
+  if (typeof window === 'undefined') return;
+  if (accountTimer) clearTimeout(accountTimer);
+  accountTimer = setTimeout(() => {
+    accountTimer = null;
+    void (async () => {
+      if (isGuest() || !localAvailable()) return;
+      try {
+        const { data: { user } } = await createClient().auth.getUser();
+        if (!user) return;
+        const payload = JSON.stringify({ version: 1, saved_at: new Date().toISOString(), accountId, ...(build() as object) });
+        await localPutIbkr(user.id, `_donnees-compte-${accountId}.json`, payload);
+      } catch {
+        /* mirror only */
+      }
+    })();
+  }, delayMs);
+}
+
 let timer: ReturnType<typeof setTimeout> | null = null;
 
 async function writeConfigs(): Promise<void> {
