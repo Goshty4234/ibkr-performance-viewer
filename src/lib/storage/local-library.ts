@@ -107,6 +107,16 @@ export async function localPutIbkr(uid: string, name: string, data: Blob | strin
   }
 }
 
+export async function localGetIbkr(uid: string, name: string): Promise<Blob | null> {
+  const c = localClient();
+  if (!c) return null;
+  try {
+    return await c.libGet(`ibkr/${uid}/${encodeURIComponent(name)}`);
+  } catch {
+    return null;
+  }
+}
+
 export async function localPutConfigs(uid: string, data: string): Promise<boolean> {
   const c = localClient();
   if (!c) return false;

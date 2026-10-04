@@ -1,6 +1,6 @@
 import { isGuest } from '@/lib/guest';
 import { createClient } from '@/lib/supabase/client';
-import { localAvailable, localPutConfigs, localPutIbkr } from './local-library';
+import { localAvailable, localGetIbkr, localPutConfigs, localPutIbkr } from './local-library';
 
 /**
  * Copies to the local folder what lives online, so the folder is a complete copy of the account:
@@ -19,6 +19,22 @@ export async function mirrorIbkrFile(file: File, text?: string): Promise<void> {
 }
 
 let accountTimer: ReturnType<typeof setTimeout> | null = null;
+const lastWritten = new Map<string, string>();
+
+const accountFile = (accountId: string) => `_donnees-compte-${accountId}.json`;
+
+/** What the local copy of an account holds (null when there is none or no local engine answers). */
+export async function readAccountDataLocal<T = Record<string, unknown>>(accountId: string): Promise<T | null> {
+  if (isGuest() || !localAvailable()) return null;
+  try {
+    const { data: { session } } = await createClient().auth.getSession();
+    if (!session?.user) return null;
+    const blob = await localGetIbkr(session.user.id, accountFile(accountId));
+    return blob ? (JSON.parse(await blob.text()) as T) : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Copies to the local folder what the site extracted from the CSVs of one IBKR account (NAV, TWR, flows,
@@ -35,8 +51,10 @@ export function mirrorAccountDataSoon(accountId: string, build: () => unknown, d
       try {
         const { data: { user } } = await createClient().auth.getUser();
         if (!user) return;
-        const payload = JSON.stringify({ version: 1, saved_at: new Date().toISOString(), accountId, ...(build() as object) });
-        await localPutIbkr(user.id, `_donnees-compte-${accountId}.json`, payload);
+        const body = JSON.stringify({ accountId, ...(build() as object) });
+        if (lastWritten.get(accountId) === body) return; // unchanged: no need to rewrite the file
+        const ok = await localPutIbkr(user.id, accountFile(accountId), JSON.stringify({ version: 1, saved_at: new Date().toISOString(), ...JSON.parse(body) }));
+        if (ok) lastWritten.set(accountId, body);
       } catch {
         /* mirror only */
       }

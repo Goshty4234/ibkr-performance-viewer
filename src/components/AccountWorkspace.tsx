@@ -67,7 +67,7 @@ import HoldingsPanel from './HoldingsPanel';
 import YearlyReturnsChart from './YearlyReturnsChart';
 import TimelineStatus from './TimelineStatus';
 import FileUpload from './FileUpload';
-import { mirrorAccountDataSoon, mirrorIbkrFile } from '@/lib/storage/mirror';
+import { mirrorAccountDataSoon, mirrorIbkrFile, readAccountDataLocal } from '@/lib/storage/mirror';
 import styles from './AccountWorkspace.module.css';
 
 interface Props {
@@ -81,6 +81,7 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
   const [navSeries, setNavSeries] = useState<DbNavSeries | null>(null);
   const [twrSeries, setTwrSeries] = useState<DbTwrSeries | null>(null);
   const [holdings, setHoldings] = useState<DbHoldings | null>(null);
+  const [localFallback, setLocalFallback] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -102,17 +103,33 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
   const [lockDraft, setLockDraft] = useState(initialAccount.analysisStartLock ?? '');
   const [savingLock, setSavingLock] = useState(false);
 
+  /** The online database cannot be reached: show the copy kept in the local folder, if there is one. */
+  const restoreFromLocal = useCallback(async () => {
+    const local = await readAccountDataLocal<{
+      saved_at?: string; nav?: DbNavSeries | null; twr?: DbTwrSeries | null; holdings?: DbHoldings | null;
+    }>(account.id);
+    if (!local || (!local.nav && !local.twr && !local.holdings)) return;
+    setNavSeries(local.nav ?? null);
+    setTwrSeries(local.twr ?? null);
+    setHoldings(local.holdings ?? null);
+    setLocalFallback(local.saved_at ?? '');
+  }, [account.id]);
+
   const loadNavSeries = useCallback(async () => {
-    const res = await fetch(
-      `/api/nav-series?portfolioAccountId=${encodeURIComponent(account.id)}`,
-    );
+    let res: Response;
+    try {
+      res = await fetch(`/api/nav-series?portfolioAccountId=${encodeURIComponent(account.id)}`);
+    } catch {
+      await restoreFromLocal();
+      return;
+    }
     if (!res.ok) {
       setNavSeries(null);
       return;
     }
     const data = await res.json();
     setNavSeries(data ? dbToNavSeries(data) : null);
-  }, [account.id]);
+  }, [account.id, restoreFromLocal]);
 
   const loadTwrSeries = useCallback(async () => {
     const res = await fetch(
@@ -167,17 +184,21 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
 
   const reloadData = useCallback(async () => {
     setLoading(true);
-    await Promise.all([loadStatements(), loadNavSeries(), loadTwrSeries(), loadHoldings(), reloadAccount()]);
-    setLoading(false);
+    setLocalFallback(null);
+    try {
+      await Promise.allSettled([loadStatements(), loadNavSeries(), loadTwrSeries(), loadHoldings(), reloadAccount()]);
+    } finally {
+      setLoading(false);
+    }
   }, [loadStatements, loadNavSeries, loadTwrSeries, loadHoldings, reloadAccount]);
 
   useEffect(() => { reloadData(); }, [reloadData]);
 
   // Local copy of what was extracted from the CSVs (the raw files are copied on import).
   useEffect(() => {
-    if (!navSeries && !twrSeries && !holdings) return;
+    if (localFallback !== null || (!navSeries && !twrSeries && !holdings)) return;
     mirrorAccountDataSoon(account.id, () => ({ nav: navSeries, twr: twrSeries, holdings }));
-  }, [account.id, navSeries, twrSeries, holdings]);
+  }, [account.id, navSeries, twrSeries, holdings, localFallback]);
 
   useEffect(() => {
     fetch('/api/accounts')
@@ -763,6 +784,12 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
       </header>
 
       {error && <div className={styles.error}>{error}</div>}
+      {localFallback !== null && (
+        <div className={styles.notice}>
+          Base en ligne injoignable : affichage de la copie locale de ce compte
+          {localFallback ? ` (enregistrée le ${localFallback.slice(0, 10)})` : ''}. Les imports ne fonctionneront qu&apos;une fois la connexion revenue.
+        </div>
+      )}
       {notice && <div className={styles.notice}>{notice}</div>}
 
       <FileUpload

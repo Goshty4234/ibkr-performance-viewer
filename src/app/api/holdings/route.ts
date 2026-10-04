@@ -3,6 +3,7 @@ import { dbToHoldings, mergeHoldings } from '@/lib/holdings-db';
 import type { HoldingDay, HoldingsData, HoldingSymbol, HoldingTrade } from '@/lib/ibkr-flex-holdings';
 import { NextResponse } from 'next/server';
 
+const HOLDINGS_MAX_BYTES = 5_000_000;
 const MISSING_TABLE = 'Table holdings_series manquante — lancez /api/setup?secret=... sur Vercel';
 
 export async function GET(request: Request) {
@@ -67,6 +68,13 @@ export async function POST(request: Request) {
   }
 
   const merged = mergeHoldings(existing ? dbToHoldings(existing) : null, incoming);
+  // Cap per account so the shared database is never filled by one account (about 10 years of daily positions).
+  if (JSON.stringify(merged).length > HOLDINGS_MAX_BYTES) {
+    return NextResponse.json(
+      { error: 'Historique de positions trop volumineux pour ce compte (limite 5 Mo). Supprimez les plus anciennes données avant de réimporter.' },
+      { status: 413 },
+    );
+  }
   const row = {
     user_id: user.id,
     portfolio_account_id: portfolioAccountId,
