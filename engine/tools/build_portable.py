@@ -73,11 +73,18 @@ README = """Momentum Backtester - moteur de calcul pour ton PC
    Chrome / Edge demandent une fois l'accès aux appareils locaux : clique « Autoriser ».
 3. Laisse la fenêtre noire ouverte pendant tes backtests. La fermer arrête le moteur.
 
+Les fois suivantes, plus besoin de revenir dans ce dossier : clique « Lancer le moteur » sur le
+site. Le navigateur demande la permission d'ouvrir le moteur : coche « Toujours autoriser » et
+clique « Ouvrir ». (Le moteur enregistre pour cela le lien momentum-engine:// dans ton profil
+Windows, sans droits administrateur, et le remet à jour à chaque démarrage si tu déplaces ce
+dossier.)
+
 Mises à jour : automatiques. Au démarrage, le moteur compare sa version à la dernière publiée ;
 si le code a changé il télécharge la nouvelle version (quelques Mo), la vérifie et redémarre
 dessus. Si une version ne démarre pas, il revient tout seul à la précédente.
 
-Rien n'est installé sur ton PC : Python et les librairies sont dans ce dossier.
+Rien n'est installé sur ton PC : Python et les librairies sont dans ce dossier (seule trace
+ailleurs : le lien momentum-engine:// ci-dessus, inoffensif une fois ce dossier effacé).
 Tout le reste est dans le sous-dossier « data » : base de tickers, caches, résultats de tes
 backtests (backtests/), fichiers IBKR (ibkr/) et configurations (configs/). Les mises à jour ne
 le touchent jamais. Pour changer de PC, copie simplement ce dossier. Le site t'affiche

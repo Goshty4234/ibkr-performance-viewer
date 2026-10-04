@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { EngineClient, probeEngine, resolveEngine, type ResolvedEngine } from './client';
+import { EngineClient, LAUNCH_URL, probeEngine, resolveEngine, type ResolvedEngine } from './client';
 import {
   type EnginePrefs,
   loadLocalPrefs,
@@ -23,6 +23,13 @@ interface EngineState {
   reconnecting: boolean;
   /** An engine update restart is running: the engine is expected to vanish for a while. */
   restarting: boolean;
+  /** « Lancer le moteur » was clicked: the page waits for the engine to answer. */
+  launching: boolean;
+  /** The last launch ended without an engine (link not registered yet, or start refused). */
+  launchFailed: boolean;
+  /** Opens momentum-engine://start (the engine's own launcher, see portable.register_launch_link)
+   * and waits for it. Also finds an engine started by hand. Must run inside the click handler. */
+  launchLocal: () => Promise<boolean>;
   beginRestart: () => void;
   endRestart: () => void;
   init: () => void;
@@ -39,6 +46,9 @@ const OFFLINE_RECHECK_MS = 5_000;
 const RETRY_MS = 1_000;
 /** ...for this long before the page concludes that no engine exists (an update restart waits longer). */
 const LOST_GRACE_MS = 20_000;
+/** First start (CA bundle, update check) can take a while; the window shows its progress. */
+const LAUNCH_WAIT_MS = 60_000;
+const LAUNCH_POLL_MS = 1_500;
 
 let started = false;
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -64,6 +74,28 @@ export const useEngineStore = create<EngineState>((set, get) => {
     lastCheck: 0,
     reconnecting: false,
     restarting: false,
+    launching: false,
+    launchFailed: false,
+
+    async launchLocal() {
+      if (get().launching) return false;
+      set({ launching: true, launchFailed: false });
+      // Unknown scheme (engine never started since this feature): the browser does nothing, and the
+      // loop below still finds an engine started by hand.
+      window.location.href = LAUNCH_URL;
+      const t0 = Date.now();
+      try {
+        while (Date.now() - t0 < LAUNCH_WAIT_MS) {
+          await new Promise((r) => setTimeout(r, LAUNCH_POLL_MS));
+          if (get().status === 'ready') return true;
+          if (await get().detect({ quiet: true, forceLocal: true })) return true;
+        }
+        set({ launchFailed: true });
+        return false;
+      } finally {
+        set({ launching: false });
+      }
+    },
 
     beginRestart() {
       set({ restarting: true });

@@ -2,7 +2,8 @@
 
 The package carries its own Python and libraries; nothing is installed on the PC. Data (ticker
 database, caches, jobs) lives in the "data" folder of the package itself (MomentumBacktesterEngine/data):
-delete the package folder and nothing is left on the PC. Updates never touch it.
+delete the package folder and nothing is left on the PC but one registry key (the site's
+« Lancer le moteur » link, see register_launch_link). Updates never touch the data.
 """
 
 from __future__ import annotations
@@ -21,6 +22,35 @@ from pathlib import Path
 from . import ENGINE_ROOT, updater
 
 STATIC = ("Complete_Tickers", "TOP_20_SP500_COMPLETE_TEMPLATE.csv")
+# The site's « Lancer le moteur » button opens this link; Windows hands it to the package launcher.
+LAUNCH_SCHEME = "momentum-engine"
+
+
+def register_launch_link() -> None:
+    """Lets the site start this engine: momentum-engine://… runs this package's « Lancer le moteur.cmd ».
+
+    One per-user registry key (HKCU, no admin rights), written again at every start so it follows the
+    folder when it moves. The link carries no data: whatever the URL, the launcher only starts the
+    engine (without opening a new tab, the site is already open)."""
+    if sys.platform != "win32":
+        return
+    pkg = updater.root()
+    launcher = pkg / "Lancer le moteur.cmd" if pkg else None
+    if launcher is None or not launcher.is_file():
+        return
+    try:
+        import winreg
+
+        comspec = os.environ.get("COMSPEC") or str(Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "cmd.exe")
+        command = f'"{comspec}" /c ""{launcher}" --no-browser"'
+        base = rf"Software\Classes\{LAUNCH_SCHEME}"
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base) as key:
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "URL:Momentum Backtester - moteur")
+            winreg.SetValueEx(key, "URL Protocol", 0, winreg.REG_SZ, "")
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base + r"\shell\open\command") as key:
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, command)
+    except OSError as exc:
+        print(f"  (bouton « Lancer le moteur » du site non active : {exc})", flush=True)
 
 
 def legacy_data_home() -> Path:
@@ -122,6 +152,7 @@ def main(argv: list[str] | None = None) -> int:
     if updater.startup(lambda line: print(line, flush=True)):
         return _restart()
 
+    register_launch_link()
     _sync_static(home)
     from server.settings import site_origins
 

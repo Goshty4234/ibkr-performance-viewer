@@ -64,3 +64,9 @@
     transform: rotate(360deg);
   }
 }
+
+.minor {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  text-decoration: underline;
+}

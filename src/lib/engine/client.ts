@@ -40,6 +40,8 @@ export function engineOutdated(health: EngineHealth | null | undefined): boolean
 const LOCAL_PROBE_MS = 1500;
 const CLOUD_PROBE_MS = 6000;
 const LOCAL_SEEN_KEY = 'engine-local-seen';
+/** Registered on the PC by the portable engine at each start (portable.register_launch_link). */
+export const LAUNCH_URL = 'momentum-engine://start';
 
 function isLoopback(url: string): boolean {
   return /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/i.test(url);
