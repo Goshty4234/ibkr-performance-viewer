@@ -14,8 +14,9 @@ interface Props {
   otherAccounts: PortfolioAccount[];
   selectedAccountIds: string[];
   onAccountIdsChange: (ids: string[]) => void;
-  backtests: BacktestPick[];
-  onBacktestsChange: (next: BacktestPick[]) => void;
+  /** Optional: pages without backtest comparison (e.g. the dashboard) omit both and the picker is hidden. */
+  backtests?: BacktestPick[];
+  onBacktestsChange?: (next: BacktestPick[]) => void;
 }
 
 function toggleInList<T>(list: T[], item: T): T[] {
@@ -28,7 +29,7 @@ export default function ComparisonControls({
   otherAccounts,
   selectedAccountIds,
   onAccountIdsChange,
-  backtests,
+  backtests = [],
   onBacktestsChange,
 }: Props) {
   const [choices, setChoices] = useState<BacktestChoice[] | null>(null);
@@ -36,17 +37,18 @@ export default function ComparisonControls({
   const [index, setIndex] = useState('');
 
   useEffect(() => {
+    if (!onBacktestsChange) return;
     let cancelled = false;
     listBacktestChoices()
       .then((c) => { if (!cancelled) setChoices(c); })
       .catch(() => { if (!cancelled) setChoices([]); });
     return () => { cancelled = true; };
-  }, []);
+  }, [onBacktestsChange]);
 
   const run = choices?.find((c) => c.runId === runId);
 
   function addBacktest() {
-    if (!run) return;
+    if (!run || !onBacktestsChange) return;
     const pf = run.portfolios.find((p) => String(p.index) === index);
     if (!pf) return;
     if (backtests.some((b) => b.runId === run.runId && b.index === pf.index)) return;
@@ -96,6 +98,7 @@ export default function ComparisonControls({
           </div>
         )}
       </div>
+      {onBacktestsChange && (
       <div>
         <div className={styles.groupLabel}>Runs du backtester</div>
         {backtests.length > 0 && (
@@ -107,7 +110,7 @@ export default function ComparisonControls({
                   type="button"
                   className={styles.chipX}
                   aria-label={`Retirer ${b.label}`}
-                  onClick={() => onBacktestsChange(backtests.filter((x) => !(x.runId === b.runId && x.index === b.index)))}
+                  onClick={() => onBacktestsChange?.(backtests.filter((x) => !(x.runId === b.runId && x.index === b.index)))}
                 >
                   ×
                 </button>
@@ -145,6 +148,7 @@ export default function ComparisonControls({
           le même jour, tout est rebasé à 0 % au début commun ; une courbe qui se termine plus tôt s&apos;arrête là.
         </p>
       </div>
+      )}
     </div>
   );
 }
