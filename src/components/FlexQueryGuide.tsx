@@ -43,8 +43,8 @@ export default function FlexQueryGuide({ defaultOpen = false, prominent = false 
       <div className={styles.body}>
         <p className={styles.lead}>
           Suis exactement ce guide : il te donne <b>quoi cocher</b> (✔) et <b>quoi laisser décoché</b> (✘).
-          Un seul fichier suffit pour un compte, avec deux sections : la valeur du compte jour par jour,
-          et le rendement officiel de IBKR (avec tous tes dépôts, retraits et transferts de titres, déjà exclus).
+          Un seul fichier suffit pour un compte : la valeur du compte jour par jour, le rendement officiel de IBKR
+          (dépôts, retraits et transferts déjà exclus), tes positions et tes transactions.
         </p>
 
         <h4>Étape 1 : ouvrir la création</h4>
@@ -56,14 +56,17 @@ export default function FlexQueryGuide({ defaultOpen = false, prominent = false 
         </ol>
 
         <h4>Étape 2 : choisir les deux sections</h4>
-        <p>Dans la grande liste « Sections », coche seulement ces deux-là :</p>
+        <p>Dans la grande liste « Sections », coche seulement ces cinq-là :</p>
         <ul className={styles.list}>
           <Yes>Net Asset Value (NAV) in Base</Yes>
           <Yes note="(c’est elle qui donne le rendement exact et tous les transferts de titres)">Change in NAV</Yes>
           <No note="(pas besoin : Change in NAV contient déjà les dépôts, retraits et transferts)">Cash Transactions, Transfers</No>
-          <No note="(ce sont d’autres sections, avec des noms qui se ressemblent)">Cash Report, Trades, Open Positions, Statement of Funds, etc.</No>
+          <Yes note="(positions détenues chaque jour : répartition, évolution des actifs)">Open Positions</Yes>
+          <Yes note="(achats et ventes : transactions, commissions, P&L réalisé)">Trades</Yes>
+          <Yes note="(facultatif : taxes de transaction, suivies à part)">Transaction Fees</Yes>
+          <No note="(ce sont d’autres sections, avec des noms qui se ressemblent)">Cash Report, Statement of Funds, etc.</No>
         </ul>
-        <p>Chaque section cochée s’ouvre avec ses propres options : voir les étapes 3 et 4.</p>
+        <p>Chaque section cochée s’ouvre avec ses propres options : voir les étapes 3, 4 et 5.</p>
 
         <h4>Étape 3 : section « Net Asset Value (NAV) in Base »</h4>
         <p>Ne clique <b>pas</b> sur « Select All ». Coche un par un :</p>
@@ -94,9 +97,64 @@ export default function FlexQueryGuide({ defaultOpen = false, prominent = false 
           <Yes note="(tout en bas de la liste : le rendement journalier officiel de IBKR, le champ le plus important)">TWR</Yes>
           <No>Tous les autres champs (Mtm, Realized, Dividends, Commissions, Interest…)</No>
         </ul>
-        <p><small>Avec « Breakout by Day » à Yes (étape 5), IBKR écrit une ligne par jour, c’est ce qu’il faut.</small></p>
+        <p><small>Avec « Breakout by Day » à Yes (étape 6), IBKR écrit une ligne par jour, c’est ce qu’il faut.</small></p>
 
-        <h4>Étape 5 : réglages du bas de la page</h4>
+        <h4>Étape 5 : sections Open Positions, Trades et Transaction Fees</h4>
+        <p>Pour chacune, ne clique pas sur « Select All ». Coche le niveau de détail indiqué (et seulement celui-là), puis les champs, dans l’ordre où IBKR les affiche.</p>
+        <p><b>Open Positions</b> : niveau <b>Summary</b> (pas Lot).</p>
+        <ul className={styles.list}>
+          <Yes>Account ID</Yes>
+          <Yes>Currency</Yes>
+          <Yes>FX Rate To Base</Yes>
+          <Yes>Asset Class</Yes>
+          <Yes>Sub Category</Yes>
+          <Yes>Symbol</Yes>
+          <Yes>Description</Yes>
+          <Yes>Underlying Symbol</Yes>
+          <Yes>Report Date</Yes>
+          <Yes>Quantity</Yes>
+          <Yes>Mark Price</Yes>
+          <Yes>Position Value</Yes>
+          <Yes note="(le coût total, pas Cost Basis Price)">Cost Basis Money</Yes>
+          <Yes>Unrealized P/L</Yes>
+          <Yes>Level of Detail</Yes>
+        </ul>
+        <p><b>Trades</b> : niveau <b>Execution</b> seulement (pas Symbol Summary, Asset Class, Order, Closed Lots, Wash Sales).</p>
+        <ul className={styles.list}>
+          <Yes>Account ID</Yes>
+          <Yes>Currency</Yes>
+          <Yes>FX Rate To Base</Yes>
+          <Yes>Asset Class</Yes>
+          <Yes>Sub Category</Yes>
+          <Yes>Symbol</Yes>
+          <Yes>Description</Yes>
+          <Yes>Underlying Symbol</Yes>
+          <Yes>Date/Time</Yes>
+          <Yes>Trade Date</Yes>
+          <Yes>Quantity</Yes>
+          <Yes>TradePrice</Yes>
+          <Yes>Proceeds</Yes>
+          <Yes>Taxes</Yes>
+          <Yes>IB Commission</Yes>
+          <Yes>Open/Close Indicator</Yes>
+          <Yes>Realized P/L</Yes>
+          <Yes>Buy/Sell</Yes>
+          <Yes>Level Of Detail</Yes>
+        </ul>
+        <p><b>Transaction Fees</b> : niveau <b>Detail</b> seulement.</p>
+        <ul className={styles.list}>
+          <Yes>Account ID</Yes>
+          <Yes>Currency</Yes>
+          <Yes>FX Rate To Base</Yes>
+          <Yes>Symbol</Yes>
+          <Yes>Date</Yes>
+          <Yes>Tax Description</Yes>
+          <Yes>Tax Amount</Yes>
+          <Yes>Level of Detail</Yes>
+        </ul>
+        <p><small>Tous les autres champs de ces trois sections restent décochés (Conid, ISIN, Order ID, etc. ne servent à rien).</small></p>
+
+        <h4>Étape 6 : réglages du bas de la page</h4>
         <p><b>Filters</b> : ne touche à rien (aucun symbole).</p>
         <table className={styles.table}>
           <tbody>
@@ -123,7 +181,7 @@ export default function FlexQueryGuide({ defaultOpen = false, prominent = false 
         </table>
         <p>Clique ensuite sur <b>Continue</b>, vérifie le résumé, puis <b>Create</b>.</p>
 
-        <h4>Étape 6 : lancer la requête et importer</h4>
+        <h4>Étape 7 : lancer la requête et importer</h4>
         <ol>
           <li>Dans la liste de tes Activity Flex Queries, clique sur la flèche <b>Run</b> de ta requête.</li>
           <li>Choisis le format <b>CSV</b> et la période voulue, puis <b>Run</b>. Pour plus d’un an d’historique, choisis une plage de dates personnalisée, ou lance plusieurs périodes.</li>

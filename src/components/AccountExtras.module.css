@@ -16,3 +16,44 @@
 .legend { display: flex; flex-wrap: wrap; gap: 1rem; font-size: 0.8rem; margin-top: 0.6rem; color: var(--text-muted); }
 .dot { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 50%; margin-right: 0.35rem; vertical-align: -1px; }
 .tip { background: rgba(12, 18, 32, 0.95); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.7rem; font-size: 0.8rem; }
+
+/* Positions panel */
+.tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.2rem 0 0.9rem; }
+.tab {
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.tab:hover { color: var(--text); }
+.tabOn { border-color: rgba(77, 141, 255, 0.45); background: rgba(77, 141, 255, 0.12); color: var(--text); }
+.dateRow { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.8rem; flex-wrap: wrap; }
+.dateRow input[type='range'] { flex: 1; min-width: 180px; accent-color: var(--accent, #4d8dff); }
+.dateLabel { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 7.5rem; }
+.split { display: grid; grid-template-columns: minmax(260px, 420px) 1fr; gap: 1.2rem; align-items: center; }
+@media (max-width: 800px) { .split { grid-template-columns: 1fr; } }
+.donut { height: 340px; position: relative; }
+.donutCenter {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  pointer-events: none; text-align: center;
+}
+.donutCenter b { font-size: 1.15rem; }
+.donutCenter span { font-size: 0.75rem; color: var(--text-muted); }
+.legendList { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0.3rem 1rem; font-size: 0.8rem; }
+.legendItem { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.legendItem span.n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.legendItem span.p { font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.7rem; margin-bottom: 1rem; }
+.stat { border: 1px solid var(--border); border-radius: 10px; padding: 0.65rem 0.8rem; }
+.statLabel { font-size: 0.68rem; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
+.statValue { font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 0.15rem; }
+.statSub { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.1rem; }
+.search { padding: 0.35rem 0.6rem; border-radius: 8px; border: 1px solid var(--border); background: rgba(255,255,255,0.03); color: inherit; font-size: 0.8125rem; min-width: 200px; }
+.tableScroll { max-height: 440px; overflow: auto; }
+.table th.sortable { cursor: pointer; user-select: none; }
+.table th.sortable:hover { color: var(--text); }
+.note { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.6rem; }
+.h3 { font-size: 0.85rem; font-weight: 700; margin: 1rem 0 0.4rem; }

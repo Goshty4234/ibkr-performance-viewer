@@ -160,6 +160,41 @@ create index if not exists nav_series_user_id_idx on public.nav_series(user_id);
 
 alter table public.nav_series add column if not exists cash_flows jsonb not null default '[]'::jsonb;
 
+-- Daily open positions and trades from the IBKR Flex Query (Open Positions + Trades sections)
+create table if not exists public.holdings_series (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  portfolio_account_id uuid not null references public.accounts(id) on delete cascade,
+  base_currency text not null default 'CAD',
+  period_start date not null,
+  period_end date not null,
+  symbols jsonb not null default '[]'::jsonb,
+  days jsonb not null default '[]'::jsonb,
+  trades jsonb not null default '[]'::jsonb,
+  imported_at timestamptz not null default now()
+);
+
+alter table public.holdings_series enable row level security;
+
+drop policy if exists "Users can view own holdings_series" on public.holdings_series;
+create policy "Users can view own holdings_series"
+  on public.holdings_series for select using (auth.uid() = user_id);
+
+drop policy if exists "Users can insert own holdings_series" on public.holdings_series;
+create policy "Users can insert own holdings_series"
+  on public.holdings_series for insert with check (auth.uid() = user_id);
+
+drop policy if exists "Users can update own holdings_series" on public.holdings_series;
+create policy "Users can update own holdings_series"
+  on public.holdings_series for update using (auth.uid() = user_id);
+
+drop policy if exists "Users can delete own holdings_series" on public.holdings_series;
+create policy "Users can delete own holdings_series"
+  on public.holdings_series for delete using (auth.uid() = user_id);
+
+create unique index if not exists holdings_series_portfolio_idx
+  on public.holdings_series (user_id, portfolio_account_id);
+
 -- Daily TWR from IBKR Performance Report (Time Period Benchmark Comparison)
 create table if not exists public.twr_series (
   id uuid primary key default gen_random_uuid(),

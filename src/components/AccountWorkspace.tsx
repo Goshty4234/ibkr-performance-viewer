@@ -11,6 +11,8 @@ import {
 import { isFlexNavCsv, parseFlexNavCsv } from '@/lib/ibkr-flex-nav';
 import { isFlexCombinedCsv, parseFlexCombinedCsv } from '@/lib/ibkr-flex-combined';
 import { isFlexCashCsv, parseFlexCashCsv, cashFlowsToDateMap } from '@/lib/ibkr-flex-cash';
+import { hasFlexHoldings, parseFlexHoldings } from '@/lib/ibkr-flex-holdings';
+import { dbToHoldings, type DbHoldings } from '@/lib/holdings-db';
 import { dbToNavSeries } from '@/lib/nav-mapper';
 import { dbToTwrSeries } from '@/lib/twr-mapper';
 import { dbToStatement } from '@/lib/db-mapper';
@@ -61,6 +63,7 @@ import PeriodPerformanceTable from './PeriodPerformanceTable';
 import RiskMetricsTable from './RiskMetricsTable';
 import ExtendedMetricsTable from './ExtendedMetricsTable';
 import AccountValueChart from './AccountValueChart';
+import HoldingsPanel from './HoldingsPanel';
 import YearlyReturnsChart from './YearlyReturnsChart';
 import TimelineStatus from './TimelineStatus';
 import FileUpload from './FileUpload';
@@ -77,6 +80,7 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
   const [statements, setStatements] = useState<DbStatement[]>([]);
   const [navSeries, setNavSeries] = useState<DbNavSeries | null>(null);
   const [twrSeries, setTwrSeries] = useState<DbTwrSeries | null>(null);
+  const [holdings, setHoldings] = useState<DbHoldings | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -122,6 +126,22 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
     setTwrSeries(data ? dbToTwrSeries(data) : null);
   }, [account.id]);
 
+  const loadHoldings = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `/api/holdings?portfolioAccountId=${encodeURIComponent(account.id)}`,
+      );
+      if (!res.ok) {
+        setHoldings(null);
+        return;
+      }
+      const data = await res.json();
+      setHoldings(data ? dbToHoldings(data) : null);
+    } catch {
+      setHoldings(null);
+    }
+  }, [account.id]);
+
   const loadStatements = useCallback(async () => {
     const res = await fetch(
       `/api/statements?portfolioAccountId=${encodeURIComponent(account.id)}`,
@@ -147,9 +167,9 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
 
   const reloadData = useCallback(async () => {
     setLoading(true);
-    await Promise.all([loadStatements(), loadNavSeries(), loadTwrSeries(), reloadAccount()]);
+    await Promise.all([loadStatements(), loadNavSeries(), loadTwrSeries(), loadHoldings(), reloadAccount()]);
     setLoading(false);
-  }, [loadStatements, loadNavSeries, loadTwrSeries, reloadAccount]);
+  }, [loadStatements, loadNavSeries, loadTwrSeries, loadHoldings, reloadAccount]);
 
   useEffect(() => { reloadData(); }, [reloadData]);
 
@@ -455,6 +475,25 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
         const text = await file.text();
         void mirrorIbkrFile(file, text); // copy of the statement in the local folder
         const perfReport = isIbkrPerformanceReportCsv(text);
+
+        // Open Positions / Trades sections (Flex): stored separately from the NAV series.
+        if (hasFlexHoldings(text)) {
+          const h = parseFlexHoldings(text);
+          const hRes = await fetch('/api/holdings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...h, portfolioAccountId: account.id }),
+          });
+          const hJson = await hRes.json().catch(() => ({} as Record<string, unknown>));
+          if (!hRes.ok) throw new Error((hJson.error as string) || 'Erreur sauvegarde positions');
+          if (hJson.holdings) setHoldings(dbToHoldings(hJson.holdings as Record<string, unknown>));
+          notes.push(
+            `Positions : ${h.days.length} jour(s), ${h.symbols.length} titre(s), ${h.trades.length} transaction(s)`,
+          );
+          const alsoOther =
+            perfReport || isFlexCombinedCsv(text) || isFlexNavCsv(text) || isFlexCashCsv(text);
+          if (!alsoOther) continue;
+        }
 
         if (perfReport) {
           const parsed = parseIbkrPerformanceReportCsv(text, file.name);
@@ -933,6 +972,15 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
               rangeStart={rangeStart}
               rangeEnd={rangeEnd}
               currency={navSeries.baseCurrency}
+            />
+          )}
+
+          {holdings && navSeries && rangeStart && rangeEnd && (
+            <HoldingsPanel
+              holdings={holdings}
+              navPoints={navSeries.points}
+              rangeStart={rangeStart}
+              rangeEnd={rangeEnd}
             />
           )}
 

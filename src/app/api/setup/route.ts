@@ -49,6 +49,7 @@ export async function GET(request: NextRequest) {
         ) AS has_twr_daily,
         to_regclass('public.twr_series') AS twr_series_tbl,
         to_regclass('public.nav_series') AS nav_series_tbl,
+        to_regclass('public.holdings_series') AS holdings_series_tbl,
         to_regclass('public.backtest_runs') AS backtest_runs_tbl,
         to_regclass('public.backtest_portfolios') AS backtest_portfolios_tbl,
         EXISTS (
@@ -71,13 +72,14 @@ export async function GET(request: NextRequest) {
     const hasNavSeries = Boolean(check.rows[0]?.nav_series_tbl);
     const hasTwrDaily = Boolean(check.rows[0]?.has_twr_daily);
     const hasTwrSeries = Boolean(check.rows[0]?.twr_series_tbl);
+    const hasHoldings = Boolean(check.rows[0]?.holdings_series_tbl);
 
     const sql = readFileSync(
       join(process.cwd(), 'supabase', 'schema.sql'),
       'utf8',
     );
 
-    if (!hasAccounts || !hasStatements || !hasDailyEvents || !hasPortfolioAccountId || !hasNavSeries || !hasTwrDaily || !hasTwrSeries || !hasBacktester) {
+    if (!hasAccounts || !hasStatements || !hasDailyEvents || !hasPortfolioAccountId || !hasNavSeries || !hasTwrDaily || !hasTwrSeries || !hasHoldings || !hasBacktester) {
       await client.query(sql);
       return NextResponse.json({
         ok: true,
@@ -95,7 +97,9 @@ export async function GET(request: NextRequest) {
                     ? 'Migration twr_daily appliquée ✓'
                     : !hasTwrSeries
                       ? 'Migration twr_series appliquée ✓'
-                      : 'Migration backtester appliquée ✓',
+                      : !hasHoldings
+                        ? 'Migration positions et transactions appliquée ✓'
+                        : 'Migration backtester appliquée ✓',
       });
     }
 

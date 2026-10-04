@@ -44,7 +44,7 @@ export function headerIndex(headers: string[], ...needles: string[]): number {
   return -1;
 }
 
-export type FlexSectionKind = 'nav' | 'cash' | 'transfer' | 'changeNav';
+export type FlexSectionKind = 'nav' | 'cash' | 'transfer' | 'changeNav' | 'positions' | 'trades' | 'taxes';
 
 export interface FlexSection {
   kind: FlexSectionKind;
@@ -67,6 +67,18 @@ export function classifyFlexHeader(headers: string[]): FlexSectionKind | null {
   // Transfers (ACATS / FOP / internal): shares moving in or out of the account with no cash leg.
   if (lower.includes('direction') && (lower.includes('positionamountinbase') || lower.includes('positionamount'))) {
     return 'transfer';
+  }
+  // Open Positions: one row per position (and per lot) at the end of each day.
+  if (lower.includes('positionvalue') && lower.includes('quantity') && lower.includes('markprice')) {
+    return 'positions';
+  }
+  // Trades: executions, orders and summaries.
+  if (lower.includes('tradeprice') && lower.includes('ibcommission')) {
+    return 'trades';
+  }
+  // Transaction Taxes (financial transaction taxes charged on trades).
+  if (lower.includes('taxamount') && lower.includes('taxdescription')) {
+    return 'taxes';
   }
   return null;
 }
