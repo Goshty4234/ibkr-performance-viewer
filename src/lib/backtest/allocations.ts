@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import type { EngineClient } from '@/lib/engine/client';
 import type { BenchmarkRow, FundamentalsReport, PortfolioConfig, PortfolioDetail, PortfolioSummaryOk, ReturnsRow, TimerInfo } from '@/lib/engine/types';
 import { localAvailable, localGetRunFile, localPutRunFile } from '@/lib/storage/local-library';
-import { getProfile, getResultSource, LEAN_DETAIL_MAX } from '@/lib/storage/profile';
+import { cloudFirst, getProfile, getResultSource, LEAN_DETAIL_MAX } from '@/lib/storage/profile';
 import { RESULTS_BUCKET } from './history';
 import { detailCache, noAdditions, portfolioDates, type LoadedResult } from './result-data';
 
@@ -161,14 +161,22 @@ export async function loadAnalysis(runId: string, index: number): Promise<Alloca
   const path = await analysisPath(runId, index);
   if (!path) return null;
   const uid = path.split('/')[0];
-  const source = getResultSource(await getProfile());
+  const profile = await getProfile();
+  const source = getResultSource(profile);
   const name = `allocations/${index}.json.gz`;
   let data: Blob | null = null;
-  if (source !== 'cloud') data = await localGetRunFile(uid, runId, name);
-  if (!data && source !== 'local') {
+  const readCloud = async () => {
     const dl = await createClient().storage.from(RESULTS_BUCKET).download(path);
-    data = dl.error || !dl.data ? null : dl.data;
-    if (data && source === 'auto' && localAvailable()) void localPutRunFile(uid, runId, name, data);
+    const blob = dl.error || !dl.data ? null : dl.data;
+    if (blob && source === 'auto' && localAvailable()) void localPutRunFile(uid, runId, name, blob);
+    return blob;
+  };
+  if (source === 'auto' && cloudFirst(profile)) {
+    data = await readCloud();
+    if (!data) data = await localGetRunFile(uid, runId, name);
+  } else {
+    if (source !== 'cloud') data = await localGetRunFile(uid, runId, name);
+    if (!data && source !== 'local') data = await readCloud();
   }
   if (!data) return null;
   const text = await new Response(data.stream().pipeThrough(new DecompressionStream('gzip'))).text();

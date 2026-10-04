@@ -12,7 +12,7 @@ import {
   localPutRunFile,
   type LocalRun,
 } from '@/lib/storage/local-library';
-import { getProfile, getResultSource, LEAN_DETAIL_MAX, LEAN_SUMMARY_MAX } from '@/lib/storage/profile';
+import { cloudFirst, getProfile, getResultSource, LEAN_DETAIL_MAX, LEAN_SUMMARY_MAX } from '@/lib/storage/profile';
 import { bundleResult, type LoadedResult, toBundle } from './result-data';
 import { packResult, readStoredJson } from './lean-codec';
 
@@ -496,7 +496,7 @@ export async function loadRun(id: string): Promise<{ row: BacktestRunRow; result
     return d.error || !d.data ? null : d.data;
   };
   const localRead: Reader = async (name) => (hasLocal && uid ? localGetRunFile(uid, id, name) : null);
-  const order: Reader[] = source === 'cloud' ? [cloudRead] : source === 'local' ? [localRead] : [localRead, cloudRead];
+  const order: Reader[] = source === 'cloud' ? [cloudRead] : source === 'local' ? [localRead] : cloudFirst(profile) ? [cloudRead, localRead] : [localRead, cloudRead];
   let metaWritten = false;
   const read: Reader = async (name) => {
     for (const reader of order) {

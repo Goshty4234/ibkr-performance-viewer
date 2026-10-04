@@ -124,6 +124,14 @@ export function getResultSource(profile: StorageProfile | null): ResultSource {
   }
 }
 
+/**
+ * In "auto" mode the administrator reads online first (faster, always complete) and falls back to the
+ * local library; everybody else reads the local library first. A file found online is still copied locally.
+ */
+export function cloudFirst(profile: StorageProfile | null): boolean {
+  return !!profile?.isAdmin;
+}
+
 export function setResultSource(v: ResultSource): void {
   try {
     window.localStorage.setItem(SOURCE_KEY, v);
