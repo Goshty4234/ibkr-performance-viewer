@@ -88,17 +88,19 @@ export default function MonteCarloView() {
 
   const running = job !== null && (job.status === 'queued' || job.status === 'running');
   const chosen = useMemo(() => portfolios.filter((p) => selected.has(p._id)), [portfolios, selected]);
-  const chosenConfigs = useMemo(() => chosen.map(toEngineConfig), [chosen]);
+  // Every portfolio is checked (not only the ticked ones): ticking or unticking never triggers a new check, so tags and
+  // messages stay exactly where they are.
+  const allConfigs = useMemo(() => portfolios.map(toEngineConfig), [portfolios]);
   // What the engine thinks of each chosen portfolio (momentum / equal weight are kept, the rest left out and explained).
   // Verdicts are remembered per portfolio (settings + stocks per draw), so ticking or unticking one never makes the others
   // disappear and come back: only a portfolio never checked is asked for. Until every chosen portfolio has its verdict
   // (or if the engine cannot answer) nothing can be launched, so a portfolio that makes no sense here can never slip through.
-  const keys = useMemo(() => chosenConfigs.map((c) => JSON.stringify([c, opt.n_pick])), [chosenConfigs, opt.n_pick]);
+  const keys = useMemo(() => allConfigs.map((c) => JSON.stringify([c, opt.n_pick])), [allConfigs, opt.n_pick]);
   const [cache, setCache] = useState<Record<string, McVerdict>>({});
   const [checkError, setCheckError] = useState<string | null>(null);
   useEffect(() => {
     if (!client || outdated) return;
-    const missing = chosenConfigs.map((c, i) => ({ c, key: keys[i] })).filter((x) => !cache[x.key]);
+    const missing = allConfigs.map((c, i) => ({ c, key: keys[i] })).filter((x) => !cache[x.key]);
     if (!missing.length) { setCheckError(null); return; }
     let alive = true;
     const t = setTimeout(() => {
@@ -116,11 +118,12 @@ export default function MonteCarloView() {
         .catch((e: unknown) => { if (alive) setCheckError(e instanceof Error ? e.message : String(e)); });
     }, 200);
     return () => { alive = false; clearTimeout(t); };
-  }, [client, outdated, chosenConfigs, keys, cache, opt.n_pick]);
+  }, [client, outdated, allConfigs, keys, cache, opt.n_pick]);
   const known = keys.map((k) => cache[k]);
-  const verdicts: McVerdict[] | null = chosen.length > 0 && known.every(Boolean) ? (known as McVerdict[]) : null;
-  // What is shown: the verdicts already known (stable while a new one is being fetched).
-  const shownVerdicts = known.map((v, i) => (v ? { v, i } : null)).filter((x): x is { v: McVerdict; i: number } => x !== null);
+  const chosenKnown = portfolios.map((p, i) => (selected.has(p._id) ? known[i] : null)).filter((v) => v !== null);
+  const verdicts: McVerdict[] | null = chosen.length > 0 && chosenKnown.every(Boolean) ? (chosenKnown as McVerdict[]) : null;
+  // What is shown: every verdict already known, in a fixed order (the unticked ones are only greyed).
+  const shownVerdicts = known.map((v, i) => (v ? { v, i, on: selected.has(portfolios[i]._id) } : null)).filter((x): x is { v: McVerdict; i: number; on: boolean } => x !== null);
   const verdictOf = (i: number): McVerdict | undefined => known[i];
   const usable = useMemo(
     () => (verdicts ? chosen.filter((_, i) => verdicts[i]?.status === 'included') : []),
@@ -197,8 +200,7 @@ export default function MonteCarloView() {
         <div className={styles.pick}>
           <span className={styles.pickLabel}>Portfolios comparés :</span>
           {portfolios.map((p) => {
-            const i = chosen.findIndex((c) => c._id === p._id);
-            const v = i >= 0 ? verdictOf(i) : undefined;
+            const v = verdictOf(portfolios.indexOf(p));
             const out = v?.status === 'excluded';
             return (
               <label key={p._id} className={`${styles.chip} ${out ? styles.chipOut : ''}`} title={out ? v?.reason ?? undefined : v ? KIND_TIP[v.kind ?? 'momentum'] : undefined}>
@@ -212,10 +214,10 @@ export default function MonteCarloView() {
         </div>
         {shownVerdicts.some((x) => x.v.status === 'excluded' || x.v.notes.length > 0) && (
           <ul className={styles.verdicts}>
-            {shownVerdicts.map(({ v, i }) => (
-              <Fragment key={`${v.name}-${i}`}>
-                {v.status === 'excluded' && <li className={styles.verdictOut}><strong>{v.name}</strong> est laissé de côté. {v.reason}</li>}
-                {v.status === 'included' && v.notes.map((n, k) => <li key={k} className={styles.verdictNote}><strong>{v.name}</strong> : {n}</li>)}
+            {shownVerdicts.map(({ v, i, on }) => (
+              <Fragment key={`${portfolios[i]._id}`}>
+                {v.status === 'excluded' && <li className={styles.verdictOut} style={on ? undefined : { opacity: 0.45 }}><strong>{v.name}</strong> est laissé de côté. {v.reason}</li>}
+                {v.status === 'included' && v.notes.map((n, k) => <li key={k} className={styles.verdictNote} style={on ? undefined : { opacity: 0.45 }}><strong>{v.name}</strong> : {n}</li>)}
               </Fragment>
             ))}
           </ul>
