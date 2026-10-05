@@ -365,7 +365,11 @@ function McResults({ result }: { result: McResult }) {
   const [start, setStart] = useState(bounds.min);
   const [end, setEnd] = useState(bounds.max);
   useEffect(() => { setStart(bounds.min); setEnd(bounds.max); }, [bounds]);
-  const range = useDebounced({ start, end }, 200);
+  // Debounce the two dates separately: a fresh {start, end} object at every render would re-arm the timer forever, rebuild the
+  // chart options every 200 ms and reset whatever the user toggled in the legend.
+  const dStart = useDebounced(start, 200);
+  const dEnd = useDebounced(end, 200);
+  const range = useMemo(() => ({ start: dStart, end: dEnd }), [dStart, dEnd]);
   const valid = !!range.start && !!range.end && range.start < range.end;
   const win: McWindow | null = useMemo(() => (valid ? windowOf(result, range.start, range.end) : null), [result, range, valid]);
   const [brush, setBrush] = useState<ChartBrushSelection | null>(null);
