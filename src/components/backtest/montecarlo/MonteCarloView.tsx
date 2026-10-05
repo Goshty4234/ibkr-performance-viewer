@@ -419,11 +419,10 @@ function McResults({ result }: { result: McResult }) {
     return real && series[i].kind === 'portfolio' ? portfolioColor(real.index) : seriesColor(result, i);
   };
 
-  // One period for everything: the real results, the Monte Carlo curves and the table below.
-  const bounds = useMemo(() => {
-    const all = [result.dates[0], result.dates[result.dates.length - 1], ...(realResult?.summary.dates.length ? [realResult.summary.dates[0], realResult.summary.dates[realResult.summary.dates.length - 1]] : [])].filter(Boolean).sort();
-    return { min: all[0] ?? '', max: all[all.length - 1] ?? '' };
-  }, [result, realResult]);
+  // The period belongs to THIS Monte Carlo result only (its first and last day), never to what Résultats shows: the real curves
+  // are cut to it, not the other way round. It only changes when a different result is shown.
+  const rDates = result.dates;
+  const bounds = useMemo(() => ({ min: rDates[0] ?? '', max: rDates[rDates.length - 1] ?? '' }), [rDates]);
   const [start, setStart] = useState(bounds.min);
   const [end, setEnd] = useState(bounds.max);
   useEffect(() => { setStart(bounds.min); setEnd(bounds.max); }, [bounds]);
@@ -657,7 +656,7 @@ function McResults({ result }: { result: McResult }) {
             <div className={styles.title}>Période affichée</div>
             <div className={styles.sub}>
               Choisis une date de début et une date de fin : tout repart de 0 % à la date de début, comme dans l’Analyse ciblée. Les
-              graphiques de tes résultats réels, les courbes du Monte Carlo et le tableau « Sur la période » se règlent ensemble.
+              courbes du Monte Carlo, le drawdown et le tableau « Sur la période » se règlent ensemble ; tes résultats réels, en superposition, sont coupés à cette même période.
             </div>
           </div>
         </div>
