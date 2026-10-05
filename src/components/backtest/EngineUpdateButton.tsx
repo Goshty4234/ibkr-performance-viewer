@@ -78,21 +78,38 @@ export default function EngineUpdateButton() {
   async function install() {
     if (!client) return;
     setMsg('');
+    const store = useEngineStore.getState();
+    const before = store.engine?.health.version;
+    const target = store.engine?.health.update?.latest;
+    store.setUpdateNotice({ kind: 'busy', text: 'Mise à jour en cours : le moteur s’arrête puis redémarre sur la nouvelle version (environ 20 secondes)…' });
+    setBusy('Mise à jour en cours…');
+    // While restarting, the page keeps the engine and shows "reconnecting" instead of "no engine".
+    store.beginRestart();
     try {
-      const target = useEngineStore.getState().engine?.health.update?.latest;
-      setBusy('Redémarrage du moteur…');
-      // While restarting, the page keeps the engine and shows "reconnecting" instead of "no engine".
-      useEngineStore.getState().beginRestart();
-      await client.updateApply();
+      try {
+        await client.updateApply();
+      } catch (e) {
+        // The engine closes the connection when it restarts: that is expected. An answer with an HTTP
+        // status is a real refusal (backtest running...), shown at once.
+        if ((e as { status?: number }).status) throw e;
+      }
       const t0 = Date.now();
       while (Date.now() - t0 < RESTART_LIMIT_MS) {
         await sleep(POLL_MS);
         const found = await useEngineStore.getState().detect({ quiet: true });
-        if (found && (!target || found.health.version === target)) return;
+        if (found && (found.health.version !== before || (target && found.health.version === target))) {
+          useEngineStore.getState().setUpdateNotice({ kind: 'done', text: `✓ Moteur mis à jour : version ${found.health.version}. Tu peux continuer.` });
+          setTimeout(() => {
+            if (useEngineStore.getState().updateNotice?.kind === 'done') useEngineStore.getState().setUpdateNotice(null);
+          }, 10_000);
+          return;
+        }
       }
       throw new Error('le moteur n’a pas redémarré : regarde sa fenêtre, ou relance « Lancer le moteur »');
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : String(e));
+      const text = e instanceof Error ? e.message : String(e);
+      setMsg(text);
+      useEngineStore.getState().setUpdateNotice({ kind: 'error', text: `La mise à jour a échoué : ${text}` });
     } finally {
       useEngineStore.getState().endRestart();
       setBusy('');

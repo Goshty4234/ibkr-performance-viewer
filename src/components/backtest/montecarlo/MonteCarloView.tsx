@@ -18,6 +18,7 @@ import {
 } from '@/lib/engine/montecarlo';
 import { useEngineStore } from '@/lib/engine/store';
 import EChart from '../charts/EChart';
+import EngineUpdate from '../EngineUpdate';
 import styles from './MonteCarlo.module.css';
 
 const COLORS = ['#4d8dff', '#ffb020', '#4ade80', '#c084fc', '#f472b6', '#22d3ee', '#fb923c', '#a3e635', '#94a3b8', '#64748b'];
@@ -89,28 +90,38 @@ export default function MonteCarloView() {
   const chosen = useMemo(() => portfolios.filter((p) => selected.has(p._id)), [portfolios, selected]);
   const chosenConfigs = useMemo(() => chosen.map(toEngineConfig), [chosen]);
   // What the engine thinks of each chosen portfolio (momentum / equal weight are kept, the rest left out and explained).
-  // A verdict only counts for the exact portfolios it was computed for; until it arrives (or if the engine cannot answer),
-  // nothing can be launched, so a portfolio that makes no sense here can never slip through.
-  const checkKey = useMemo(() => JSON.stringify([chosenConfigs, opt.n_pick]), [chosenConfigs, opt.n_pick]);
-  const [checked, setChecked] = useState<{ key: string; list: McVerdict[] } | null>(null);
+  // Verdicts are remembered per portfolio (settings + stocks per draw), so ticking or unticking one never makes the others
+  // disappear and come back: only a portfolio never checked is asked for. Until every chosen portfolio has its verdict
+  // (or if the engine cannot answer) nothing can be launched, so a portfolio that makes no sense here can never slip through.
+  const keys = useMemo(() => chosenConfigs.map((c) => JSON.stringify([c, opt.n_pick])), [chosenConfigs, opt.n_pick]);
+  const [cache, setCache] = useState<Record<string, McVerdict>>({});
   const [checkError, setCheckError] = useState<string | null>(null);
   useEffect(() => {
-    if (!client || outdated || !chosenConfigs.length) { setChecked(null); setCheckError(null); return; }
+    if (!client || outdated) return;
+    const missing = chosenConfigs.map((c, i) => ({ c, key: keys[i] })).filter((x) => !cache[x.key]);
+    if (!missing.length) { setCheckError(null); return; }
     let alive = true;
-    setCheckError(null);
     const t = setTimeout(() => {
-      mcCheck(client, chosenConfigs, { n_pick: opt.n_pick })
+      mcCheck(client, missing.map((x) => x.c), { n_pick: opt.n_pick })
         .then((v) => {
           if (!alive) return;
-          if (v.length === chosenConfigs.length) setChecked({ key: checkKey, list: v });
-          else setCheckError('Réponse inattendue du moteur.');
+          if (v.length !== missing.length) { setCheckError('Réponse inattendue du moteur.'); return; }
+          setCheckError(null);
+          setCache((prev) => {
+            const next = { ...prev };
+            missing.forEach((x, i) => { next[x.key] = v[i]; });
+            return next;
+          });
         })
         .catch((e: unknown) => { if (alive) setCheckError(e instanceof Error ? e.message : String(e)); });
-    }, 300);
+    }, 200);
     return () => { alive = false; clearTimeout(t); };
-  }, [client, outdated, chosenConfigs, opt.n_pick, checkKey]);
-  const verdicts = checked && checked.key === checkKey ? checked.list : null;
-  const verdictOf = (i: number): McVerdict | undefined => verdicts?.[i];
+  }, [client, outdated, chosenConfigs, keys, cache, opt.n_pick]);
+  const known = keys.map((k) => cache[k]);
+  const verdicts: McVerdict[] | null = chosen.length > 0 && known.every(Boolean) ? (known as McVerdict[]) : null;
+  // What is shown: the verdicts already known (stable while a new one is being fetched).
+  const shownVerdicts = known.map((v, i) => (v ? { v, i } : null)).filter((x): x is { v: McVerdict; i: number } => x !== null);
+  const verdictOf = (i: number): McVerdict | undefined => known[i];
   const usable = useMemo(
     () => (verdicts ? chosen.filter((_, i) => verdicts[i]?.status === 'included') : []),
     [chosen, verdicts],
@@ -199,9 +210,9 @@ export default function MonteCarloView() {
           })}
           {!portfolios.length && <span className={styles.hint}>Aucun portfolio : crée-en dans l’onglet Construire.</span>}
         </div>
-        {verdicts && verdicts.some((v) => v.status === 'excluded' || v.notes.length > 0) && (
+        {shownVerdicts.some((x) => x.v.status === 'excluded' || x.v.notes.length > 0) && (
           <ul className={styles.verdicts}>
-            {verdicts.map((v, i) => (
+            {shownVerdicts.map(({ v, i }) => (
               <Fragment key={`${v.name}-${i}`}>
                 {v.status === 'excluded' && <li className={styles.verdictOut}><strong>{v.name}</strong> est laissé de côté. {v.reason}</li>}
                 {v.status === 'included' && v.notes.map((n, k) => <li key={k} className={styles.verdictNote}><strong>{v.name}</strong> : {n}</li>)}
@@ -293,7 +304,8 @@ export default function MonteCarloView() {
           {tooSmall && <span className={styles.warn}>L’univers compte {universeCount} tickers : moins que {opt.n_pick} actions par tirage.</span>}
           {!client && detecting && <span className={styles.warn}>Connexion au moteur… patiente.</span>}
           {!client && !detecting && <span className={styles.warn}>Moteur de calcul non détecté.</span>}
-          {outdated && <span className={styles.warn}>Le moteur doit être mis à jour pour ce Monte Carlo.</span>}
+          {outdated && <span className={styles.warn}>Le moteur doit être mis à jour pour ce Monte Carlo :</span>}
+          <EngineUpdate />
           {job && running && (
             <span className={styles.progress}>
               <span className={styles.bar}><span style={{ width: `${Math.round(job.progress * 100)}%` }} /></span>

@@ -23,6 +23,9 @@ interface EngineState {
   reconnecting: boolean;
   /** An engine update restart is running: the engine is expected to vanish for a while. */
   restarting: boolean;
+  /** What the engine update is doing / has done, shown by the banner even after the engine vanished and came back. */
+  updateNotice: { kind: 'busy' | 'done' | 'error'; text: string } | null;
+  setUpdateNotice: (n: { kind: 'busy' | 'done' | 'error'; text: string } | null) => void;
   /** « Lancer le moteur » was clicked: the page waits for the engine to answer. */
   launching: boolean;
   /** The last launch ended without an engine (link not registered yet, or start refused). */
@@ -74,6 +77,10 @@ export const useEngineStore = create<EngineState>((set, get) => {
     lastCheck: 0,
     reconnecting: false,
     restarting: false,
+    updateNotice: null,
+    setUpdateNotice(n) {
+      set({ updateNotice: n });
+    },
     launching: false,
     launchFailed: false,
 

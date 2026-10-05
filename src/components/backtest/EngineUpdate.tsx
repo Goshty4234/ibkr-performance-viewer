@@ -9,7 +9,21 @@ import styles from './EngineSetup.module.css';
  * or when a newer version is waiting for a restart. The action itself is the smart button. */
 export default function EngineUpdate() {
   const engine = useEngineStore((s) => s.engine);
+  const notice = useEngineStore((s) => s.updateNotice);
   const health = engine?.health;
+  // The update message stays visible while the engine restarts (engine is then briefly null) and after it is done.
+  if (notice) {
+    return (
+      <div className={styles.box}>
+        <span className={styles.title}>{notice.kind === 'busy' ? '⟳ ' : ''}{notice.text}</span>
+        {notice.kind === 'error' && (
+          <span className={styles.steps}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => useEngineStore.getState().setUpdateNotice(null)}>Fermer</button>
+          </span>
+        )}
+      </div>
+    );
+  }
   if (!engine || !health) return null;
   const outdated = engineOutdated(health);
   const stale = engineStale(engine);
