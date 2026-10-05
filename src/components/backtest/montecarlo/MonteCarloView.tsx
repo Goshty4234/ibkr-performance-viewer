@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import DrawdownChart from '@/components/DrawdownChart';
 import PerformanceChart from '@/components/PerformanceChart';
 import type { ChartsResult } from '@/lib/backtest/analytics';
@@ -13,9 +13,10 @@ import type { ChartBrushSelection } from '@/lib/chart-range';
 import { toggleSeriesVisibility } from '@/lib/chart-series';
 import { EngineClient, engineOutdated } from '@/lib/engine/client';
 import {
-  daysBetween, histogram, mcCancel, mcCheck, mcJob, mcResult, mcSubmit, MC_DEFAULTS, pairOf, parseTickers, windowOf,
+  daysBetween, histogram, mcCancel, mcCheck, mcSubmit, pairOf, parseTickers, windowOf,
   type McJob, type McOptions, type McResult, type McStatKey, type McUniverseSource, type McVerdict, type McWindow,
 } from '@/lib/engine/montecarlo';
+import { followJob, isFollowing, setMc, useMcSession, type Update } from '@/lib/engine/mc-session';
 import { useEngineStore } from '@/lib/engine/store';
 import EChart from '../charts/EChart';
 import EngineUpdate from '../EngineUpdate';
@@ -73,15 +74,20 @@ export default function MonteCarloView() {
   const portfolios = useBacktestStore((s) => s.portfolios);
   const runOptions = useBacktestStore((s) => s.options);
   const { client, outdated, detecting } = useClient();
-  const [opt, setOpt] = useState<McOptions>(MC_DEFAULTS);
-  const [listText, setListText] = useState('');
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [job, setJob] = useState<McJob | null>(null);
-  const [result, setResult] = useState<McResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
+  // Everything the page shows lives in a store outside the component (see mc-session.ts): leaving the tab, a rebuild of the
+  // page or a re-render never loses the settings, the ticked portfolios, the running job or its result.
+  const opt = useMcSession((s) => s.opt);
+  const listText = useMcSession((s) => s.listText);
+  const selected = useMcSession((s) => s.selected);
+  const job = useMcSession((s) => s.job);
+  const result = useMcSession((s) => s.result);
+  const error = useMcSession((s) => s.error);
+  const setOpt = useCallback((u: Update<McOptions>) => setMc('opt', u), []);
+  const setListText = useCallback((u: Update<string>) => setMc('listText', u), []);
+  const setSelected = useCallback((u: Update<Set<string>>) => setMc('selected', u), []);
+  const setJob = useCallback((u: Update<McJob | null>) => setMc('job', u), []);
+  const setResult = useCallback((u: Update<McResult | null>) => setMc('result', u), []);
+  const setError = useCallback((u: Update<string | null>) => setMc('error', u), []);
   useEffect(() => {
     setSelected((prev) => (prev.size ? new Set([...prev].filter((id) => portfolios.some((p) => p._id === id))) : new Set(portfolios.map((p) => p._id))));
   }, [portfolios]);
@@ -153,30 +159,19 @@ export default function MonteCarloView() {
       price_update: 'topup' as const,
     };
     try {
-      let j = await mcSubmit(client, usable.map(toEngineConfig), options, mc);
+      const j = await mcSubmit(client, usable.map(toEngineConfig), options, mc);
       setJob(j);
-      if (timer.current) clearInterval(timer.current);
-      timer.current = setInterval(async () => {
-        try {
-          j = await mcJob(client, j.id);
-          setJob(j);
-          if (j.status === 'done') {
-            clearInterval(timer.current!);
-            setResult(await mcResult(client, j.id));
-          } else if (j.status === 'error' || j.status === 'cancelled') {
-            clearInterval(timer.current!);
-            if (j.error) setError(j.error);
-          }
-        } catch (e) {
-          clearInterval(timer.current!);
-          setError(e instanceof Error ? e.message : String(e));
-        }
-      }, 800);
+      followJob(client, j.id);
     } catch (e) {
       setJob(null);
       setError(e instanceof Error ? e.message : String(e));
     }
   }, [client, usable, opt, listTickers, runOptions.first_rebalance_strategy, runOptions.auto_adjust_momentum_start]);
+
+  // Back on the page while a job is still running (nobody is following it): follow it again.
+  useEffect(() => {
+    if (client && job && (job.status === 'queued' || job.status === 'running') && !isFollowing()) followJob(client, job.id);
+  }, [client, job]);
 
   const cancel = () => {
     if (client && job) mcCancel(client, job.id).catch(() => {});
@@ -250,6 +245,9 @@ export default function MonteCarloView() {
               <button type="button" className="btn btn-ghost btn-sm" title="Nouvelle graine (autres tirages)" onClick={() => set('seed', Math.floor(Math.random() * 1e9))}>🎲</button>
             </span>
           </label>
+        </div>
+
+        <div className={styles.checks}>
           <label className={styles.check} title="Un portfolio momentum reste en cash le temps de remplir sa plus longue fenêtre, alors que la référence est investie dès le premier jour. Avec cette case, chaque tirage commence une fenêtre après sa plus ancienne action, pour tous les portfolios : on mesure tout le monde à partir du moment où le momentum peut acheter.">
             <input type="checkbox" checked={opt.align_momentum} onChange={(e) => set('align_momentum', e.target.checked)} />
             Départ commun : mesurer à partir du premier achat du momentum
@@ -258,9 +256,6 @@ export default function MonteCarloView() {
             <input type="checkbox" checked={opt.baseline} onChange={(e) => set('baseline', e.target.checked)} />
             Référence équipondérée des actions tirées
           </label>
-        </div>
-
-        <div className={styles.grid} style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(330px, 1fr))' }}>
           <label className={styles.check} title="Une action n’est pas détenue avant la date où elle est entrée dans le S&P 500 (date de Wikipédia, actions actuelles de l’indice). Les autres titres (ETF…) restent toujours admis.">
             <input type="checkbox" checked={opt.filters.sp500_entry} onChange={(e) => set('filters', { ...opt.filters, sp500_entry: e.target.checked })} />
             Ignorer une action avant son entrée dans le S&P 500
@@ -352,6 +347,9 @@ function McResults({ result }: { result: McResult }) {
   const [metricId, setMetricId] = useState<McStatKey>('CAGR');
   const [log, setLog] = useState(false);
   const [highlight, setHighlight] = useState<number | null>(null);
+  // The real portfolios' curves (standard backtest of Construire) over the same period, drawn on top of the cloud.
+  const [overlay, setOverlay] = useState<RealOverlay | null>(null);
+  const [showReal, setShowReal] = useState(true);
   const series = result.series;
   const realResult = useBacktestStore((s) => s.result);
   const realPfs = useMemo(() => (realResult ? okSummaries(realResult.summary) : []), [realResult]);
@@ -416,17 +414,45 @@ function McResults({ result }: { result: McResult }) {
         lineStyle: { width: 2.6, color: color(i), type: s.kind === 'baseline' ? 'dashed' : 'solid' }, itemStyle: { color: color(i) }, z: 4,
       });
     });
+    const realNames: string[] = [];
+    if (showReal && overlay && overlay.rows.length) {
+      const dates = win.dates;
+      for (const def of overlay.defs) {
+        // Last known real value on or before each grid date, re-based on the first grid date like the cloud.
+        const vals: (number | null)[] = [];
+        let k = 0;
+        let cur: number | null = null;
+        for (const d of dates) {
+          while (k < overlay.rows.length && overlay.rows[k].date <= d) {
+            const v = overlay.rows[k][def.id];
+            if (typeof v === 'number' && Number.isFinite(v)) cur = v;
+            k += 1;
+          }
+          vals.push(cur);
+        }
+        const v0 = vals.find((v) => v !== null);
+        if (v0 === undefined || v0 === null) continue;
+        const growth = (v: number | null) => (v === null ? null : (1 + v / 100) / (1 + v0 / 100));
+        const label = `${def.label} (réel)`;
+        realNames.push(label);
+        out.push({
+          id: `r-${def.id}`, name: label, type: 'line', data: vals.map((v) => { const g = growth(v); return g === null ? null : conv(g); }),
+          showSymbol: false, z: 8, emphasis: { disabled: true },
+          lineStyle: { width: 3.6, color: def.color, shadowBlur: 8, shadowColor: 'rgba(0,0,0,0.6)' }, itemStyle: { color: def.color },
+        });
+      }
+    }
     const span = win.dates.length > 1 ? daysBetween(win.dates[0], win.dates[win.dates.length - 1]) : 0;
     return {
       animation: false,
       grid: { left: 62, right: 18, top: 40, bottom: 34 },
-      legend: { top: 0, type: 'scroll', data: win.series.map((s) => s.name) },
+      legend: { top: 0, type: 'scroll', data: [...win.series.map((s) => s.name), ...realNames] },
       tooltip: {
         trigger: 'axis',
         formatter: (params: { seriesId: string; seriesName: string; value: number | null; color: string; axisValue: string }[]) => {
-          const rows = params.filter((p) => p.value !== null && p.value !== undefined && (p.seriesId.startsWith('m-') || (highlight !== null && p.seriesId.endsWith(`-${highlight}`) && p.seriesId.startsWith('c-'))));
+          const rows = params.filter((p) => p.value !== null && p.value !== undefined && (p.seriesId.startsWith('m-') || p.seriesId.startsWith('r-') || (highlight !== null && p.seriesId.endsWith(`-${highlight}`) && p.seriesId.startsWith('c-'))));
           const head = `<div style="margin-bottom:4px">${params[0]?.axisValue ?? ''}</div>`;
-          return head + rows.map((p) => `<div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:6px"></span>${p.seriesName}${p.seriesId.startsWith('m-') ? ' (médiane)' : ` (tirage ${highlight! + 1})`} : ${pts(toPct(p.value as number), 1).replace(' pt', ' %')}</div>`).join('');
+          return head + rows.map((p) => `<div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:6px"></span>${p.seriesName}${p.seriesId.startsWith('m-') ? ' (médiane)' : p.seriesId.startsWith('r-') ? '' : ` (tirage ${highlight! + 1})`} : ${pts(toPct(p.value as number), 1).replace(' pt', ' %')}</div>`).join('');
         },
       },
       xAxis: { type: 'category', data: win.dates, axisLabel: { formatter: (v: string) => (span > 365 * 4 ? v.slice(0, 4) : v.slice(0, 7)) } },
@@ -436,7 +462,7 @@ function McResults({ result }: { result: McResult }) {
       series: out,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [win, log, highlight, shownDraws, realPfs]);
+  }, [win, log, highlight, shownDraws, realPfs, overlay, showReal]);
 
   const histOption = useMemo(() => {
     const h = histogram(series.map((s) => s.stats[metricId]), 30);
@@ -546,7 +572,7 @@ function McResults({ result }: { result: McResult }) {
       </section>
 
       <RealResults start={range.start} end={range.end} valid={valid} names={series.filter((s) => s.kind === 'portfolio').map((s) => s.name)}
-        brush={brush} onBrush={setBrush} />
+        brush={brush} onBrush={setBrush} onOverlay={setOverlay} />
 
       <section className={`card ${styles.card}`}>
         <div className={styles.head}>
@@ -559,6 +585,11 @@ function McResults({ result }: { result: McResult }) {
             </div>
           </div>
           <div className={styles.inline}>
+            {overlay && overlay.defs.length > 0 && (
+              <label className={styles.check} title="Trace par-dessus le nuage la courbe de ton vrai portfolio (backtest normal de Construire, avec ses propres actions), sur la même période et repartant de 0 %.">
+                <input type="checkbox" checked={showReal} onChange={(e) => setShowReal(e.target.checked)} />Superposer mes résultats réels
+              </label>
+            )}
             <label className={styles.check}><input type="checkbox" checked={log} onChange={(e) => setLog(e.target.checked)} />Échelle log</label>
             {highlight !== null && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setHighlight(null)}>Tirage {highlight + 1} ✕</button>}
           </div>
@@ -688,9 +719,16 @@ function McResults({ result }: { result: McResult }) {
 }
 
 /** The latest normal backtest of Construire (the real portfolios, their own stocks) over the chosen period, to compare with the cloud below. */
-function RealResults({ start, end, valid, names, brush, onBrush }: {
+/** What the real-results charts hand to the Monte Carlo chart: the curves to overlay, in % since the period start. */
+interface RealOverlay {
+  defs: { id: string; label: string; color: string; kind: string }[];
+  rows: { date: string; [id: string]: number | string | boolean | null | undefined }[];
+}
+
+function RealResults({ start, end, valid, names, brush, onBrush, onOverlay }: {
   start: string; end: string; valid: boolean; names: string[];
   brush: ChartBrushSelection | null; onBrush: (b: ChartBrushSelection | null) => void;
+  onOverlay: (o: RealOverlay | null) => void;
 }) {
   const real = useBacktestStore((s) => s.result);
   const pfs = useMemo(() => (real ? okSummaries(real.summary) : []), [real]);
@@ -707,6 +745,10 @@ function RealResults({ start, end, valid, names, brush, onBrush }: {
   }, [real, benchKeys, pfs, namesKey]);
   const charts = useAnalytics<ChartsResult>(real, real && valid && pfs.length ? { op: 'rangeCharts', mode: 'no_additions', benchmarks, start, end } : null);
   const cd = charts.data?.charts ?? null;
+  // The visible real portfolios (not the benchmarks) go to the Monte Carlo chart.
+  useEffect(() => {
+    onOverlay(cd ? { defs: cd.defs.filter((d) => d.kind !== 'benchmark' && !hidden.has(d.id)), rows: cd.pctData } : null);
+  }, [cd, hidden, onOverlay]);
   const firstDay = cd?.pctData[0]?.date;
   const lastDay = cd?.pctData[cd.pctData.length - 1]?.date;
 

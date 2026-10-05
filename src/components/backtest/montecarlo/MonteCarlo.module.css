@@ -6,6 +6,9 @@
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0.7rem 1rem; align-items: end; }
 .field { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.76rem; color: var(--text-muted); }
 .check { display: flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: var(--text-muted); cursor: pointer; }
+/* The options with a tick box: one line each, same height, aligned on the same baseline whatever the text length. */
+.checks { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.6rem; margin-top: 0.6rem; }
+.checks .check { white-space: nowrap; min-height: 2rem; }
 .details { font-size: 0.8rem; color: var(--text-muted); }
 .details summary { cursor: pointer; margin-bottom: 0.6rem; }
 .hint { font-size: 0.74rem; color: var(--text-faint); grid-column: 1 / -1; }
