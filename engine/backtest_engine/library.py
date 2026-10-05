@@ -1,6 +1,7 @@
 """The user's local library: everything the site would otherwise keep online, stored in the data home.
 
     <home>/backtests/<user>/<run>/   summary.json.gz, portfolio/<i>.json.gz, allocations/<i>.json.gz, meta.json
+    <home>/montecarlo_runs/<user>/<run>/   result.json.gz, meta.json (saved Monte Carlo runs)
     <home>/ibkr/<user>/              statements imported in the IBKR viewer (raw CSV files) and, per account, a
                                      copy of what the site extracted from them (_donnees-compte-<id>.json)
     <home>/configs/<user>.json       backup copy of the saved configurations
@@ -26,6 +27,8 @@ USER_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 RUN_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 RUN_FILE_RE = re.compile(r"^(summary\.json\.gz|meta\.json|portfolio/\d{1,4}\.json\.gz|allocations/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,79})$")
 IBKR_FILE_RE = re.compile(r"^[^\\/:*?\"<>|\x00-\x1f]{1,180}$")
+MC_FILE_RE = re.compile(r"^(result\.json\.gz|meta\.json)$")
+MC_KEEP = 20  # saved Monte Carlo runs kept per user: the oldest ones are dropped
 CONFIG_FILE = "configs.json"
 MAX_FILE_BYTES = 400 * 1024 * 1024
 
@@ -50,6 +53,7 @@ FOLDER_LABELS: dict[str, str] = {
     "cache": "Résultats de portfolios déjà calculés (temporaire, se refait seul)",
     "jobs": "Backtests récents en cours/terminés (temporaire)",
     "montecarlo": "Monte Carlo (fichiers temporaires)",
+    "montecarlo_runs": "Mes runs Monte Carlo enregistrés (les plus récents sont gardés)",
     "Complete_Tickers": "Listes de tickers fournies avec le moteur",
     "config": "Réglages du moteur",
 }
@@ -175,6 +179,65 @@ class Library:
                 "meta": self._meta(d),
             })
         return out
+
+    # ---- Monte Carlo runs ---------------------------------------------------------------------
+    def mc_dir(self, user: str, run: str) -> Path:
+        return self.home / "montecarlo_runs" / _check(user, USER_RE, "utilisateur") / _check(run, RUN_RE, "run")
+
+    def mc_put(self, user: str, run: str, name: str, data: bytes) -> int:
+        _check(name, MC_FILE_RE, "fichier")
+        if len(data) > MAX_FILE_BYTES:
+            raise LibraryError("fichier trop gros")
+        _atomic_write(self.mc_dir(user, run) / name, data)
+        if name == "meta.json":
+            self.mc_prune(user)
+        return len(data)
+
+    def mc_get(self, user: str, run: str, name: str) -> Path | None:
+        _check(name, MC_FILE_RE, "fichier")
+        p = self.mc_dir(user, run) / name
+        return p if p.is_file() else None
+
+    def mc_delete(self, user: str, run: str) -> bool:
+        d = self.mc_dir(user, run)
+        if not d.is_dir():
+            return False
+        shutil.rmtree(d, ignore_errors=True)
+        return True
+
+    def mc_list(self, user: str) -> list[dict[str, Any]]:
+        base = self.home / "montecarlo_runs" / _check(user, USER_RE, "utilisateur")
+        out: list[dict[str, Any]] = []
+        try:
+            entries = sorted(base.iterdir())
+        except OSError:
+            return out
+        for d in entries:
+            if not d.is_dir() or not RUN_RE.match(d.name) or not (d / "result.json.gz").is_file():
+                continue  # a run still being written has no result yet
+            size, n = dir_size(d)
+            try:
+                mtime = d.stat().st_mtime
+            except OSError:
+                mtime = 0.0
+            out.append({"id": d.name, "bytes": size, "files": n, "mtime": mtime, "meta": self._meta(d)})
+        out.sort(key=lambda r: -r["mtime"])
+        return out
+
+    def mc_prune(self, user: str, keep: int = MC_KEEP) -> int:
+        """Drops the oldest saved runs beyond `keep` (and half-written folders older than a day)."""
+        base = self.home / "montecarlo_runs" / _check(user, USER_RE, "utilisateur")
+        removed = 0
+        for r in self.mc_list(user)[keep:]:
+            if self.mc_delete(user, r["id"]):
+                removed += 1
+        try:
+            for d in base.iterdir():
+                if d.is_dir() and not (d / "result.json.gz").is_file() and time.time() - d.stat().st_mtime > 86400:
+                    shutil.rmtree(d, ignore_errors=True)
+        except OSError:
+            pass
+        return removed
 
     # ---- IBKR ---------------------------------------------------------------------------------
     def put_ibkr(self, user: str, name: str, data: bytes) -> int:

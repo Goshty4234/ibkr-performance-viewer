@@ -15,6 +15,7 @@ import {
 } from '@/lib/engine/montecarlo';
 import { followJob, isFollowing, setMc, useMcSession, type Update } from '@/lib/engine/mc-session';
 import { useEngineStore } from '@/lib/engine/store';
+import { deleteMcRun, listMcRuns, loadMcRun, type McSavedRun } from '@/lib/engine/mc-library';
 import EChart from '../charts/EChart';
 import EngineUpdate from '../EngineUpdate';
 import styles from './MonteCarlo.module.css';
@@ -79,6 +80,7 @@ export default function MonteCarloView() {
   const job = useMcSession((s) => s.job);
   const result = useMcSession((s) => s.result);
   const error = useMcSession((s) => s.error);
+  const saved = useMcSession((s) => s.saved);
   const setOpt = useCallback((u: Update<McOptions>) => setMc('opt', u), []);
   const setListText = useCallback((u: Update<string>) => setMc('listText', u), []);
   const setSelected = useCallback((u: Update<Set<string>>) => setMc('selected', u), []);
@@ -316,6 +318,8 @@ export default function MonteCarloView() {
         {error && <div className={styles.error}>{error}</div>}
       </section>
 
+      <SavedRuns running={running} saved={saved} onOpen={(r) => { setError(null); setResult(r); }} />
+
       {result && <McResults result={result} />}
     </div>
   );
@@ -341,6 +345,54 @@ function useDebounced<T>(value: T, ms: number): T {
 const PRESETS: { label: string; years: number | null }[] = [
   { label: '1 an', years: 1 }, { label: '3 ans', years: 3 }, { label: '5 ans', years: 5 }, { label: '10 ans', years: 10 }, { label: 'Tout', years: null },
 ];
+
+/** The runs kept in the data folder of the engine on this PC (saved automatically when a run ends): open or delete. */
+function SavedRuns({ running, saved, onOpen }: { running: boolean; saved: string | null; onOpen: (r: McResult) => void }) {
+  const client = useEngineStore((st) => st.client);
+  const [runs, setRuns] = useState<McSavedRun[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const refresh = useCallback(() => { void listMcRuns().then(setRuns); }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { refresh(); }, [client, saved, running]);
+  if (!runs.length) return null;
+  const when = (iso: string | undefined, t: number) => new Date(iso ?? t * 1000).toLocaleString('fr-CA', { dateStyle: 'medium', timeStyle: 'short' });
+  const size = (b: number) => (b > 1e6 ? `${(b / 1e6).toFixed(1)} Mo` : `${Math.max(1, Math.round(b / 1e3))} Ko`);
+  return (
+    <section className={`card ${styles.card}`}>
+      <div className={styles.title}>Runs Monte Carlo enregistrés</div>
+      <div className={styles.sub}>Enregistrés automatiquement dans le dossier de données du moteur (sous « montecarlo_runs »), les 20 plus récents sont gardés.</div>
+      <div className={styles.scroll}>
+        <table className={styles.table}>
+          <thead><tr><th>Date</th><th>Portfolios</th><th>Tirages</th><th>Actions / tirage</th><th>Taille</th><th /></tr></thead>
+          <tbody>
+            {runs.map((r) => (
+              <tr key={r.id}>
+                <td>{when(r.meta?.created_at, r.mtime)}</td>
+                <td>{r.meta ? r.meta.portfolios.map(shortName).join(', ') : '—'}</td>
+                <td className={styles.n}>{r.meta?.n_draws ?? '—'}</td>
+                <td className={styles.n}>{r.meta?.n_pick ?? '—'}</td>
+                <td className={styles.n}>{size(r.bytes)}</td>
+                <td>
+                  <button type="button" className="btn btn-secondary btn-sm" disabled={busy !== null || running} onClick={async () => {
+                    setBusy(r.id); setMsg(null);
+                    const res = await loadMcRun(r.id);
+                    if (res) onOpen(res); else setMsg('Impossible d’ouvrir ce run.');
+                    setBusy(null);
+                  }}>Ouvrir</button>{' '}
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={busy !== null} onClick={async () => {
+                    setBusy(r.id); await deleteMcRun(r.id); setBusy(null); refresh();
+                  }}>Supprimer</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {msg && <div className={styles.warn}>{msg}</div>}
+    </section>
+  );
+}
 
 function McResults({ result }: { result: McResult }) {
   const [metricId, setMetricId] = useState<McStatKey>('CAGR');
@@ -487,7 +539,6 @@ function McResults({ result }: { result: McResult }) {
     const out: Record<string, unknown>[] = win.series.map((s, i) => ({
       id: `dm-${i}`, name: s.name, type: 'line', data: dd(s.fan.p50), showSymbol: false,
       lineStyle: { width: 2, color: color(i), type: s.kind === 'baseline' ? 'dashed' : 'solid' }, itemStyle: { color: color(i) },
-      areaStyle: { color: color(i), opacity: 0.08 },
     }));
     const realNames: string[] = [];
     if (showReal && overlay && overlay.rows.length) {

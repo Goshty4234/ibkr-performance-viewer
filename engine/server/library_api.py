@@ -3,6 +3,8 @@ on a cloud host the files would belong to nobody in particular, so they answer 4
 
     PUT/GET/DELETE  /library/runs/{user}/{run}[/{file}]     result files of a saved run
     GET             /library/runs/{user}                    runs held here (with their meta.json)
+    PUT/GET/DELETE  /library/montecarlo/{user}/{run}[/{file}]  saved Monte Carlo runs (result.json.gz, meta.json)
+    GET             /library/montecarlo/{user}              saved Monte Carlo runs held here
     PUT/GET/DELETE  /library/ibkr/{user}/{name}             IBKR viewer statements (raw files)
     GET             /library/ibkr/{user}
     PUT/GET         /library/configs/{user}                 backup copy of the saved configurations
@@ -90,6 +92,42 @@ def delete_run(uid: str, run: str, request: Request, user: str = Depends(current
 def list_runs(uid: str, request: Request, user: str = Depends(current_user)) -> dict:
     try:
         return {"runs": _lib(request).list_runs(uid)}
+    except LibraryError as exc:
+        raise _bad(exc) from exc
+
+
+@router.put("/library/montecarlo/{uid}/{run}/{name}")
+async def put_mc_file(uid: str, run: str, name: str, request: Request, user: str = Depends(current_user)) -> dict:
+    _writer(user)
+    lib = _lib(request)
+    data = await _body(request)
+    try:
+        return {"bytes": lib.mc_put(uid, run, name, data)}
+    except LibraryError as exc:
+        raise _bad(exc) from exc
+
+
+@router.get("/library/montecarlo/{uid}/{run}/{name}")
+def get_mc_file(uid: str, run: str, name: str, request: Request, user: str = Depends(current_user)) -> Response:
+    try:
+        return _file(_lib(request).mc_get(uid, run, name))
+    except LibraryError as exc:
+        raise _bad(exc) from exc
+
+
+@router.delete("/library/montecarlo/{uid}/{run}")
+def delete_mc(uid: str, run: str, request: Request, user: str = Depends(current_user)) -> dict:
+    _writer(user)
+    try:
+        return {"deleted": _lib(request).mc_delete(uid, run)}
+    except LibraryError as exc:
+        raise _bad(exc) from exc
+
+
+@router.get("/library/montecarlo/{uid}")
+def list_mc(uid: str, request: Request, user: str = Depends(current_user)) -> dict:
+    try:
+        return {"runs": _lib(request).mc_list(uid)}
     except LibraryError as exc:
         raise _bad(exc) from exc
 

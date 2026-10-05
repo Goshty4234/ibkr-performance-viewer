@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { MC_DEFAULTS, mcJob, mcResult, type McJob, type McOptions, type McResult } from './montecarlo';
 import type { EngineClient } from './client';
+import { saveMcRun } from './mc-library';
 
 /** What the Monte Carlo page shows (settings, ticked portfolios, running job, result). Kept outside the component so
  * it survives the page being unmounted or rebuilt; the job keeps being followed even while another tab is open. */
@@ -11,6 +12,8 @@ export interface McSession {
   job: McJob | null;
   result: McResult | null;
   error: string | null;
+  /** Id of the run just stored in the data folder of the engine (null: none, e.g. no local engine). */
+  saved: string | null;
 }
 
 export const useMcSession = create<McSession>(() => ({
@@ -20,6 +23,7 @@ export const useMcSession = create<McSession>(() => ({
   job: null,
   result: null,
   error: null,
+  saved: null,
 }));
 
 export type Update<T> = T | ((prev: T) => T);
@@ -42,13 +46,18 @@ function stop(): void {
 /** Polls a job until it ends, then fetches its result into the session. One at a time, whatever page is open. */
 export function followJob(client: EngineClient, id: string): void {
   stop();
+  setMc('saved', null);
+  const opt = useMcSession.getState().opt; // the settings of THIS run, whatever is edited afterwards
   poll = setInterval(async () => {
     try {
       const j = await mcJob(client, id);
       setMc('job', j);
       if (j.status === 'done') {
         stop();
-        setMc('result', await mcResult(client, id));
+        const result = await mcResult(client, id);
+        setMc('result', result);
+        // Automatic, like the normal runs: into the data folder of the engine on this PC (never the online database).
+        void saveMcRun(result, opt).then((sid) => setMc('saved', sid));
       } else if (j.status === 'error' || j.status === 'cancelled') {
         stop();
         if (j.error) setMc('error', j.error);
