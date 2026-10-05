@@ -262,10 +262,12 @@ export default function MonteCarloView() {
           </label>
           <label className={styles.check} title="Une action n’est pas détenue tant que sa capitalisation de l’époque (nombre d’actions réel × cours) est sous le seuil.">
             <input type="checkbox" checked={opt.filters.min_cap} onChange={(e) => set('filters', { ...opt.filters, min_cap: e.target.checked })} />
-            Ignorer une action sous
-            <input type="number" min={0} step={1} style={{ width: 70, margin: '0 6px' }} value={opt.filters.min_cap_billions} disabled={!opt.filters.min_cap}
-              onChange={(e) => set('filters', { ...opt.filters, min_cap_billions: Math.max(0, Number(e.target.value) || 0) })} />
-            Md$ de capitalisation
+            <span className={styles.capline}>
+              Ignorer une action sous
+              <input type="number" min={0} step={1} style={{ width: 70 }} value={opt.filters.min_cap_billions} disabled={!opt.filters.min_cap}
+                onChange={(e) => set('filters', { ...opt.filters, min_cap_billions: Math.max(0, Number(e.target.value) || 0) })} />
+              Md$ de capitalisation
+            </span>
           </label>
         </div>
         {(opt.filters.sp500_entry || opt.filters.min_cap) && (
@@ -735,6 +737,8 @@ function RealResults({ start, end, valid, names, brush, onBrush, onOverlay }: {
   const benchKeys = useMemo(() => (real ? Object.keys(real.summary.benchmarks).sort() : []), [real]);
   const [benchmarks, setBenchmarks] = useState<string[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  // Shown by default (asked for); can be folded.
+  const [open, setOpen] = useState(true);
   const namesKey = names.join('\u0001');
   useEffect(() => {
     setBenchmarks(benchKeys.slice(0, 1));
@@ -768,13 +772,16 @@ function RealResults({ start, end, valid, names, brush, onBrush, onOverlay }: {
       <section className={`card ${styles.card}`}>
         <div className={styles.head}>
           <div>
-            <div className={styles.title}>Résultats réels de tes portfolios</div>
+            <div className={styles.title}>Résultats réels de tes portfolios (issus de l’onglet Résultats, pas du Monte Carlo)</div>
             <div className={styles.sub}>
               Dernier backtest affiché dans Résultats ({pfs.length} portfolio{pfs.length > 1 ? 's' : ''}), avec leurs vraies actions, sur la période
               choisie : à comparer avec le nuage de tirages plus bas.
             </div>
           </div>
-          {benchKeys.length > 0 && (
+          <div className={styles.inline}>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOpen((o) => !o)}>{open ? 'Masquer les graphiques' : 'Afficher les graphiques'}</button>
+          </div>
+          {open && benchKeys.length > 0 && (
             <div className={styles.inline}>
               <span className={styles.faint}>Benchmarks</span>
               {benchKeys.map((t) => {
@@ -788,7 +795,7 @@ function RealResults({ start, end, valid, names, brush, onBrush, onOverlay }: {
           )}
         </div>
       </section>
-      {cd ? (
+      {!open ? null : cd ? (
         <div className={styles.stack}>
           <PerformanceChart
             series={cd.defs} data={cd.pctData} hidden={hidden} onToggleSeries={(id) => setHidden((h) => toggleSeriesVisibility(h, id))}
