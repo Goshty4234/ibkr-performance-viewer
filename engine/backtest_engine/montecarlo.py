@@ -177,7 +177,11 @@ def classify(cfg: dict, n_pick: int) -> dict[str, Any]:
             and str(s.get("ticker")).strip().upper() != "CASH"]
     notes: list[str] = out["notes"]
 
+    distinct = {str(s.get("ticker")).strip().upper() for s in real}
     if cfg.get("use_momentum"):
+        if len(distinct) == 1:
+            return no("single", f"Momentum sur un seul titre ({next(iter(distinct))}) : il n’y a rien à classer, ce n’est "
+                                "pas une stratégie de sélection, et un tirage le remplacerait par un autre panier.")
         out.update(status="included", kind="momentum")
         top = cfg.get("limit_to_top_n_tickers") if cfg.get("use_limit_to_top_n") else None
         if isinstance(top, (int, float)) and top >= n_pick:
@@ -193,7 +197,7 @@ def classify(cfg: dict, n_pick: int) -> dict[str, Any]:
     # static allocations: only an equal-weight basket survives
     if any(t.upper() == "CASH" for t in tickers):
         return no("static", "Allocation fixe avec une part de CASH : cette part n’a pas d’équivalent dans un panier tiré au hasard.")
-    if len(real) < 2:
+    if len(distinct) < 2:
         what = f" ({real[0]['ticker']})" if real else ""
         return no("single", f"Un seul titre{what} sans momentum : un tirage le remplacerait par un panier de {n_pick} actions, "
                             "ce ne serait plus ton portfolio.")

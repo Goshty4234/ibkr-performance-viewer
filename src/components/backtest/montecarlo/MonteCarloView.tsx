@@ -13,7 +13,7 @@ import type { ChartBrushSelection } from '@/lib/chart-range';
 import { toggleSeriesVisibility } from '@/lib/chart-series';
 import { EngineClient, engineOutdated } from '@/lib/engine/client';
 import {
-  addDays, daysBetween, histogram, mcCancel, mcCheck, mcJob, mcResult, mcSubmit, MC_DEFAULTS, pairOf, parseTickers, windowOf,
+  daysBetween, histogram, mcCancel, mcCheck, mcJob, mcResult, mcSubmit, MC_DEFAULTS, pairOf, parseTickers, windowOf,
   type McJob, type McOptions, type McResult, type McStatKey, type McUniverseSource, type McVerdict, type McWindow,
 } from '@/lib/engine/montecarlo';
 import { useEngineStore } from '@/lib/engine/store';
@@ -89,20 +89,30 @@ export default function MonteCarloView() {
   const chosen = useMemo(() => portfolios.filter((p) => selected.has(p._id)), [portfolios, selected]);
   const chosenConfigs = useMemo(() => chosen.map(toEngineConfig), [chosen]);
   // What the engine thinks of each chosen portfolio (momentum / equal weight are kept, the rest left out and explained).
-  const [verdicts, setVerdicts] = useState<McVerdict[] | null>(null);
+  // A verdict only counts for the exact portfolios it was computed for; until it arrives (or if the engine cannot answer),
+  // nothing can be launched, so a portfolio that makes no sense here can never slip through.
+  const checkKey = useMemo(() => JSON.stringify([chosenConfigs, opt.n_pick]), [chosenConfigs, opt.n_pick]);
+  const [checked, setChecked] = useState<{ key: string; list: McVerdict[] } | null>(null);
+  const [checkError, setCheckError] = useState<string | null>(null);
   useEffect(() => {
-    if (!client || outdated || !chosenConfigs.length) { setVerdicts(null); return; }
+    if (!client || outdated || !chosenConfigs.length) { setChecked(null); setCheckError(null); return; }
     let alive = true;
+    setCheckError(null);
     const t = setTimeout(() => {
       mcCheck(client, chosenConfigs, { n_pick: opt.n_pick })
-        .then((v) => { if (alive) setVerdicts(v.length === chosenConfigs.length ? v : null); })
-        .catch(() => { if (alive) setVerdicts(null); });
+        .then((v) => {
+          if (!alive) return;
+          if (v.length === chosenConfigs.length) setChecked({ key: checkKey, list: v });
+          else setCheckError('Réponse inattendue du moteur.');
+        })
+        .catch((e: unknown) => { if (alive) setCheckError(e instanceof Error ? e.message : String(e)); });
     }, 300);
     return () => { alive = false; clearTimeout(t); };
-  }, [client, outdated, chosenConfigs, opt.n_pick]);
+  }, [client, outdated, chosenConfigs, opt.n_pick, checkKey]);
+  const verdicts = checked && checked.key === checkKey ? checked.list : null;
   const verdictOf = (i: number): McVerdict | undefined => verdicts?.[i];
   const usable = useMemo(
-    () => chosen.filter((_, i) => verdicts?.[i]?.status !== 'excluded'),
+    () => (verdicts ? chosen.filter((_, i) => verdicts[i]?.status === 'included') : []),
     [chosen, verdicts],
   );
   const set = <K extends keyof McOptions>(k: K, v: McOptions[K]) => setOpt((o) => ({ ...o, [k]: v }));
@@ -256,6 +266,9 @@ export default function MonteCarloView() {
           ) : (
             <button type="button" className="btn btn-secondary" onClick={cancel}>Annuler</button>
           )}
+          {chosen.length > 0 && !verdicts && !outdated && client && (
+            <span className={checkError ? styles.warn : styles.faint}>{checkError ? `Vérification des portfolios impossible : ${checkError}` : 'Vérification des portfolios…'}</span>
+          )}
           {tooSmall && <span className={styles.warn}>L’univers compte {universeCount} tickers : moins que {opt.n_pick} actions par tirage.</span>}
           {!client && detecting && <span className={styles.warn}>Connexion au moteur… patiente.</span>}
           {!client && !detecting && <span className={styles.warn}>Moteur de calcul non détecté.</span>}
@@ -330,14 +343,6 @@ function McResults({ result }: { result: McResult }) {
     const sIso = d.toISOString().slice(0, 10);
     setStart(sIso < bounds.min ? bounds.min : sIso);
   };
-  const spanDays = bounds.min && bounds.max ? daysBetween(bounds.min, bounds.max) : 0;
-  const lenDays = start && end ? Math.max(1, daysBetween(start, end)) : 0;
-  const offset = start && bounds.min ? Math.max(0, daysBetween(bounds.min, start)) : 0;
-  const slide = (days: number) => {
-    const s0 = addDays(bounds.min, days);
-    setStart(s0);
-    setEnd(addDays(s0, lenDays));
-  };
   const metric = METRICS.find((m) => m.id === metricId) ?? METRICS[0];
   const ports = series.map((s, i) => ({ s, i })).filter((x) => x.s.kind === 'portfolio');
   const baseIdx = series.findIndex((s) => s.kind === 'baseline');
@@ -373,7 +378,6 @@ function McResults({ result }: { result: McResult }) {
       animation: false,
       grid: { left: 62, right: 18, top: 40, bottom: 34 },
       legend: { top: 0, type: 'scroll', data: win.series.map((s) => s.name) },
-      dataZoom: [{ type: 'inside' }],
       tooltip: {
         trigger: 'axis',
         formatter: (params: { seriesId: string; seriesName: string; value: number | null; color: string; axisValue: string }[]) => {
@@ -467,9 +471,8 @@ function McResults({ result }: { result: McResult }) {
           <div>
             <div className={styles.title}>Période affichée</div>
             <div className={styles.sub}>
-              Tout repart de 0 % au premier jour de la période, comme dans l’Analyse ciblée : les graphiques de tes résultats réels, les
-              courbes du Monte Carlo et le tableau « Sur la période » se règlent ensemble. Fais glisser la fenêtre pour voir comment
-              chaque époque a traité tes portfolios.
+              Choisis une date de début et une date de fin : tout repart de 0 % à la date de début, comme dans l’Analyse ciblée. Les
+              graphiques de tes résultats réels, les courbes du Monte Carlo et le tableau « Sur la période » se règlent ensemble.
             </div>
           </div>
         </div>
@@ -484,17 +487,18 @@ function McResults({ result }: { result: McResult }) {
             {PRESETS.map((p) => <button key={p.label} type="button" className="btn btn-ghost btn-sm" onClick={() => setPreset(p.years)}>{p.label}</button>)}
           </div>
           {brush && (
-            <button type="button" className="btn btn-secondary btn-sm" title="Les courbes repartent de 0 % au début de la sélection"
-              onClick={() => { setStart(brush.startDate); setEnd(brush.endDate); setBrush(null); }}>
-              Utiliser la sélection ({brush.startDate} → {brush.endDate})
-            </button>
+            <>
+              <button type="button" className="btn btn-secondary btn-sm" title="Les courbes repartent de 0 % au début de la sélection"
+                onClick={() => { setStart(brush.startDate); setEnd(brush.endDate); setBrush(null); }}>
+                Utiliser la sélection ({brush.startDate} → {brush.endDate})
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setBrush(null)}>✕ Effacer la sélection</button>
+            </>
+          )}
+          {(start !== bounds.min || end !== bounds.max) && (
+            <button type="button" className="btn btn-ghost btn-sm" title="Revenir à toute la période" onClick={() => setPreset(null)}>↺ Période complète</button>
           )}
         </div>
-        <label className={styles.slide} title="Déplace la fenêtre sans changer sa durée">
-          <span>Fenêtre glissante ({nf(lenDays / 365.25, 1)} an{lenDays / 365.25 >= 1.5 ? 's' : ''})</span>
-          <input type="range" min={0} max={Math.max(0, spanDays - lenDays)} step={7} value={Math.min(offset, Math.max(0, spanDays - lenDays))}
-            disabled={spanDays - lenDays <= 0} onChange={(e) => slide(Number(e.target.value))} />
-        </label>
         {!valid && <div className={styles.warn}>La date de début doit précéder la date de fin.</div>}
       </section>
 
