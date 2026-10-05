@@ -14,6 +14,8 @@ export interface McOptions {
   end_date: string | null;
   baseline: boolean;
   points: number;
+  /** Universe filters applied to every portfolio and to the reference: a stock not eligible on a date is simply not held. */
+  filters: { sp500_entry: boolean; min_cap: boolean; min_cap_billions: number };
 }
 
 export const MC_DEFAULTS: McOptions = {
@@ -25,6 +27,7 @@ export const MC_DEFAULTS: McOptions = {
   end_date: null,
   baseline: true,
   points: 400,
+  filters: { sp500_entry: false, min_cap: false, min_cap_billions: 10 },
 };
 
 /** Statistics per draw, in Construire's units (returns and drawdowns in %). */

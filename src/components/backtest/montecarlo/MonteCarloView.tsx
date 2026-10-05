@@ -243,6 +243,27 @@ export default function MonteCarloView() {
           </label>
         </div>
 
+        <div className={styles.grid} style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(330px, 1fr))' }}>
+          <label className={styles.check} title="Une action n’est pas détenue avant la date où elle est entrée dans le S&P 500 (date de Wikipédia, actions actuelles de l’indice). Les autres titres (ETF…) restent toujours admis.">
+            <input type="checkbox" checked={opt.filters.sp500_entry} onChange={(e) => set('filters', { ...opt.filters, sp500_entry: e.target.checked })} />
+            Ignorer une action avant son entrée dans le S&P 500
+          </label>
+          <label className={styles.check} title="Une action n’est pas détenue tant que sa capitalisation de l’époque (nombre d’actions réel × cours) est sous le seuil.">
+            <input type="checkbox" checked={opt.filters.min_cap} onChange={(e) => set('filters', { ...opt.filters, min_cap: e.target.checked })} />
+            Ignorer une action sous
+            <input type="number" min={0} step={1} style={{ width: 70, margin: '0 6px' }} value={opt.filters.min_cap_billions} disabled={!opt.filters.min_cap}
+              onChange={(e) => set('filters', { ...opt.filters, min_cap_billions: Math.max(0, Number(e.target.value) || 0) })} />
+            Md$ de capitalisation
+          </label>
+        </div>
+        {(opt.filters.sp500_entry || opt.filters.min_cap) && (
+          <div className={styles.hint}>
+            Ces filtres s’appliquent à tous les portfolios et à la référence. Une action pas encore admise est simplement laissée de côté (le
+            tirage compte alors moins de titres à cette date, on n’en ajoute pas d’autres) : chaque tirage garde ses {opt.n_pick} actions, mais
+            seules celles admises sont détenues.
+          </div>
+        )}
+
         {opt.universe.source === 'list' && (
           <label className={styles.field}>Tickers de l’univers ({listTickers.length})
             <textarea className={styles.textarea} rows={4} value={listText} placeholder="AAPL MSFT NVDA AMZN …" onChange={(e) => setListText(e.target.value)} />

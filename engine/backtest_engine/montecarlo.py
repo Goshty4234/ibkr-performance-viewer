@@ -62,7 +62,8 @@ class MonteCarloCancelled(Exception):
 
 def default_options() -> dict[str, Any]:
     return {"n_draws": 50, "n_pick": 30, "seed": 12345, "universe": {"source": "sp500", "tickers": []},
-            "start_date": None, "end_date": None, "baseline": True, "points": 400}
+            "start_date": None, "end_date": None, "baseline": True, "points": 400,
+            "filters": {"sp500_entry": False, "min_cap": False, "min_cap_billions": 10.0}}
 
 
 def _date(v: Any) -> str | None:
@@ -87,6 +88,13 @@ def clean_options(raw: dict[str, Any] | None) -> dict[str, Any]:
     o["end_date"] = _date(raw.get("end_date"))
     if raw.get("baseline") is not None:
         o["baseline"] = bool(raw["baseline"])
+    f = raw.get("filters") if isinstance(raw.get("filters"), dict) else {}
+    try:
+        cap = float(f.get("min_cap_billions", 10.0))
+    except (TypeError, ValueError):
+        cap = 10.0
+    o["filters"] = {"sp500_entry": bool(f.get("sp500_entry")), "min_cap": bool(f.get("min_cap")),
+                    "min_cap_billions": min(max(cap, 0.0), 10_000.0)}
     u = raw.get("universe") or {}
     src = u.get("source") if u.get("source") in ("sp500", "us", "portfolios", "list") else "sp500"
     tickers = [str(t).strip().upper() for t in (u.get("tickers") or []) if str(t).strip()]
@@ -293,6 +301,14 @@ def prepare(job_dir: Path, portfolios: list[dict], run_options: dict[str, Any], 
     names = {c["name"] for c in base}
     if o["baseline"] and BASELINE_NAME not in names:
         base += normalize_portfolio_configs([baseline_config(base[0])])
+    # Universe filters of the study apply to every portfolio and to the reference alike: a stock that is not yet in
+    # the S&P 500 (or under the minimum cap) on a date is simply not held then, so a draw can hold fewer stocks.
+    for c in base:
+        if o["filters"]["sp500_entry"]:
+            c["exclude_before_sp500_entry"] = True
+        if o["filters"]["min_cap"]:
+            c["use_min_market_cap_filter"] = True
+            c["min_market_cap_billions"] = o["filters"]["min_cap_billions"]
     configs = [c if R.is_fusion(c) else with_stocks(c, universe) for c in base]
     R._dedupe_names(configs)
     apply_date_range(configs, options)
