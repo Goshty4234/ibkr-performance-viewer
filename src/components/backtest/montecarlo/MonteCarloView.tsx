@@ -349,6 +349,15 @@ function McResults({ result }: { result: McResult }) {
   // The real portfolios' curves (standard backtest of Construire) over the same period, drawn on top of the cloud.
   const [overlay, setOverlay] = useState<RealOverlay | null>(null);
   const [showReal, setShowReal] = useState(true);
+  // Legend choices shared by the curves chart and the drawdown chart: hiding a portfolio in one hides it in the other.
+  const [off, setOff] = useState<string[]>([]);
+  const legendSelected = useMemo(() => Object.fromEntries(off.map((n) => [n, false])), [off]);
+  const legendEvents = useMemo(() => ({
+    legendselectchanged: (params: unknown) => {
+      const sel = (params as { selected?: Record<string, boolean> }).selected ?? {};
+      setOff(Object.keys(sel).filter((n) => sel[n] === false).sort());
+    },
+  }), []);
   const series = result.series;
   const realResult = useBacktestStore((s) => s.result);
   const realPfs = useMemo(() => (realResult ? okSummaries(realResult.summary) : []), [realResult]);
@@ -445,7 +454,7 @@ function McResults({ result }: { result: McResult }) {
     return {
       animation: false,
       grid: { left: 62, right: 18, top: 40, bottom: 34 },
-      legend: { top: 0, type: 'scroll', data: [...win.series.map((s) => s.name), ...realNames] },
+      legend: { top: 0, type: 'scroll', data: [...win.series.map((s) => s.name), ...realNames], selected: legendSelected },
       tooltip: {
         trigger: 'axis',
         formatter: (params: { seriesId: string; seriesName: string; value: number | null; color: string; axisValue: string }[]) => {
@@ -461,7 +470,64 @@ function McResults({ result }: { result: McResult }) {
       series: out,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [win, log, highlight, shownDraws, realPfs, overlay, showReal]);
+  }, [win, log, highlight, shownDraws, realPfs, overlay, showReal, legendSelected]);
+
+  // Drawdown of the median curve of each portfolio (and of the real curves when overlaid). It is the drawdown OF the median path,
+  // not the median of the draws' drawdowns (that one is in the table below). Cheap: one pass over the grid points.
+  const ddOption = useMemo(() => {
+    if (!win) return {};
+    const dd = (vals: (number | null)[]) => {
+      let peak = 0;
+      return vals.map((v) => {
+        if (v === null || v === undefined || !(v > 0)) return null;
+        if (v > peak) peak = v;
+        return (v / peak - 1) * 100;
+      });
+    };
+    const out: Record<string, unknown>[] = win.series.map((s, i) => ({
+      id: `dm-${i}`, name: s.name, type: 'line', data: dd(s.fan.p50), showSymbol: false,
+      lineStyle: { width: 2, color: color(i), type: s.kind === 'baseline' ? 'dashed' : 'solid' }, itemStyle: { color: color(i) },
+      areaStyle: { color: color(i), opacity: 0.08 },
+    }));
+    const realNames: string[] = [];
+    if (showReal && overlay && overlay.rows.length) {
+      for (const def of overlay.defs) {
+        const vals: (number | null)[] = [];
+        let k = 0;
+        let cur: number | null = null;
+        for (const d of win.dates) {
+          while (k < overlay.rows.length && overlay.rows[k].date <= d) {
+            const v = overlay.rows[k][def.id];
+            if (typeof v === 'number' && Number.isFinite(v)) cur = v;
+            k += 1;
+          }
+          vals.push(cur === null ? null : 1 + cur / 100);
+        }
+        const v0 = vals.find((v) => v !== null);
+        if (v0 === undefined || v0 === null) continue;
+        const label = `${def.label} (réel)`;
+        realNames.push(label);
+        out.push({
+          id: `dr-${def.id}`, name: label, type: 'line', data: dd(vals.map((v) => (v === null ? null : v / v0))), showSymbol: false, z: 8,
+          lineStyle: { width: 3, color: def.color }, itemStyle: { color: def.color },
+        });
+      }
+    }
+    const span = win.dates.length > 1 ? daysBetween(win.dates[0], win.dates[win.dates.length - 1]) : 0;
+    return {
+      animation: false,
+      grid: { left: 62, right: 18, top: 40, bottom: 34 },
+      legend: { top: 0, type: 'scroll', data: [...win.series.map((s) => s.name), ...realNames], selected: legendSelected },
+      tooltip: {
+        trigger: 'axis',
+        valueFormatter: (v: number | null) => (v === null || v === undefined ? '' : `${v.toFixed(1)} %`),
+      },
+      xAxis: { type: 'category', data: win.dates, axisLabel: { formatter: (v: string) => (span > 365 * 4 ? v.slice(0, 4) : v.slice(0, 7)) } },
+      yAxis: { type: 'value', max: 0, axisLabel: { formatter: (v: number) => `${v.toFixed(0)} %` } },
+      series: out,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [win, realPfs, overlay, showReal, legendSelected]);
 
   const histOption = useMemo(() => {
     const h = histogram(series.map((s) => s.stats[metricId]), 30);
@@ -594,9 +660,17 @@ function McResults({ result }: { result: McResult }) {
           </div>
         </div>
         {win && win.series.some((s) => s.covered > 0)
-          ? <EChart option={curvesOption} height={460} />
+          ? <EChart option={curvesOption} height={460} onEvents={legendEvents} />
           : <div className={styles.warn}>Aucun tirage ne couvre cette période : choisis une période qui commence plus tard.</div>}
       </section>
+
+      {win && win.series.some((s) => s.covered > 0) && (
+        <section className={`card ${styles.card}`}>
+          <div className={styles.title}>Drawdown de la médiane</div>
+          <div className={styles.sub}>Recul depuis le plus haut de la courbe médiane de chaque portfolio, sur la même période. Le drawdown médian des tirages est dans le tableau plus bas.</div>
+          <EChart option={ddOption} height={260} onEvents={legendEvents} />
+        </section>
+      )}
 
       {win && win.series.some((s) => s.covered > 0) && (
         <section className={`card ${styles.card}`}>
