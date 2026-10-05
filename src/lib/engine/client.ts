@@ -31,7 +31,7 @@ export class EngineError extends Error {
 
 /** Contract number this site needs (API_VERSION in engine/backtest_engine/__init__.py): an older
  * engine could misread a request or a result, so runs are refused until it is updated. */
-export const ENGINE_API = 6;
+export const ENGINE_API = 7;
 
 export function engineOutdated(health: EngineHealth | null | undefined): boolean {
   return !!health && (health.api ?? 0) < ENGINE_API;

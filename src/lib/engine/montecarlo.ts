@@ -14,6 +14,8 @@ export interface McOptions {
   end_date: string | null;
   baseline: boolean;
   points: number;
+  /** Every portfolio and the reference start when the momentum portfolios can first invest (after their longest look-back). */
+  align_momentum: boolean;
   /** Universe filters applied to every portfolio and to the reference: a stock not eligible on a date is simply not held. */
   filters: { sp500_entry: boolean; min_cap: boolean; min_cap_billions: number };
 }
@@ -27,6 +29,7 @@ export const MC_DEFAULTS: McOptions = {
   end_date: null,
   baseline: true,
   points: 400,
+  align_momentum: true,
   filters: { sp500_entry: false, min_cap: false, min_cap_billions: 10 },
 };
 

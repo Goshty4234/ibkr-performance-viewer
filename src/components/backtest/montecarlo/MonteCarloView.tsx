@@ -250,6 +250,10 @@ export default function MonteCarloView() {
               <button type="button" className="btn btn-ghost btn-sm" title="Nouvelle graine (autres tirages)" onClick={() => set('seed', Math.floor(Math.random() * 1e9))}>🎲</button>
             </span>
           </label>
+          <label className={styles.check} title="Un portfolio momentum reste en cash le temps de remplir sa plus longue fenêtre, alors que la référence est investie dès le premier jour. Avec cette case, chaque tirage commence une fenêtre après sa plus ancienne action, pour tous les portfolios : on mesure tout le monde à partir du moment où le momentum peut acheter.">
+            <input type="checkbox" checked={opt.align_momentum} onChange={(e) => set('align_momentum', e.target.checked)} />
+            Départ commun : mesurer à partir du premier achat du momentum
+          </label>
           <label className={styles.check} title="Ajoute à chaque tirage un portfolio équipondéré des mêmes actions, rebalancé chaque mois : la référence « sans stratégie ».">
             <input type="checkbox" checked={opt.baseline} onChange={(e) => set('baseline', e.target.checked)} />
             Référence équipondérée des actions tirées

@@ -62,7 +62,7 @@ class MonteCarloCancelled(Exception):
 
 def default_options() -> dict[str, Any]:
     return {"n_draws": 50, "n_pick": 30, "seed": 12345, "universe": {"source": "sp500", "tickers": []},
-            "start_date": None, "end_date": None, "baseline": True, "points": 400,
+            "start_date": None, "end_date": None, "baseline": True, "points": 400, "align_momentum": True,
             "filters": {"sp500_entry": False, "min_cap": False, "min_cap_billions": 10.0}}
 
 
@@ -88,6 +88,8 @@ def clean_options(raw: dict[str, Any] | None) -> dict[str, Any]:
     o["end_date"] = _date(raw.get("end_date"))
     if raw.get("baseline") is not None:
         o["baseline"] = bool(raw["baseline"])
+    if raw.get("align_momentum") is not None:
+        o["align_momentum"] = bool(raw["align_momentum"])
     f = raw.get("filters") if isinstance(raw.get("filters"), dict) else {}
     try:
         cap = float(f.get("min_cap_billions", 10.0))
@@ -462,7 +464,36 @@ def _num(v: Any) -> float | None:
     return f if math.isfinite(f) else None
 
 
-def run_draw(job_dir: str, draw: int, tickers: list[str], grid: list[str]) -> dict[str, Any]:
+def _align_to_momentum(cfgs: list[dict], raw: dict, options: Any, tickers: list[str]) -> tuple[list[dict], Any]:
+    """Everybody starts when the momentum portfolios can first invest.
+
+    A momentum portfolio holds cash until its longest look-back window is filled, while the equal-weight
+    reference is invested from day one: measured from the first day, momentum would be penalised by its
+    own warm-up. The draw therefore starts one look-back after its oldest stock, for all portfolios and the
+    reference, and the engine's "truncate the momentum window" mode lets the momentum run through that
+    warm-up beforehand (it is then invested on the first measured day, like in Construire with that option)."""
+    longest = 0
+    for c in cfgs:
+        if c.get("use_momentum") and c.get("name") != BASELINE_NAME:
+            for w in c.get("momentum_windows") or []:
+                try:
+                    longest = max(longest, int((w or {}).get("lookback") or 0))
+                except (TypeError, ValueError):
+                    pass
+    # the drawn stocks only: the benchmark's history (e.g. ^GSPC since 1928) says nothing about when the basket can start
+    firsts = [raw[t].first_valid_index() for t in tickers if isinstance(raw.get(t), pd.DataFrame) and not raw[t].empty]
+    firsts = [f for f in firsts if f is not None]
+    if not longest or not firsts:
+        return cfgs, options
+    first_day = pd.Timestamp(min(firsts)) + pd.Timedelta(days=longest)
+    from . import runner as R
+
+    cfgs = [c if R.is_fusion(c) else {**c, "start_date_user": max(
+        pd.Timestamp(c["start_date_user"]) if c.get("start_date_user") else first_day, first_day)} for c in cfgs]
+    return cfgs, dataclasses.replace(options, auto_adjust_momentum_start=True)
+
+
+def run_draw(job_dir: str, draw: int, tickers: list[str], grid: list[str], align: bool = False) -> dict[str, Any]:
     """Every portfolio of the job on `tickers`: the same steps as a normal run of those stocks."""
     from . import runner as R
     from .context import BacktestError, RunContext
@@ -474,13 +505,16 @@ def run_draw(job_dir: str, draw: int, tickers: list[str], grid: list[str]) -> di
     cfgs = [c if R.is_fusion(c) else with_stocks(c, tickers) for c in up.configs]
     keys = [k for k in R._collect_tickers(cfgs) if k in snap.files]
     raw = {k: snap.raw(k) for k in keys}
+    options = up.options
+    if align:
+        cfgs, options = _align_to_momentum(cfgs, raw, options, tickers)
     gidx = pd.DatetimeIndex(grid)
     out: dict[str, Any] = {"draw": draw, "tickers": tickers, "series": []}
-    st.session_state.reset(up.options.session_state())
+    st.session_state.reset(options.session_state())
     st.session_state.multi_backtest_portfolio_configs = cfgs
     try:
         with contextlib.redirect_stdout(io.StringIO()):
-            final_start, common_end, display_start = R._simulation_range(raw, cfgs, up.options, RunContext())
+            final_start, common_end, display_start = R._simulation_range(raw, cfgs, options, RunContext())
     except BacktestError as exc:
         out["error"] = str(exc)
         out["seconds"] = round(time.perf_counter() - t0, 3)
@@ -488,8 +522,8 @@ def run_draw(job_dir: str, draw: int, tickers: list[str], grid: list[str]) -> di
     sim = pd.date_range(start=final_start, end=common_end, freq="D")
     reindexed = R._reindex(raw, sim)
     prep = dataclasses.replace(up, configs=cfgs, data={}, data_keys=keys, simulation_index=sim,
-                               display_start=display_start, warnings=[])
-    out["start"] = sim[0].strftime("%Y-%m-%d")
+                               display_start=display_start, warnings=[], options=options)
+    out["start"] = (pd.Timestamp(display_start) if align else sim[0]).strftime("%Y-%m-%d")
     out["end"] = sim[-1].strftime("%Y-%m-%d")
     by_index: dict[int, dict] = {}
     with contextlib.redirect_stdout(io.StringIO()):
@@ -724,7 +758,7 @@ def run_montecarlo(portfolios: list[dict], run_options: dict[str, Any] | None, m
                 raise MonteCarloCancelled()
 
         tick()
-        pending = {pool.submit(run_draw, str(job_dir), d, tickers, grid) for d, tickers in enumerate(draws)}
+        pending = {pool.submit(run_draw, str(job_dir), d, tickers, grid, o["align_momentum"]) for d, tickers in enumerate(draws)}
         while pending:
             fin, pending = wait(pending, timeout=0.5, return_when=FIRST_COMPLETED)
             for f in fin:

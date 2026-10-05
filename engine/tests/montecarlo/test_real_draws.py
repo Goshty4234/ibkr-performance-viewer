@@ -37,7 +37,8 @@ PORTFOLIOS = [
 ]
 OPTIONS = {"first_rebalance_strategy": "rebalancing_date", "price_update": "stored"}
 MC = {"n_draws": 4, "n_pick": 3, "seed": 11, "universe": {"source": "list", "tickers": UNIVERSE},
-      "start_date": "2008-01-01", "end_date": "2024-12-31", "points": 120}
+      "start_date": "2008-01-01", "end_date": "2024-12-31", "points": 120,
+      "align_momentum": False}  # compared with a normal run, which has no common start
 
 
 def _close(a, b) -> bool:
