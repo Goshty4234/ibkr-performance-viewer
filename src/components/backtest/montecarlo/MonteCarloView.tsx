@@ -1,8 +1,6 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
-import DrawdownChart from '@/components/DrawdownChart';
-import PerformanceChart from '@/components/PerformanceChart';
 import type { ChartsResult } from '@/lib/backtest/analytics';
 import { portfolioColor, portfolioSeriesId } from '@/lib/backtest/chart-data';
 import { toEngineConfig } from '@/lib/backtest/portfolio';
@@ -10,7 +8,6 @@ import { okSummaries } from '@/lib/backtest/result-data';
 import { useBacktestStore } from '@/lib/backtest/store';
 import { useAnalytics } from '@/lib/backtest/worker/use-analytics';
 import type { ChartBrushSelection } from '@/lib/chart-range';
-import { toggleSeriesVisibility } from '@/lib/chart-series';
 import { EngineClient, engineOutdated } from '@/lib/engine/client';
 import {
   daysBetween, histogram, mcCancel, mcCheck, mcSubmit, pairOf, parseTickers, windowOf,
@@ -737,8 +734,6 @@ function RealResults({ start, end, valid, names, brush, onBrush, onOverlay }: {
   const benchKeys = useMemo(() => (real ? Object.keys(real.summary.benchmarks).sort() : []), [real]);
   const [benchmarks, setBenchmarks] = useState<string[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
-  // Shown by default (asked for); can be folded.
-  const [open, setOpen] = useState(true);
   const namesKey = names.join('\u0001');
   useEffect(() => {
     setBenchmarks(benchKeys.slice(0, 1));
@@ -756,61 +751,9 @@ function RealResults({ start, end, valid, names, brush, onBrush, onOverlay }: {
   const firstDay = cd?.pctData[0]?.date;
   const lastDay = cd?.pctData[cd.pctData.length - 1]?.date;
 
-  if (!real || !pfs.length) {
-    return (
-      <section className={`card ${styles.card}`}>
-        <div className={styles.title}>Résultats réels de tes portfolios</div>
-        <div className={styles.sub}>
-          Lance un backtest normal dans l’onglet Construire : ses courbes (tes vrais portfolios, avec leurs vraies actions) apparaîtront ici,
-          sur la même période, pour les comparer au nuage du Monte Carlo.
-        </div>
-      </section>
-    );
-  }
-  return (
-    <>
-      <section className={`card ${styles.card}`}>
-        <div className={styles.head}>
-          <div>
-            <div className={styles.title}>Résultats réels de tes portfolios (issus de l’onglet Résultats, pas du Monte Carlo)</div>
-            <div className={styles.sub}>
-              Dernier backtest affiché dans Résultats ({pfs.length} portfolio{pfs.length > 1 ? 's' : ''}), avec leurs vraies actions, sur la période
-              choisie : à comparer avec le nuage de tirages plus bas.
-            </div>
-          </div>
-          <div className={styles.inline}>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOpen((o) => !o)}>{open ? 'Masquer les graphiques' : 'Afficher les graphiques'}</button>
-          </div>
-          {open && benchKeys.length > 0 && (
-            <div className={styles.inline}>
-              <span className={styles.faint}>Benchmarks</span>
-              {benchKeys.map((t) => {
-                const on = benchmarks.includes(t);
-                return (
-                  <button key={t} type="button" className={`${styles.chip} ${on ? styles.chipOn : ''}`}
-                    onClick={() => setBenchmarks((b) => (on ? b.filter((x) => x !== t) : [...b, t].sort()))}>{t}</button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </section>
-      {!open ? null : cd ? (
-        <div className={styles.stack}>
-          <PerformanceChart
-            series={cd.defs} data={cd.pctData} hidden={hidden} onToggleSeries={(id) => setHidden((h) => toggleSeriesVisibility(h, id))}
-            brush={brush} onBrushChange={onBrush} loading={false} hasStatements noDataInRange={cd.pctData.length === 0} stacked logToggle
-            title="Performance réelle sur la période (sans ajouts)"
-            subtitle={firstDay && lastDay ? `0 % le ${firstDay} · jusqu’au ${lastDay} · benchmarks en pointillés` : 'Série « no_additions » du moteur'}
-            hint="Cliquez-glissez pour mesurer une sous-période, puis « Utiliser la sélection » (en haut) pour repartir de 0 % dessus · Échap pour effacer."
-          />
-          <DrawdownChart series={cd.defs} data={cd.pctData} hidden={hidden} loading={false} show stacked />
-        </div>
-      ) : (
-        <div className={`card ${styles.card}`}>{charts.error ?? 'Préparation des graphiques…'}</div>
-      )}
-    </>
-  );
+  // Headless: the real curves only feed the overlay of the Monte Carlo chart below, nothing is drawn here.
+  void firstDay; void lastDay; void onBrush; void brush;
+  return null;
 }
 
 function DrawsTable({ result, highlight, onPick, color }: { result: McResult; highlight: number | null; onPick: (d: number | null) => void; color: (i: number) => string }) {
