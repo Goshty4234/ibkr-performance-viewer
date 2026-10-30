@@ -191,6 +191,11 @@ def _fetch_prices(tickers: list[str], ctx: RunContext, lock: Any) -> dict:
         progress=lambda msg: ctx.progress(0.05, msg),
     )
     ctx.price_report = report
+    delisted = sorted(set(report.get("delisted_tickers") or []))
+    if delisted:
+        ctx.warn(
+            "Considered delisted and left out after their last bar: " + ", ".join(delisted)
+        )
     wanted = set(tickers)
     for t, df in frames.items():
         if t in wanted:

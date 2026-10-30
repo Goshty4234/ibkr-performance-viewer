@@ -146,8 +146,43 @@ def days_behind(meta: dict, now: datetime | None = None) -> int:
 
 def up_to_date(meta: dict, now: datetime | None = None) -> bool:
     """True when the series was checked since the last close AND its last bar is that close
-    (a few days of slack for weekends and holidays)."""
+    (a few days of slack for weekends and holidays). A check from this morning still counts
+    in the afternoon: the last settled close has not moved."""
     return float(meta.get("checked") or 0) >= last_close(now) and days_behind(meta, now) <= GRACE_DAYS
+
+
+# Names still this far behind the newest bar of the same download, once the rest of the book
+# has caught up, are treated as delisted. A bigger group still behind is a failed download.
+DELISTED_LAG_DAYS = 7
+MAX_DELISTED = 5
+# One quiet recheck a month, in case the symbol starts trading again.
+DELISTED_RECHECK_S = 30 * 24 * 3600
+
+
+def delisted_hold(meta: dict, now: float | None = None) -> bool:
+    """A name already marked delisted is not fetched again until the recheck delay."""
+    if not meta.get("delisted"):
+        return False
+    marked = float(meta.get("delisted_at") or 0)
+    return (time.time() if now is None else now) - marked < DELISTED_RECHECK_S
+
+
+def names_to_delist(lasts: dict[str, pd.Timestamp], *, yahoo_reached: bool, rate_limited: bool) -> list[str]:
+    """Tickers to mark delisted after this download.
+
+    Only when Yahoo actually answered, the request was not rate-limited, and a handful of
+    names are still weeks behind a book that otherwise reached the newest bar.
+    """
+    if rate_limited or not yahoo_reached or len(lasts) < 2:
+        return []
+    newest = max(lasts.values())
+    behind = sorted(t for t, last in lasts.items() if (newest - last).days > DELISTED_LAG_DAYS)
+    if not behind or len(behind) > MAX_DELISTED:
+        return []
+    current = [t for t, last in lasts.items() if (newest - last).days <= GRACE_DAYS]
+    if len(current) < len(lasts) - len(behind):
+        return []
+    return behind
 
 
 def status(tickers: list[str], now: datetime | None = None) -> dict:
@@ -257,7 +292,8 @@ def update(tickers: dict[str, str], mode: str = "topup", *, lock: Any = None,
     # Full downloads already counted as refetched / upgraded, not counted again as "downloaded".
     counted: set[str] = set()
     report = {"mode": mode, "stored": 0, "topped_up": 0, "refetched": 0, "downloaded": 0, "unknown": 0,
-              "unchanged": 0, "failed": 0, "upgraded": 0, "yahoo_symbols": 0, "rows_downloaded": 0, "rate_limited": False}
+              "unchanged": 0, "failed": 0, "upgraded": 0, "yahoo_symbols": 0, "rows_downloaded": 0,
+              "rate_limited": False, "delisted": 0, "delisted_tickers": []}
     for t in tickers:
         if mode == "full":
             full.append(t)
@@ -269,6 +305,10 @@ def update(tickers: dict[str, str], mode: str = "topup", *, lock: Any = None,
                 report["unknown"] += 1
             else:
                 full.append(t)
+        elif delisted_hold(meta):
+            frames[t] = normalize(store.get(Y.price_key(t)))
+            report["delisted"] += 1
+            report["delisted_tickers"].append(t)
         elif mode == "stored" or up_to_date(meta):
             frames[t] = normalize(store.get(Y.price_key(t)))
             report["stored"] += 1
@@ -388,8 +428,29 @@ def update(tickers: dict[str, str], mode: str = "topup", *, lock: Any = None,
         if i + CHUNK < len(full):
             time.sleep(PAUSE_S)
 
+    if mode == "topup":
+        lasts: dict[str, pd.Timestamp] = {}
+        for t, df in frames.items():
+            if not isinstance(df, pd.DataFrame) or df.empty or "Close" not in df.columns:
+                continue
+            last = df["Close"].last_valid_index()
+            if last is not None and not pd.isna(last):
+                lasts[t] = pd.Timestamp(last).normalize()
+        fresh = names_to_delist(lasts, yahoo_reached=report["yahoo_symbols"] > 0, rate_limited=report["rate_limited"])
+        already = set(report["delisted_tickers"])
+        for t in fresh:
+            if t in already:
+                continue
+            meta = describe(store, t) or {}
+            store.set(meta_key(t), {**meta, "delisted": True, "delisted_at": time.time(),
+                                    "delisted_last": lasts[t].strftime("%Y-%m-%d")})
+            report["delisted"] += 1
+            report["delisted_tickers"].append(t)
+
     if mode != "stored":
-        known = [tickers[t] for t, df in frames.items() if isinstance(df, pd.DataFrame) and not df.empty]
+        skipped = set(report["delisted_tickers"])
+        known = [tickers[t] for t, df in frames.items()
+                 if t not in skipped and isinstance(df, pd.DataFrame) and not df.empty]
         if known:
             say(f"Archiving today's quotes (market cap, PE...) for {len(known)} tickers...")
             try:

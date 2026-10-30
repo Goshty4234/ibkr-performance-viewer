@@ -17,7 +17,7 @@ import { alignToCycle, allocationOptions, allocationWindow, needsCycleAnchor } f
 import { type BacktestRunRow, findRunsByConfigKeys, findRunsByKey, loadRun, type RunKind, saveRun } from './history';
 import type { LoadedResult } from './result-data';
 import { buildOffer, decide, type MergePart, mergeResults, type ReuseDecision, type ReuseOffer } from './reuse';
-import { configKeys, marketToday, requestKey, type RunRequest, sameMarketData, sameNyDay } from './run-key';
+import { configKeys, latestFinalDay, requestHasCrypto, requestKey, type RunRequest, sameMarketData, sameNyDay } from './run-key';
 import {
   DEFAULT_OPTIONS,
   defaultPortfolio,
@@ -802,9 +802,11 @@ export const useBacktestStore = create<BacktestState>()(
           if (key && !opts?.force) {
             const row = await findReusable(key, request, engine?.health.code, true);
             const rerun = () => void get().startAllocationRun(portfolioId, { force: true });
-            // A saved analysis that stops before today is not today's rebalance. Recompute it.
-            const endsToday = (row?.simulation_end ?? '').slice(0, 10) >= marketToday();
-            if (row && endsToday && (await openSaved(row, 'allocations', target.name, rerun, request).catch(() => false))) return null;
+            // Reuse this morning's analysis this afternoon. A result that stops before the
+            // last settled close (a delisted name used to freeze it there) is computed again.
+            const end = (row?.simulation_end ?? '').slice(0, 10);
+            const fresh = end >= latestFinalDay(requestHasCrypto(request));
+            if (row && fresh && (await openSaved(row, 'allocations', target.name, rerun, request).catch(() => false))) return null;
           }
           if (!engine) {
             set({ launchError: NO_ENGINE });
