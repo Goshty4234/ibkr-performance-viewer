@@ -5,6 +5,19 @@ export interface RunRequest {
   options: RunOptions;
 }
 
+/**
+ * Off is left out, so a portfolio that does not use the option still matches runs saved
+ * before it existed. On, both the flag and the minimum count are part of the identity:
+ * either change must miss the history and be calculated again.
+ */
+export function identityPortfolio<T extends { use_min_available_stocks?: boolean; min_available_stocks?: number }>(p: T): T {
+  const { use_min_available_stocks: _flag, min_available_stocks: _count, ...rest } = p;
+  if (p.use_min_available_stocks !== true) return rest as T;
+  const n = Number(p.min_available_stocks);
+  const count = Number.isFinite(n) && n > 0 ? Math.round(n) : 20;
+  return { ...rest, use_min_available_stocks: true, min_available_stocks: count } as T;
+}
+
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === 'object') {
@@ -23,7 +36,10 @@ function canonical(value: unknown): unknown {
  * simulation axis from the whole set, so the same set gives the same numbers in any order.
  */
 export async function requestKey(req: RunRequest): Promise<string> {
-  const portfolios = req.portfolios.map(({ sync_sp500: _linked, ...p }) => p).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const portfolios = req.portfolios.map((p) => {
+    const { sync_sp500: _linked, ...rest } = identityPortfolio(p);
+    return rest;
+  }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const { price_update: _prices, ...options } = req.options;
   return sha256(JSON.stringify(canonical({ portfolios, options })));
 }
@@ -43,7 +59,7 @@ const NOT_IDENTITY_OPTIONS = new Set(['end_date', 'align_start', 'start_date', '
 export async function configKeys(req: RunRequest): Promise<string[]> {
   const options = Object.fromEntries(Object.entries(req.options).filter(([k]) => !NOT_IDENTITY_OPTIONS.has(k)));
   const strip = (p: PortfolioConfig) => {
-    const { end_date_user: _end, start_date_user: _start, sync_sp500: _linked, ...rest } = p as PortfolioConfig & { end_date_user?: unknown; start_date_user?: unknown };
+    const { end_date_user: _end, start_date_user: _start, sync_sp500: _linked, ...rest } = identityPortfolio(p) as PortfolioConfig & { end_date_user?: unknown; start_date_user?: unknown };
     return rest;
   };
   return Promise.all(req.portfolios.map((p) => {

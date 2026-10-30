@@ -232,7 +232,7 @@ async function findOffer(engine: ResolvedEngine, request: RunRequest, keys: stri
   if (!rows.length) return null;
   try {
     const plan = await new EngineClient(engine.url, engine.health.auth_required).plan(request.portfolios, request.options);
-    return buildOffer(request, plan, rows);
+    return buildOffer(request, plan, rows, new Date(), keys);
   } catch {
     return null;
   }

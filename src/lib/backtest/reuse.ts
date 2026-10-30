@@ -41,7 +41,7 @@ export function freshEnd(request: RunRequest, now = new Date()): string {
   return asked ? minDay(asked, today) : today;
 }
 
-export function buildOffer(request: RunRequest, plan: RunPlan, rows: BacktestRunRow[], now = new Date()): ReuseOffer | null {
+export function buildOffer(request: RunRequest, plan: RunPlan, rows: BacktestRunRow[], now = new Date(), configKeys?: string[]): ReuseOffer | null {
   // The plan's end is only the prices already on disk. A fresh run is aimed at today
   // (or at the requested end date, when that date is sooner).
   if (!plan.simulation.end || plan.portfolios.length !== request.portfolios.length) return null;
@@ -50,6 +50,7 @@ export function buildOffer(request: RunRequest, plan: RunPlan, rows: BacktestRun
   const crypto = requestHasCrypto(request);
   const items = request.portfolios.map((p, position): PortfolioReuse => {
     const key = plan.portfolios[position].history_key;
+    const cfgKey = configKeys?.[position];
     const sources: ReuseSource[] = [];
     for (const row of rows) {
       const end = row.simulation_end;
@@ -57,6 +58,12 @@ export function buildOffer(request: RunRequest, plan: RunPlan, rows: BacktestRun
       if (!end || end > targetEnd) continue;
       // Prices of the last day still moving at the time: not reproducible.
       if (!barFinalAt(new Date(row.created_at), end, crypto)) continue;
+      // The engine key of an older build ignores "cash if fewer stocks" and the minimum.
+      // The site key always contains both, so a saved run that was not made with this
+      // exact choice is not the same backtest.
+      const savedKeys = row.config_keys ?? [];
+      if (cfgKey && savedKeys.length && !savedKeys.includes(cfgKey)) continue;
+      if (cfgKey && !savedKeys.length && p.use_min_available_stocks === true) continue;
       const entry = row.summary?.find((s) => s.ok && s.key === key && s.index != null);
       if (entry) sources.push({ row, index: entry.index!, end });
     }
