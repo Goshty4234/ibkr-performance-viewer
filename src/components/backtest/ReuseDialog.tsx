@@ -15,6 +15,14 @@ function when(iso: string): string {
 
 const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? 's' : ''}`;
 
+const MONTHS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+
+/** `2026-10-30` → `30 oct. 2026`, without shifting the day through a timezone. */
+function pretty(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+  return `${d} ${MONTHS[(m || 1) - 1]} ${y}`;
+}
+
 /** Before a launch: portfolios already computed with exactly the same settings, taken by default. */
 export default function ReuseDialog() {
   const offer = useBacktestStore((s) => s.reuseOffer);
@@ -66,8 +74,8 @@ function Prompt({ offer }: { offer: ReuseOffer }) {
                     {!best
                       ? 'jamais calculé avec ces réglages'
                       : on && !taken
-                        ? `recalculé jusqu’au ${decision.end} (fusion ou date de fin commune)`
-                        : `calculé ${when(best.row.created_at)} · données jusqu’au ${best.end}`}
+                        ? `recalculé jusqu’au ${pretty(decision.end)} (fusion ou date de fin commune)`
+                        : `calculé ${when(best.row.created_at)} · s’arrête au ${pretty(best.end)}`}
                   </span>
                 </span>
                 {!best || !on ? (
@@ -84,8 +92,8 @@ function Prompt({ offer }: { offer: ReuseOffer }) {
 
         {late > 0 && (
           <div className={styles.reuseEnd}>
-            En reprenant, le backtest s’arrête au <strong>{decision.end}</strong> ({plural(late, 'jour')} avant {offer.targetEnd}) :
-            c’est la fin la plus ancienne des résultats cochés. Pour aller jusqu’au {offer.targetEnd}, décoche les portfolios en retard
+            Reprendre s’arrête au <strong>{pretty(decision.end)}</strong> ({plural(late, 'jour')} avant {offer.untilToday ? `aujourd’hui, le ${pretty(offer.targetEnd)}` : `le ${pretty(offer.targetEnd)}`}).
+            C’est la fin la plus ancienne des résultats cochés. Pour aller jusqu’à cette date, décoche les portfolios en retard
             ou choisis « Tout recalculer ».
           </div>
         )}
@@ -94,12 +102,12 @@ function Prompt({ offer }: { offer: ReuseOffer }) {
           <button type="button" className="btn btn-ghost" onClick={cancel}>Annuler</button>
           {decision.reuse.size > 0 && (
             <button type="button" className={`btn btn-secondary ${styles.choiceBtn}`} onClick={() => resolve({ action: 'fresh' })}>
-              <span>↻ Tout recalculer jusqu’au {offer.targetEnd}</span>
-              <small>{late > 0 ? 'à jour · tout est recalculé' : 'même résultat · recalcul complet, plus lent'}</small>
+              <span>{offer.untilToday ? `↻ Tout recalculer jusqu’à aujourd’hui · ${pretty(offer.targetEnd)}` : `↻ Tout recalculer jusqu’au ${pretty(offer.targetEnd)}`}</span>
+              <small>{late > 0 ? 'met les prix à jour · recalcul complet' : 'même résultat · recalcul complet, plus lent'}</small>
             </button>
           )}
           <button type="button" className={`btn btn-primary ${styles.choiceBtn}`} autoFocus onClick={accept}>
-            <span>{decision.reuse.size ? `♻ Reprendre · fin au ${decision.end}` : `Lancer jusqu’au ${decision.end}`}</span>
+            <span>{decision.reuse.size ? `♻ Reprendre · fin au ${pretty(decision.end)}` : `Lancer jusqu’au ${pretty(decision.end)}`}</span>
             <small>
               {!decision.compute.length
                 ? `${late > 0 ? `${plural(late, 'jour')} de retard` : 'à jour'} · instantané`

@@ -104,6 +104,11 @@ function nyDay(d: Date): string {
   return `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`;
 }
 
+/** Calendar day in New York: the market's "today". */
+export function marketToday(now = new Date()): string {
+  return nyDay(now);
+}
+
 /** Same calendar day in New York (the market's day). */
 export function sameNyDay(a: Date, b = new Date()): boolean {
   return nyDay(a) === nyDay(b);

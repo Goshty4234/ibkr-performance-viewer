@@ -1,6 +1,6 @@
 import type { BacktestRunRow } from './history';
 import type { LoadedResult } from './result-data';
-import { barFinalAt, requestHasCrypto, type RunRequest } from './run-key';
+import { barFinalAt, marketToday, requestHasCrypto, type RunRequest } from './run-key';
 import type { PortfolioDetail, PortfolioSummary, ResultSummary, RunOptions, RunPlan } from '@/lib/engine/types';
 
 /** A saved run already holding this exact portfolio result (only the end date may differ). */
@@ -22,8 +22,10 @@ export interface ReuseOffer {
   request: RunRequest;
   plan: RunPlan;
   items: PortfolioReuse[];
-  /** Where a fresh run would end today. */
+  /** Where a fresh run is aimed: today, or the requested end date when that date is sooner. */
   targetEnd: string;
+  /** True when `targetEnd` is the market's calendar day, not a date typed by the user. */
+  untilToday: boolean;
 }
 
 export interface ReuseDecision {
@@ -32,10 +34,19 @@ export interface ReuseDecision {
   compute: number[];
 }
 
-/** Stored portfolio results matching the plan's identities, usable as they are. */
-export function buildOffer(request: RunRequest, plan: RunPlan, rows: BacktestRunRow[]): ReuseOffer | null {
-  const targetEnd = plan.simulation.end;
-  if (!targetEnd || plan.portfolios.length !== request.portfolios.length) return null;
+/** Day a fresh run should reach: today, unless the request already stops sooner. */
+export function freshEnd(request: RunRequest, now = new Date()): string {
+  const today = marketToday(now);
+  const asked = (request.options.end_date || '').slice(0, 10);
+  return asked ? minDay(asked, today) : today;
+}
+
+export function buildOffer(request: RunRequest, plan: RunPlan, rows: BacktestRunRow[], now = new Date()): ReuseOffer | null {
+  // The plan's end is only the prices already on disk. A fresh run is aimed at today
+  // (or at the requested end date, when that date is sooner).
+  if (!plan.simulation.end || plan.portfolios.length !== request.portfolios.length) return null;
+  const targetEnd = freshEnd(request, now);
+  const untilToday = targetEnd === marketToday(now);
   const crypto = requestHasCrypto(request);
   const items = request.portfolios.map((p, position): PortfolioReuse => {
     const key = plan.portfolios[position].history_key;
@@ -52,7 +63,7 @@ export function buildOffer(request: RunRequest, plan: RunPlan, rows: BacktestRun
     sources.sort((a, b) => (a.end !== b.end ? (a.end < b.end ? 1 : -1) : b.row.created_at.localeCompare(a.row.created_at)));
     return { position, name: p.name, sources };
   });
-  return items.some((i) => i.sources.length) ? { request, plan, items, targetEnd } : null;
+  return items.some((i) => i.sources.length) ? { request, plan, items, targetEnd, untilToday } : null;
 }
 
 /** End = earliest end among the accepted results; fusions recomputed pull their members along. */
