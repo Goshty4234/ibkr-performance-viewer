@@ -112,3 +112,51 @@ export function dataIndexToPlotX(
   const ratio = index / (dataLength - 1);
   return CHART_YAXIS_WIDTH + ratio * plotWidth;
 }
+
+/** Points drawn on screen. The cursor still walks every simulated day. */
+export const PAINT_POINTS = 720;
+
+/**
+ * Evenly spaced rows for the painted line, with each series value replaced by the
+ * biggest move inside its slice so a crash between two pixels stays visible.
+ */
+export function sampleEvenExtremes<T extends Record<string, number | string | boolean | null | undefined>>(
+  rows: T[],
+  keys: string[],
+  maxPoints = PAINT_POINTS,
+): T[] {
+  const n = rows.length;
+  if (n <= maxPoints) return rows;
+  const last = n - 1;
+  const denom = maxPoints - 1;
+  const indexes: number[] = [];
+  let prev = -1;
+  for (let k = 0; k < maxPoints; k++) {
+    const i = Math.round((k * last) / denom);
+    if (i !== prev) {
+      indexes.push(i);
+      prev = i;
+    }
+  }
+  return indexes.map((i, k) => {
+    const end = indexes[k + 1] ?? i;
+    const row: Record<string, number | string | boolean | null | undefined> = { ...rows[i] };
+    for (const key of keys) {
+      const start = rows[i][key];
+      if (typeof start !== 'number') continue;
+      let best = start;
+      let bestDist = 0;
+      for (let j = i + 1; j <= end; j++) {
+        const v = rows[j][key];
+        if (typeof v !== 'number') continue;
+        const dist = Math.abs(v - start);
+        if (dist > bestDist) {
+          best = v;
+          bestDist = dist;
+        }
+      }
+      row[key] = best;
+    }
+    return row as T;
+  });
+}

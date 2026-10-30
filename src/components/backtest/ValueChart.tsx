@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import type { ChartSeriesDef, MultiSeriesChartPoint } from '@/lib/chart-series';
 import { visibleSeries } from '@/lib/chart-series';
@@ -45,8 +45,13 @@ export default function ValueChart({
 }) {
   const [log, setLog] = useState(true);
   const [closest, setClosest] = useState(false);
-  const [hover, setHover] = useState<{ index: number; y: number } | null>(null);
   const plotRef = useRef<HTMLDivElement>(null);
+  const lineRef = useRef<HTMLDivElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
+  const dateRef = useRef<HTMLDivElement>(null);
+  const rowsRef = useRef<HTMLDivElement>(null);
+  const pending = useRef<{ x: number; y: number } | null>(null);
+  const frame = useRef(0);
   const shown = useMemo(() => visibleSeries(series, hidden).filter((s) => s.kind !== 'benchmark'), [series, hidden]);
   const names = useMemo(() => Object.fromEntries(shown.map((s) => [s.id, s.label])), [shown]);
 
@@ -78,7 +83,61 @@ export default function ValueChart({
     return (v: number) => (v - lo) / span;
   }, [domain, log]);
 
+  const snap = useRef({ data, shown, names, closest, toY });
+  snap.current = { data, shown, names, closest, toY };
+  useEffect(() => () => { if (frame.current) cancelAnimationFrame(frame.current); }, []);
+
   if (!data.length || !shown.length) return null;
+
+  const paint = () => {
+    const line = lineRef.current;
+    const tip = tipRef.current;
+    const rows = rowsRef.current;
+    const node = plotRef.current;
+    const ev = pending.current;
+    if (!line || !tip || !rows || !node || !ev) return;
+    const cur = snap.current;
+    const rect = node.getBoundingClientRect();
+    const index = pointerIndex(ev.x, rect, cur.data.length);
+    const point = cur.data[index];
+    if (!point) { line.hidden = true; tip.hidden = true; return; }
+    const plotWidth = rect.width - Y_AXIS - PLOT_LEFT - PLOT_RIGHT;
+    const x = Y_AXIS + PLOT_LEFT + (index / Math.max(cur.data.length - 1, 1)) * plotWidth;
+    const plotH = rect.height - PLOT_TOP;
+    let items = cur.shown.flatMap((s) => {
+      const v = point[s.id];
+      return typeof v === 'number' && Number.isFinite(v) ? [{ id: s.id, color: s.color, value: v }] : [];
+    });
+    if (cur.closest) {
+      let best = items[0];
+      let dist = Infinity;
+      for (const item of items) {
+        const d = Math.abs(PLOT_TOP + (1 - cur.toY(item.value)) * plotH - ev.y);
+        if (d < dist) { dist = d; best = item; }
+      }
+      items = best ? [best] : [];
+    } else {
+      items.sort((a, b) => b.value - a.value);
+    }
+    line.hidden = false;
+    tip.hidden = false;
+    line.style.left = `${x}px`;
+    tip.style.left = `${x}px`;
+    tip.style.transform = x > rect.width * 0.62 ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)';
+    if (dateRef.current) dateRef.current.textContent = formatChartTooltipDate(point.date);
+    rows.replaceChildren(...items.map((p) => {
+      const row = document.createElement('div');
+      row.className = styles.chartTipRow;
+      const swatch = document.createElement('i');
+      swatch.style.background = p.color;
+      const name = document.createElement('span');
+      name.textContent = cur.names[p.id] ?? p.id;
+      const value = document.createElement('b');
+      value.textContent = money(p.value);
+      row.append(swatch, name, value);
+      return row;
+    }));
+  };
 
   return (
     <div className="card">
@@ -101,13 +160,17 @@ export default function ValueChart({
       <div style={{ height: 360, padding: '0 0.5rem 0.75rem' }}>
         <div
           ref={plotRef}
-          style={{ position: 'relative', height: '100%' }}
+          className={styles.valuePlot}
           onMouseMove={(e) => {
-            const rect = plotRef.current?.getBoundingClientRect();
-            if (!rect) return;
-            setHover({ index: pointerIndex(e.clientX, rect, data.length), y: e.clientY - rect.top });
+            pending.current = { x: e.clientX, y: e.clientY };
+            if (frame.current) return;
+            frame.current = requestAnimationFrame(() => { frame.current = 0; paint(); });
           }}
-          onMouseLeave={() => setHover(null)}
+          onMouseLeave={() => {
+            pending.current = null;
+            if (lineRef.current) lineRef.current.hidden = true;
+            if (tipRef.current) tipRef.current.hidden = true;
+          }}
         >
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: PLOT_TOP, right: PLOT_RIGHT, left: PLOT_LEFT, bottom: 0 }}>
@@ -129,52 +192,11 @@ export default function ValueChart({
             ))}
           </LineChart>
         </ResponsiveContainer>
-        {hover && data[hover.index] && plotRef.current && (() => {
-          const rect = plotRef.current.getBoundingClientRect();
-          const plotWidth = rect.width - Y_AXIS - PLOT_LEFT - PLOT_RIGHT;
-          const x = Y_AXIS + PLOT_LEFT + (hover.index / Math.max(data.length - 1, 1)) * plotWidth;
-          const plotH = rect.height - PLOT_TOP;
-          let items = shown.flatMap((s) => {
-            const v = data[hover.index][s.id];
-            return typeof v === 'number' && Number.isFinite(v) ? [{ id: s.id, color: s.color, value: v }] : [];
-          });
-          if (closest) {
-            let best = items[0];
-            let dist = Infinity;
-            for (const item of items) {
-              const d = Math.abs(PLOT_TOP + (1 - toY(item.value)) * plotH - hover.y);
-              if (d < dist) { dist = d; best = item; }
-            }
-            items = best ? [best] : [];
-          } else {
-            items = [...items].sort((a, b) => b.value - a.value);
-          }
-          return (
-            <>
-              <div style={{ position: 'absolute', top: PLOT_TOP, bottom: 28, left: x, width: 1, background: 'rgba(255,255,255,0.35)', pointerEvents: 'none' }} />
-              <div
-                className={styles.chartTip}
-                style={{
-                  position: 'absolute',
-                  top: 8,
-                  left: x,
-                  zIndex: 5,
-                  pointerEvents: 'none',
-                  transform: x > rect.width * 0.62 ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)',
-                }}
-              >
-                <div className={styles.chartTipDate}>{formatChartTooltipDate(data[hover.index].date)}</div>
-                {items.map((p) => (
-                  <div key={p.id} className={styles.chartTipRow}>
-                    <i style={{ background: p.color }} />
-                    <span>{names[p.id] ?? p.id}</span>
-                    <b>{money(p.value)}</b>
-                  </div>
-                ))}
-              </div>
-            </>
-          );
-        })()}
+        <div ref={lineRef} className={styles.evoLine} hidden />
+        <div ref={tipRef} className={styles.chartTip} hidden style={{ position: 'absolute', top: 8, zIndex: 5, pointerEvents: 'none' }}>
+          <div ref={dateRef} className={styles.chartTipDate} />
+          <div ref={rowsRef} />
+        </div>
         </div>
       </div>
     </div>

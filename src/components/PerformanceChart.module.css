@@ -1,6 +1,5 @@
 .card {
-  background: var(--surface);
-  backdrop-filter: blur(16px);
+  background: var(--surface-solid);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 1.35rem 1.25rem;
@@ -119,9 +118,22 @@
   height: 360px;
 }
 
+/* Le survol ne doit pas tester chaque segment des courbes. */
+.plotWrap :global(.recharts-wrapper) {
+  pointer-events: none;
+}
+
 .plotDragging {
   user-select: none;
   cursor: default;
+}
+
+.brushBand {
+  position: absolute;
+  top: 8px;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 2;
 }
 
 .rangeBubble {

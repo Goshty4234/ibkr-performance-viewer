@@ -14,12 +14,14 @@ import { fr } from 'date-fns/locale';
 import { formatChartTooltipDate } from '@/lib/dates';
 import type { ChartSeriesDef, MultiSeriesChartPoint } from '@/lib/chart-series';
 import { visibleSeries } from '@/lib/chart-series';
-import { leavingChartPair, publishChartHover, useChartHover } from '@/lib/chart-hover';
+import { leavingChartPair, publishChartHover, subscribeChartHover } from '@/lib/chart-hover';
 import {
   CHART_PLOT_MARGIN_BOTTOM,
   CHART_YAXIS_WIDTH,
   clientXToDataIndex,
   dataIndexToPlotX,
+  PAINT_POINTS,
+  sampleEvenExtremes,
 } from '@/lib/chart-range';
 import { computeDrawdownSeries, fmtPct, getMaxDrawdown } from '@/lib/performance';
 import styles from './DrawdownChart.module.css';
@@ -42,28 +44,59 @@ function DrawdownPointer({
   data: Record<string, number | string>[];
   shown: ChartSeriesDef[];
 }) {
-  const hover = useChartHover();
-  const node = plotRef.current;
-  if (!hover || hover.index >= data.length || !node) return null;
-  const rect = node.getBoundingClientRect();
-  const left = dataIndexToPlotX(hover.index, rect, data.length);
+  const lineRef = useRef<HTMLDivElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
+  const dateRef = useRef<HTMLDivElement>(null);
+  const rowsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const rows = rowsRef.current;
+    if (!rows) return;
+    rows.replaceChildren();
+    const nodes = shown.map((s) => {
+      const el = document.createElement('div');
+      el.className = 'mono negative';
+      el.style.color = s.color;
+      rows.appendChild(el);
+      return el;
+    });
+    const place = (hover: { index: number } | null) => {
+      const line = lineRef.current;
+      const tip = tipRef.current;
+      const node = plotRef.current;
+      if (!line || !tip || !node) return;
+      if (!hover || hover.index >= data.length) {
+        line.hidden = true;
+        tip.hidden = true;
+        return;
+      }
+      const left = dataIndexToPlotX(hover.index, node.getBoundingClientRect(), data.length);
+      const flip = left > node.clientWidth * 0.62;
+      line.hidden = false;
+      tip.hidden = false;
+      line.style.left = `${left}px`;
+      tip.style.left = `${left}px`;
+      tip.style.transform = flip ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)';
+      if (dateRef.current) dateRef.current.textContent = formatChartTooltipDate(data[hover.index]?.date);
+      const row = data[hover.index];
+      for (let i = 0; i < shown.length; i++) {
+        const v = row?.[shown[i].id];
+        const el = nodes[i];
+        if (typeof v !== 'number') { el.hidden = true; continue; }
+        el.hidden = false;
+        el.textContent = `${shown[i].label}: ${fmtPct(v)}`;
+      }
+    };
+    place(null);
+    return subscribeChartHover(place);
+  }, [plotRef, data, shown]);
+
   return (
     <>
-      <div className={styles.hoverLine} style={{ left }} />
-      <div
-        className={`${styles.tooltip} ${styles.hoverTip}`}
-        style={{ left, transform: left > node.clientWidth * 0.62 ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)' }}
-      >
-        <div className={styles.tooltipDate}>{formatChartTooltipDate(data[hover.index]?.date)}</div>
-        {shown.map((s) => {
-          const v = data[hover.index]?.[s.id];
-          if (typeof v !== 'number') return null;
-          return (
-            <div key={s.id} style={{ color: s.color }} className="mono negative">
-              {s.label}: {fmtPct(v)}
-            </div>
-          );
-        })}
+      <div ref={lineRef} className={styles.hoverLine} hidden />
+      <div ref={tipRef} className={`${styles.tooltip} ${styles.hoverTip}`} hidden>
+        <div ref={dateRef} className={styles.tooltipDate} />
+        <div ref={rowsRef} />
       </div>
     </>
   );
@@ -114,6 +147,11 @@ export default function DrawdownChart({
     return map;
   }, [drawdownData, shown]);
 
+  const paintData = useMemo(
+    () => sampleEvenExtremes(drawdownData, shown.map((s) => s.id), PAINT_POINTS),
+    [drawdownData, shown],
+  );
+
   const yMin = useMemo(() => {
     if (!drawdownData.length || !shown.length) return -10;
     let m = 0;
@@ -157,7 +195,7 @@ export default function DrawdownChart({
       >
         <ResponsiveContainer width="100%" height={220}>
           <LineChart
-            data={drawdownData}
+            data={paintData}
             margin={CHART_PLOT_MARGIN_BOTTOM}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
@@ -186,7 +224,7 @@ export default function DrawdownChart({
                 name={s.label}
                 stroke={s.color}
                 strokeWidth={s.kind === 'primary' ? 2.5 : 2}
-                dot={drawdownData.length <= 24 && s.kind === 'primary'}
+                dot={paintData.length <= 24 && s.kind === 'primary'}
                 activeDot={false}
                 isAnimationActive={false}
                 strokeDasharray={s.strokeDasharray}

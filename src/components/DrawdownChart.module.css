@@ -1,6 +1,5 @@
 .card {
-  background: var(--surface);
-  backdrop-filter: blur(16px);
+  background: var(--surface-solid);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 1.35rem 1.25rem;
@@ -30,6 +29,10 @@
 .chart {
   position: relative;
   height: 220px;
+}
+
+.chart :global(.recharts-wrapper) {
+  pointer-events: none;
 }
 
 .hoverLine {

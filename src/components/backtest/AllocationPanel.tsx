@@ -137,43 +137,6 @@ function allocX(index: number, rect: DOMRect, n: number): number {
   return ALLOC_Y + (index / (n - 1)) * plot;
 }
 
-function AllocCursor({
-  left,
-  width,
-  date,
-  rows,
-  colors,
-}: {
-  left: number;
-  width: number;
-  date: string;
-  rows: [string, number][];
-  colors: Map<string, string>;
-}) {
-  const flip = left > width * 0.62;
-  return (
-    <>
-      <div className={styles.evoLine} style={{ left }} />
-      <div
-        className={styles.evoTip}
-        data-evo-tip=""
-        style={{ left, transform: flip ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)' }}
-      >
-        <div className={styles.evoTipHead}>{date} · {rows.length} position{rows.length > 1 ? 's' : ''}</div>
-        <div className={styles.evoTipScroll}>
-          {rows.map(([t, v]) => (
-            <div key={t} className={styles.evoTipRow}>
-              <i style={{ background: colors.get(t) ?? GREY }} />
-              <span>{t}</span>
-              <strong>{v.toFixed(2)}%</strong>
-            </div>
-          ))}
-        </div>
-      </div>
-    </>
-  );
-}
-
 function WeightColumn({
   title,
   hint,
@@ -254,7 +217,16 @@ export default function AllocationPanel({
     [view],
   );
   const plotRef = useRef<HTMLDivElement>(null);
-  const [hover, setHover] = useState<number | null>(null);
+  const lineRef = useRef<HTMLDivElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
+  const headRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const allocSnap = useRef({ evolution, view, colors });
+  allocSnap.current = { evolution, view, colors };
+  const allocPending = useRef<number | null>(null);
+  const allocFrame = useRef(0);
+  const allocLast = useRef(-1);
+  useEffect(() => () => { if (allocFrame.current) cancelAnimationFrame(allocFrame.current); }, []);
   const held = useMemo(() => {
     const day = end || evolution.dates[evolution.dates.length - 1] || '';
     const i = indexOnOrBefore(evolution.dates, day);
@@ -289,12 +261,51 @@ export default function AllocationPanel({
   const [pinned, setPinned] = useState<number | null>(null);
   const pinnedList = useMemo(() => (pinned === null ? [] : compositionAt(evolution, pinned)), [evolution, pinned]);
   const pinnedValid = pinned !== null && pinned < evolution.dates.length;
-  useEffect(() => { setPinned(null); setHover(null); }, [evolution, start, end]);
-  const hoverOrigin = hover === null ? -1 : view.i0 + hover;
-  const hoverList = useMemo(
-    () => (hoverOrigin < 0 ? [] : compositionAt(evolution, hoverOrigin)),
-    [evolution, hoverOrigin],
-  );
+  useEffect(() => setPinned(null), [evolution, start, end]);
+
+  const paintAlloc = () => {
+    const line = lineRef.current;
+    const tip = tipRef.current;
+    const list = listRef.current;
+    const node = plotRef.current;
+    const local = allocPending.current;
+    if (!line || !tip || !list || !node) return;
+    if (local === null) { line.hidden = true; tip.hidden = true; allocLast.current = -1; return; }
+    const { evolution: ev, view: vw, colors: cols } = allocSnap.current;
+    const origin = vw.i0 + local;
+    const left = allocX(local, node.getBoundingClientRect(), vw.count);
+    line.hidden = false;
+    tip.hidden = false;
+    line.style.left = `${left}px`;
+    tip.style.left = `${left}px`;
+    tip.style.transform = left > node.clientWidth * 0.62 ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)';
+    if (local === allocLast.current) return;
+    allocLast.current = local;
+    const rows = compositionAt(ev, origin);
+    if (headRef.current) {
+      headRef.current.textContent = `${ev.dates[origin] ?? ''} · ${rows.length} position${rows.length > 1 ? 's' : ''}`;
+    }
+    if (list.childElementCount !== rows.length) {
+      const scroll = list.scrollTop;
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < rows.length; i++) {
+        const row = document.createElement('div');
+        row.className = styles.evoTipRow;
+        row.append(document.createElement('i'), document.createElement('span'), document.createElement('strong'));
+        frag.append(row);
+      }
+      list.replaceChildren(frag);
+      list.scrollTop = scroll;
+    }
+    for (let i = 0; i < rows.length; i++) {
+      const row = list.children[i] as HTMLElement;
+      const [t, v] = rows[i];
+      (row.children[0] as HTMLElement).style.background = cols.get(t) ?? GREY;
+      const label = `${v.toFixed(2)}%`;
+      if (row.children[1].textContent !== t) row.children[1].textContent = t;
+      if (row.children[2].textContent !== label) row.children[2].textContent = label;
+    }
+  };
 
   if (!p) return null;
   const bounds = {
@@ -353,11 +364,14 @@ export default function AllocationPanel({
                 if ((e.target as HTMLElement).closest('[data-evo-tip]')) return;
                 const rect = plotRef.current?.getBoundingClientRect();
                 if (!rect) return;
-                setHover(allocIndex(e.clientX, rect, view.count));
+                allocPending.current = allocIndex(e.clientX, rect, view.count);
+                if (allocFrame.current) return;
+                allocFrame.current = requestAnimationFrame(() => { allocFrame.current = 0; paintAlloc(); });
               }}
               onMouseLeave={(e) => {
                 if (e.relatedTarget instanceof Element && e.relatedTarget.closest('[data-evo-tip]')) return;
-                setHover(null);
+                allocPending.current = null;
+                paintAlloc();
               }}
               onClick={(e) => {
                 if ((e.target as HTMLElement).closest('[data-evo-tip]')) return;
@@ -385,15 +399,11 @@ export default function AllocationPanel({
                   ))}
                 </AreaChart>
               </ResponsiveContainer>
-              {hover !== null && hoverOrigin >= 0 && plotRef.current && (
-                <AllocCursor
-                  left={allocX(hover, plotRef.current.getBoundingClientRect(), view.count)}
-                  width={plotRef.current.clientWidth}
-                  date={evolution.dates[hoverOrigin] ?? ''}
-                  rows={hoverList}
-                  colors={colors}
-                />
-              )}
+              <div ref={lineRef} className={styles.evoLine} hidden />
+              <div ref={tipRef} className={styles.evoTip} data-evo-tip="" hidden>
+                <div ref={headRef} className={styles.evoTipHead} />
+                <div ref={listRef} className={styles.evoTipScroll} />
+              </div>
             </div>
             {pinnedValid && (
               <div className={styles.evoPinned}>

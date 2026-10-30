@@ -5,9 +5,6 @@ import {
   CartesianGrid,
   Line,
   LineChart,
-  ReferenceArea,
-  ReferenceDot,
-  ReferenceLine,
   ResponsiveContainer,
   XAxis,
   YAxis,
@@ -21,9 +18,11 @@ import {
   CHART_YAXIS_WIDTH,
   clientXToDataIndex,
   dataIndexToPlotX,
+  PAINT_POINTS,
   rangeTotalReturn,
+  sampleEvenExtremes,
 } from '@/lib/chart-range';
-import { leavingChartPair, publishChartHover, useChartHover } from '@/lib/chart-hover';
+import { leavingChartPair, publishChartHover, subscribeChartHover } from '@/lib/chart-hover';
 import { fmtPct } from '@/lib/performance';
 import ChartLegend from './ChartLegend';
 import styles from './PerformanceChart.module.css';
@@ -94,29 +93,59 @@ function PerformancePointer({
   shown: ChartSeriesDef[];
   chartData: MultiSeriesChartPoint[];
 }) {
-  const hover = useChartHover();
-  const node = plotRef.current;
-  if (!hover || hover.index >= length || !node) return null;
-  const rect = node.getBoundingClientRect();
-  const left = dataIndexToPlotX(hover.index, rect, length);
+  const lineRef = useRef<HTMLDivElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
+  const dateRef = useRef<HTMLDivElement>(null);
+  const rowsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const rows = rowsRef.current;
+    if (!rows) return;
+    rows.replaceChildren();
+    const nodes = shown.map((s) => {
+      const el = document.createElement('div');
+      el.className = 'mono';
+      el.style.color = s.color;
+      rows.appendChild(el);
+      return el;
+    });
+    const place = (hover: { index: number } | null) => {
+      const line = lineRef.current;
+      const tip = tipRef.current;
+      const node = plotRef.current;
+      if (!line || !tip || !node) return;
+      if (!hover || hover.index >= length) {
+        line.hidden = true;
+        tip.hidden = true;
+        return;
+      }
+      const left = dataIndexToPlotX(hover.index, node.getBoundingClientRect(), length);
+      const flip = left > node.clientWidth * 0.62;
+      line.hidden = false;
+      tip.hidden = false;
+      line.style.left = `${left}px`;
+      tip.style.left = `${left}px`;
+      tip.style.transform = flip ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)';
+      if (dateRef.current) dateRef.current.textContent = formatChartTooltipDate(chartData[hover.index]?.date);
+      const row = chartData[hover.index];
+      for (let i = 0; i < shown.length; i++) {
+        const raw = row?.[`${shown[i].id}_main`];
+        const el = nodes[i];
+        if (typeof raw !== 'number') { el.hidden = true; continue; }
+        el.hidden = false;
+        el.textContent = `${shown[i].label}: ${fmtPct(log ? fromGrowth(raw) : raw)}`;
+      }
+    };
+    place(null);
+    return subscribeChartHover(place);
+  }, [plotRef, length, log, shown, chartData]);
+
   return (
     <>
-      <div className={styles.hoverLine} style={{ left }} />
-      <div
-        className={`${styles.tooltip} ${styles.hoverTip}`}
-        style={{ left, transform: left > node.clientWidth * 0.62 ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)' }}
-      >
-        <div className={styles.tooltipDate}>{formatChartTooltipDate(chartData[hover.index]?.date)}</div>
-        {shown.map((s) => {
-          const raw = chartData[hover.index]?.[`${s.id}_main`];
-          if (typeof raw !== 'number') return null;
-          const pct = log ? fromGrowth(raw) : raw;
-          return (
-            <div key={s.id} style={{ color: s.color }} className="mono">
-              {s.label}: {fmtPct(pct)}
-            </div>
-          );
-        })}
+      <div ref={lineRef} className={styles.hoverLine} hidden />
+      <div ref={tipRef} className={`${styles.tooltip} ${styles.hoverTip}`} hidden>
+        <div ref={dateRef} className={styles.tooltipDate} />
+        <div ref={rowsRef} />
       </div>
     </>
   );
@@ -141,8 +170,12 @@ export default function PerformanceChart({
   const [mounted, setMounted] = useState(false);
   const [logScale, setLogScale] = useState(false);
   const log = Boolean(logToggle && logScale);
-  const [drag, setDrag] = useState<DragState | null>(null);
   const plotRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<DragState | null>(null);
+  const bandRef = useRef<HTMLDivElement>(null);
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  const bubbleValueRef = useRef<HTMLDivElement>(null);
+  const bubbleDatesRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -156,21 +189,6 @@ export default function PerformanceChart({
 
   const shown = useMemo(() => visibleSeries(series, hidden), [series, hidden]);
   const showChart = mounted && !loading && hasStatements && !noDataInRange && data.length > 0;
-
-  const liveSelection = useMemo((): ChartBrushSelection | null => {
-    if (drag?.dragging && data.length) {
-      const lo = Math.min(drag.anchor, drag.current);
-      const hi = Math.max(drag.anchor, drag.current);
-      if (hi - lo < 1 || !data[lo] || !data[hi]) return null;
-      return {
-        startIdx: lo,
-        endIdx: hi,
-        startDate: data[lo].date,
-        endDate: data[hi].date,
-      };
-    }
-    return brush;
-  }, [drag, brush, data]);
 
   const chartData = useMemo(() => {
     return data.map((row) => {
@@ -210,24 +228,51 @@ export default function PerformanceChart({
     () => shown.find((s) => s.kind === 'primary') ?? shown[0] ?? null,
     [shown],
   );
+  const paintData = useMemo(
+    () => sampleEvenExtremes(chartData, shown.map((s) => `${s.id}_main`), PAINT_POINTS),
+    [chartData, shown],
+  );
 
-  const selectionReturn = useMemo(() => {
-    if (!liveSelection || !highlightSeries || !data.length) return null;
-    const start = data[liveSelection.startIdx];
-    const end = data[liveSelection.endIdx];
-    if (!start || !end) return null;
-    return rangeTotalReturn(
-      (start[highlightSeries.id] as number) ?? 0,
-      (end[highlightSeries.id] as number) ?? 0,
-    );
-  }, [liveSelection, highlightSeries, data]);
+  const paintBrush = useCallback((lo: number, hi: number) => {
+    const band = bandRef.current;
+    const bubble = bubbleRef.current;
+    const node = plotRef.current;
+    if (!band || !bubble || !node) return;
+    if (hi - lo < 1 || !data[lo] || !data[hi]) {
+      band.hidden = true;
+      bubble.hidden = true;
+      return;
+    }
+    const rect = node.getBoundingClientRect();
+    const x1 = dataIndexToPlotX(lo, rect, data.length);
+    const x2 = dataIndexToPlotX(hi, rect, data.length);
+    const ret = highlightSeries
+      ? rangeTotalReturn((data[lo][highlightSeries.id] as number) ?? 0, (data[hi][highlightSeries.id] as number) ?? 0)
+      : null;
+    band.hidden = false;
+    band.style.left = `${Math.min(x1, x2)}px`;
+    band.style.width = `${Math.max(Math.abs(x2 - x1), 1)}px`;
+    band.style.background = ret != null && ret >= 0 ? 'rgba(45, 212, 168, 0.22)' : 'rgba(255, 107, 122, 0.22)';
+    if (ret == null || !bubbleValueRef.current || !bubbleDatesRef.current) {
+      bubble.hidden = true;
+      return;
+    }
+    bubble.hidden = false;
+    bubble.style.left = `${(x1 + x2) / 2}px`;
+    bubbleValueRef.current.textContent = `${ret >= 0 ? '▲' : '▼'} ${fmtPct(ret)}`;
+    bubbleValueRef.current.className = `mono ${ret >= 0 ? 'positive' : 'negative'}`;
+    bubbleDatesRef.current.textContent = formatShortDateRange(data[lo].date, data[hi].date);
+  }, [data, highlightSeries]);
 
-  const bubbleLeft = (() => {
-    if (!liveSelection || !plotRef.current) return null;
-    const rect = plotRef.current.getBoundingClientRect();
-    const mid = (liveSelection.startIdx + liveSelection.endIdx) / 2;
-    return dataIndexToPlotX(mid, rect, data.length);
-  })();
+  useEffect(() => {
+    if (dragRef.current?.dragging) return;
+    if (!brush) {
+      if (bandRef.current) bandRef.current.hidden = true;
+      if (bubbleRef.current) bubbleRef.current.hidden = true;
+      return;
+    }
+    paintBrush(brush.startIdx, brush.endIdx);
+  }, [brush, paintBrush]);
 
   const resolveIndex = useCallback((clientX: number) => {
     const rect = plotRef.current?.getBoundingClientRect();
@@ -253,53 +298,38 @@ export default function PerformanceChart({
   const onPlotMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     const idx = resolveIndex(e.clientX);
-    setDrag({ anchor: idx, current: idx, dragging: false });
+    dragRef.current = { anchor: idx, current: idx, dragging: false };
   };
 
   const onPlotMouseMove = (e: React.MouseEvent) => {
     const idx = resolveIndex(e.clientX);
     publishChartHover({ index: idx, source: 'performance' });
+    const drag = dragRef.current;
     if (!drag || e.buttons !== 1) return;
     const lo = Math.min(drag.anchor, idx);
     const hi = Math.max(drag.anchor, idx);
-    const dragging = drag.dragging || hi - lo >= DRAG_THRESHOLD_IDX;
-    setDrag({ anchor: drag.anchor, current: idx, dragging });
+    drag.current = idx;
+    drag.dragging = drag.dragging || hi - lo >= DRAG_THRESHOLD_IDX;
+    if (!drag.dragging) return;
+    plotRef.current?.classList.add(styles.plotDragging);
+    paintBrush(lo, hi);
   };
 
   const onPlotMouseUp = () => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    plotRef.current?.classList.remove(styles.plotDragging);
     if (!drag) return;
-    if (drag.dragging) {
-      commitBrush(drag.anchor, drag.current);
-    } else if (brush) {
-      onBrushChange(null);
-    }
-    setDrag(null);
+    if (drag.dragging) commitBrush(drag.anchor, drag.current);
+    else if (brush) onBrushChange(null);
   };
 
   const onPlotMouseLeave = (e: React.MouseEvent) => {
     if (leavingChartPair(e.relatedTarget)) publishChartHover(null);
-    if (drag?.dragging) {
-      commitBrush(drag.anchor, drag.current);
-    }
-    setDrag(null);
-  };
-
-  const refArea = liveSelection && data[liveSelection.startIdx] && data[liveSelection.endIdx]
-    ? {
-        x1: data[liveSelection.startIdx].date,
-        x2: data[liveSelection.endIdx].date,
-      }
-    : null;
-
-  const areaFill =
-    selectionReturn != null && selectionReturn >= 0
-      ? 'rgba(45, 212, 168, 0.22)'
-      : 'rgba(255, 107, 122, 0.22)';
-
-  const dotY = (seriesId: string, date: string) => {
-    const row = chartData.find((p) => p.date === date);
-    const v = row?.[`${seriesId}_main`];
-    return typeof v === 'number' ? v : undefined;
+    const drag = dragRef.current;
+    dragRef.current = null;
+    plotRef.current?.classList.remove(styles.plotDragging);
+    if (drag?.dragging) commitBrush(drag.anchor, drag.current);
   };
 
   return (
@@ -344,7 +374,7 @@ export default function PerformanceChart({
       {showChart && (
         <>
           <div
-            className={`${styles.plotWrap} ${drag?.dragging ? styles.plotDragging : ''}`}
+            className={styles.plotWrap}
             data-chart-hover=""
             ref={plotRef}
             onMouseDown={onPlotMouseDown}
@@ -354,7 +384,7 @@ export default function PerformanceChart({
           >
             <ResponsiveContainer width="100%" height={360}>
               <LineChart
-                data={chartData}
+                data={paintData}
                 margin={CHART_PLOT_MARGIN}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
@@ -387,56 +417,6 @@ export default function PerformanceChart({
                     width={CHART_YAXIS_WIDTH}
                   />
                 )}
-                {refArea && (
-                  <>
-                    <ReferenceArea
-                      x1={refArea.x1}
-                      x2={refArea.x2}
-                      fill={areaFill}
-                      strokeOpacity={0}
-                      ifOverflow="extendDomain"
-                    />
-                    <ReferenceLine
-                      x={refArea.x1}
-                      stroke="rgba(255,255,255,0.45)"
-                      strokeDasharray="4 4"
-                      strokeWidth={1}
-                    />
-                    <ReferenceLine
-                      x={refArea.x2}
-                      stroke="rgba(255,255,255,0.45)"
-                      strokeDasharray="4 4"
-                      strokeWidth={1}
-                    />
-                  </>
-                )}
-                {liveSelection && highlightSeries && refArea && (() => {
-                  const y1 = dotY(highlightSeries.id, refArea.x1);
-                  const y2 = dotY(highlightSeries.id, refArea.x2);
-                  if (y1 == null || y2 == null) return null;
-                  return (
-                    <>
-                      <ReferenceDot
-                        x={refArea.x1}
-                        y={y1}
-                        r={4}
-                        fill={highlightSeries.color}
-                        stroke="#fff"
-                        strokeWidth={1.5}
-                        ifOverflow="extendDomain"
-                      />
-                      <ReferenceDot
-                        x={refArea.x2}
-                        y={y2}
-                        r={4}
-                        fill={highlightSeries.color}
-                        stroke="#fff"
-                        strokeWidth={1.5}
-                        ifOverflow="extendDomain"
-                      />
-                    </>
-                  );
-                })()}
                 {shown.map((s) => (
                   <Line
                     key={`${s.id}_main`}
@@ -445,7 +425,7 @@ export default function PerformanceChart({
                     name={s.label}
                     stroke={s.color}
                     strokeWidth={s.kind === 'primary' ? 2.5 : 2}
-                    dot={data.length <= 24 && s.kind === 'primary'}
+                    dot={paintData.length <= 24 && s.kind === 'primary'}
                     activeDot={false}
                     strokeDasharray={s.strokeDasharray}
                     connectNulls={false}
@@ -470,23 +450,12 @@ export default function PerformanceChart({
               </LineChart>
             </ResponsiveContainer>
 
+            <div ref={bandRef} className={styles.brushBand} hidden />
+            <div ref={bubbleRef} className={styles.rangeBubble} hidden>
+              <div ref={bubbleValueRef} className="mono" />
+              <div ref={bubbleDatesRef} className={styles.rangeBubbleDates} />
+            </div>
             <PerformancePointer plotRef={plotRef} length={chartData.length} log={log} shown={shown} chartData={chartData} />
-
-            {liveSelection && selectionReturn != null && bubbleLeft != null && (
-              <div
-                className={styles.rangeBubble}
-                style={{ left: bubbleLeft }}
-              >
-                <div
-                  className={`mono ${selectionReturn >= 0 ? 'positive' : 'negative'}`}
-                >
-                  {selectionReturn >= 0 ? '▲' : '▼'} {fmtPct(selectionReturn)}
-                </div>
-                <div className={styles.rangeBubbleDates}>
-                  {formatShortDateRange(liveSelection.startDate, liveSelection.endDate)}
-                </div>
-              </div>
-            )}
           </div>
           <ChartLegend series={series} hidden={hidden} onToggle={onToggleSeries} />
         </>

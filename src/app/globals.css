@@ -46,11 +46,22 @@ html, body {
 }
 
 body {
+  background: transparent;
+}
+
+/* Couche fixe derrière le contenu. background-attachment: fixed sur body
+   forçait un repeint de toute la page à chaque pixel de scroll. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: var(--bg);
   background-image:
     radial-gradient(ellipse 80% 50% at 20% -10%, rgba(77, 141, 255, 0.18), transparent 55%),
     radial-gradient(ellipse 60% 40% at 90% 10%, rgba(45, 212, 168, 0.08), transparent 50%),
     radial-gradient(ellipse 50% 30% at 50% 100%, rgba(77, 141, 255, 0.06), transparent 50%);
-  background-attachment: fixed;
 }
 
 a { color: var(--accent); text-decoration: none; transition: color var(--transition); }
@@ -185,8 +196,7 @@ select {
 .negative { color: var(--red); }
 
 .card {
-  background: var(--surface);
-  backdrop-filter: blur(16px);
+  background: var(--surface-solid);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
