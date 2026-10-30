@@ -67,7 +67,7 @@ export function defaultPortfolio(name = 'Nouveau portfolio'): EditablePortfolio 
     initial_value: 10000,
     added_amount: 1000,
     added_frequency: 'Monthly',
-    rebalancing_frequency: 'Quarterly',
+    rebalancing_frequency: 'Monthly',
     use_momentum: false,
     momentum_strategy: 'Classic',
     negative_momentum_strategy: 'Cash',
