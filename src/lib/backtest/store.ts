@@ -108,6 +108,36 @@ export const ACTIVE_PHASES: readonly RunPhase[] = ['submitting', 'queued', 'runn
 export const isActive = (r: RunState) => ACTIVE_PHASES.includes(r.phase);
 const MAX_KEPT_RUNS = 12;
 
+/** Browser storage is a few megabytes. Finished runs already live in the PC folder and in Supabase, so only a light card is kept here. */
+function persistedRun(r: RunState): RunState {
+  if (isActive(r)) return r;
+  return { ...r, request: null, merge: null };
+}
+
+/** A full quota must not abort a run: the open session stays in memory, and a slimmer copy is tried once. */
+function workspaceStorage() {
+  return {
+    getItem: (name: string) => {
+      try { return clientStorage().getItem(name); } catch { return null; }
+    },
+    setItem: (name: string, value: string) => {
+      const storage = clientStorage();
+      try {
+        storage.setItem(name, value);
+      } catch {
+        try {
+          const parsed = JSON.parse(value) as { state?: { runs?: unknown } };
+          if (parsed.state) parsed.state.runs = [];
+          storage.setItem(name, JSON.stringify(parsed));
+        } catch { /* this tab keeps the workspace in memory */ }
+      }
+    },
+    removeItem: (name: string) => {
+      try { clientStorage().removeItem(name); } catch { /* ignore */ }
+    },
+  };
+}
+
 interface BacktestState {
   portfolios: EditablePortfolio[];
   selectedId: string | null;
@@ -1002,9 +1032,15 @@ export const useBacktestStore = create<BacktestState>()(
     },
     {
       name: 'backtester-v1',
-      storage: createJSONStorage(clientStorage),
+      storage: createJSONStorage(workspaceStorage),
       version: 2,
-      partialize: (s) => ({ portfolios: s.portfolios, selectedId: s.selectedId, options: s.options, runs: s.runs, view: s.view }),
+      partialize: (s) => ({
+        portfolios: s.portfolios,
+        selectedId: s.selectedId,
+        options: s.options,
+        runs: s.runs.map(persistedRun),
+        view: s.view,
+      }),
       migrate: (persisted, version) => {
         const state = (persisted ?? {}) as Record<string, unknown>;
         if (version < 2) {
