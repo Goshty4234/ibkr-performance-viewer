@@ -467,6 +467,9 @@ export interface PortfolioConfig {
   exclude_days_vol?: number;
   use_minimal_threshold?: boolean;
   minimal_threshold_percent?: number;
+  /** When set, a rebalance with fewer stocks that can actually be bought goes 100% cash. */
+  use_min_available_stocks?: boolean;
+  min_available_stocks?: number;
   use_max_allocation?: boolean;
   max_allocation_percent?: number;
   use_sma_filter?: boolean;

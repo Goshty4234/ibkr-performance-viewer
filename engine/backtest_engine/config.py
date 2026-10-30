@@ -14,6 +14,25 @@ from typing import Any
 from .context import BacktestError, RunOptions
 
 
+def _stock_count(value: Any, default: int) -> int:
+    try:
+        n = int(float(value))
+    except (TypeError, ValueError):
+        return default
+    return n if n > 0 else default
+
+
+def min_available_blocks(cfg: dict | None, available: int) -> bool:
+    """True when this rebalance must be 100% cash: fewer stocks can be bought than the portfolio requires."""
+    if not isinstance(cfg, dict) or not parse_bool(cfg.get("use_min_available_stocks", False)):
+        return False
+    try:
+        need = int(float(cfg.get("min_available_stocks") or 0))
+    except (TypeError, ValueError):
+        return False
+    return need > 0 and int(available) < need
+
+
 def parse_bool(value: Any, default: bool = False) -> bool:
     if isinstance(value, bool):
         return value
@@ -161,6 +180,8 @@ def normalize_one(cfg: dict) -> dict:
         "use_window_capped_score": parse_bool(cfg.get("use_window_capped_score", False)),
         "use_minimal_threshold": parse_bool(cfg.get("use_minimal_threshold", False)),
         "minimal_threshold_percent": cfg.get("minimal_threshold_percent", 4.0),
+        "use_min_available_stocks": parse_bool(cfg.get("use_min_available_stocks", False)),
+        "min_available_stocks": _stock_count(cfg.get("min_available_stocks"), 20),
         "use_max_allocation": parse_bool(cfg.get("use_max_allocation", False)),
         "max_allocation_percent": cfg.get("max_allocation_percent", 20.0),
         "calc_beta": parse_bool(cfg.get("calc_beta", False)),

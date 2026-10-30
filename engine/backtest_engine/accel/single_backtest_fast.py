@@ -1,6 +1,7 @@
 def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_daily_allocations"):
     # Copy of the legacy single_backtest with the per-day pandas lookups replaced by numpy arrays
     # (see backtest_engine/accel). Every formula and branch is kept; only how values are read changes.
+    from backtest_engine.config import min_available_blocks
     
     stocks_list = config['stocks']
     tickers = [s['ticker'] for s in stocks_list if s['ticker']]
@@ -433,6 +434,14 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
             # If filtering removes all weight (sum==0), fall back to unfiltered weights
             if ssum > 0:
                 weights = {t: filtered[t] / ssum for t in filtered}
+
+        # Too few names the strategy can actually buy: 100% cash. Counted before Top N,
+        # so a "10 best" cap does not by itself trip a minimum of 20.
+        if min_available_blocks(config, sum(1 for t, w in weights.items() if t != 'CASH' and w > 1e-12)):
+            weights = {t: 0.0 for t in weights}
+            for t in metrics:
+                metrics[t]['Calculated_Weight'] = 0.0
+            return weights, metrics
 
         # Apply allocation filters in correct order: Max Allocation -> Min Threshold -> Max Allocation (two-pass system)
         use_max_allocation = config.get('use_max_allocation', False)
@@ -926,6 +935,18 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
     unreinvested_cash = [0.0]
     portfolio_no_additions = [initial_value]
     
+    _day = _accel_day_readers(_acc, reindexed_data, tickers, sim_index)
+
+    def _listed_at(t, idx):
+        reader = _day.get(t)
+        return reader is not None and bool(reader.first_ok[idx])
+
+    def _go_cash_values():
+        for t in tickers:
+            values[t][-1] = 0
+        unallocated_cash[-1] = current_total
+        unreinvested_cash[-1] = 0
+
     # Initial allocation and metric storage
     if not use_momentum:
         current_allocations = {t: allocations.get(t,0) for t in tickers}
@@ -974,7 +995,9 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
                 else:
                     # No tickers remain, allocate to CASH
                     current_allocations['CASH'] = 1.0
-        
+        if min_available_blocks(config, sum(1 for t, w in current_allocations.items() if t != 'CASH' and w > 1e-12 and _listed_at(t, 0))):
+            current_allocations = {t: 0.0 for t in tickers}
+
         # Apply allocation filters in correct order: Max Allocation -> Min Threshold -> Max Allocation (two-pass system)
         use_max_allocation = config.get('use_max_allocation', False)
         max_allocation_percent = config.get('max_allocation_percent', 20.0)
@@ -1164,7 +1187,6 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
     _collect_as_cash = config.get('collect_dividends_as_cash', False)
     _yield_on = config.get('idle_cash_earns_treasury_yield', False)
     _ma_cross_rebalance = config.get('ma_cross_rebalance', False)
-    _day = _accel_day_readers(_acc, reindexed_data, tickers, sim_index)
     _sim_dates = list(sim_index)
     # Per-day flags computed once (the legacy loop rebuilt the rebalancing set every day).
     _is_rebal = [d.normalize() in _dates_rebal_normalized for d in _sim_dates]
@@ -1634,8 +1656,11 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
                                     equal_allocation = excluded_allocation / len(filtered_tickers)
                                     for t in filtered_tickers:
                                         rebalance_allocations[t] = equal_allocation
-                    
-                
+
+                if min_available_blocks(config, sum(1 for t, w in rebalance_allocations.items() if t != 'CASH' and w > 1e-12 and _listed_at(t, i))):
+                    _go_cash_values()
+                    rebalance_allocations = {t: 0.0 for t in tickers}
+
                 if use_max_allocation and rebalance_allocations:
                     max_allocation_decimal = max_allocation_percent / 100.0
                     

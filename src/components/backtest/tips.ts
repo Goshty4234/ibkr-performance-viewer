@@ -40,6 +40,10 @@ export const TIPS = {
   betaWindow: 'Durée sur laquelle le bêta est mesuré, en jours calendaires.',
   volWindow: 'Durée sur laquelle la volatilité est mesurée, en jours calendaires.',
   riskExclude: 'Jours les plus récents ignorés dans cette mesure.',
+  minAvailable:
+    'À chaque rebalancement, on compte les titres qu’on peut vraiment acheter ce jour-là : ils ont un cours, ils ont passé les filtres (moyenne mobile, entrée S&P 500), et la stratégie leur donne un poids. '
+    + 'Un titre au momentum négatif en stratégie Classique, ou rejeté par « Rejeter si négatif », ne compte pas. La limite « N meilleurs » ne réduit pas ce compte. '
+    + 'S’il y en a moins que le minimum, tout le portfolio passe en cash jusqu’au rebalancement où le seuil est atteint.',
   minThreshold: 'Les titres dont le poids calculé est sous ce seuil sont retirés, et leur part est redistribuée aux autres.',
   maxAllocation: 'Aucun titre ne peut dépasser ce poids ; l’excédent est redistribué aux autres.',
 

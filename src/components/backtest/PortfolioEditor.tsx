@@ -190,6 +190,25 @@ export default function PortfolioEditor() {
             Cash rémunéré (taux T-bill)
           </Check>
           <Check
+            checked={Boolean(p.use_min_available_stocks)}
+            onChange={(v) => set(v
+              ? { use_min_available_stocks: true, min_available_stocks: p.min_available_stocks && p.min_available_stocks > 0 ? p.min_available_stocks : 20 }
+              : { use_min_available_stocks: undefined, min_available_stocks: undefined })}
+            title={TIPS.minAvailable}
+          >
+            Cash s&apos;il manque des actions
+          </Check>
+          {p.use_min_available_stocks && (
+            <NumField
+              label="Minimum d'actions"
+              value={p.min_available_stocks ?? 20}
+              min={1}
+              step={1}
+              title={TIPS.minAvailable}
+              onChange={(v) => set({ min_available_stocks: Math.max(1, Math.round(v)) })}
+            />
+          )}
+          <Check
             checked={fusion}
             onChange={(v) => set({ fusion_portfolio: { enabled: v, selected_portfolios: p.fusion_portfolio?.selected_portfolios ?? [], allocations: p.fusion_portfolio?.allocations ?? {} } })}
             title={TIPS.fusion}
