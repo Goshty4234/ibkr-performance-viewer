@@ -50,6 +50,7 @@ export default function BacktesterApp() {
   const portfolioCount = useBacktestStore((s) => s.portfolios.length);
   const resumeRun = useBacktestStore((s) => s.resumeRun);
   const initEngine = useEngineStore((s) => s.init);
+  const engineClient = useEngineStore((s) => s.client);
   const [dialog, setDialog] = useState<'import' | 'export' | 'library' | null>(null);
   const [visited, setVisited] = useState<Set<BacktestView>>(() => new Set([view]));
 
@@ -65,6 +66,19 @@ export default function BacktesterApp() {
     cleanupOldRuns().catch(() => {});
     mirrorConfigsSoon(8000); // keeps the local folder a complete copy of the saved configurations
   }, [initEngine, resumeRun]);
+
+  useEffect(() => {
+    if (!engineClient) return;
+    const run = () => void useBacktestStore.getState().syncSp500();
+    run();
+    const id = window.setInterval(run, 60 * 60 * 1000);
+    const onVis = () => { if (document.visibilityState === 'visible') run(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [engineClient]);
 
   return (
     <div className={styles.app} data-wide>

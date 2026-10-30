@@ -22,6 +22,8 @@ type Universe = { tickers: string[]; date_added: Record<string, string> | null }
 export default function TickerTools({ portfolio: p }: { portfolio: EditablePortfolio }) {
   const update = useBacktestStore((s) => s.updatePortfolio);
   const addStocks = useBacktestStore((s) => s.addStocks);
+  const linkSp500 = useBacktestStore((s) => s.linkSp500);
+  const sp500Note = useBacktestStore((s) => s.sp500Note);
   const client = useEngineStore((s) => s.client);
   const [bulk, setBulk] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
@@ -31,13 +33,19 @@ export default function TickerTools({ portfolio: p }: { portfolio: EditablePortf
   const [leverage, setLeverage] = useState(2);
   const [expense, setExpense] = useState(1);
   const [levPick, setLevPick] = useState<Set<string>>(new Set());
+  // A universe paste is real symbols (DOW is Dow Inc.). Aliases apply only when the text is typed.
+  const [keepSymbols, setKeepSymbols] = useState(false);
 
   const flash = (msg: string) => {
     setNotice(msg);
     setTimeout(() => setNotice((m) => (m === msg ? null : m)), 4000);
   };
 
-  const parsed = () => splitTickerList(bulk).map(resolveTicker);
+  const parsed = () => {
+    const list = splitTickerList(bulk);
+    if (keepSymbols) return list.map((t) => t.trim().replace(/,/g, '.').toUpperCase()).filter(Boolean);
+    return list.map(resolveTicker);
+  };
 
   function replaceAll() {
     const list = parsed();
@@ -129,7 +137,6 @@ export default function TickerTools({ portfolio: p }: { portfolio: EditablePortf
 
   const sp = universes.sp500;
   const us = universes.us;
-  const current = new Set(p.stocks.map((s) => s.ticker));
 
   return (
     <details className={styles.details}>
@@ -143,7 +150,7 @@ export default function TickerTools({ portfolio: p }: { portfolio: EditablePortf
           value={bulk}
           spellCheck={false}
           placeholder="SPY QQQ GLD TLT  (séparés par espaces ou virgules)"
-          onChange={(e) => setBulk(e.target.value)}
+          onChange={(e) => { setKeepSymbols(false); setBulk(e.target.value); }}
         />
         <div className={styles.btnRow}>
           <button type="button" className="btn btn-secondary btn-sm" onClick={replaceAll} disabled={!bulk.trim()} title="Remplace tous les tickers ; les allocations existantes sont conservées par position">
@@ -159,9 +166,19 @@ export default function TickerTools({ portfolio: p }: { portfolio: EditablePortf
 
         <div className={styles.groupLabel}>Univers</div>
         <div className={styles.btnRow}>
+          <button type="button" className="btn btn-secondary btn-sm" disabled={loading === 'sp500' || Boolean(p.sync_sp500)} onClick={async () => {
+            const u = await loadUniverse('sp500');
+            if (!u) return;
+            if (u.tickers.length < 400) return flash('Liste S&P 500 incomplète, portfolio inchangé.');
+            if (p.stocks.some((s) => s.ticker.trim()) && !confirm('Remplacer les tickers par le S&P 500 de Wikipédia ? Le portfolio restera aligné chaque jour.')) return;
+            if (!linkSp500(p._id, u.tickers)) return flash('Liste S&P 500 incomplète, portfolio inchangé.');
+            flash(`${u.tickers.length} titres Wikipédia. Ce portfolio suit le S&P 500.`);
+          }}>
+            {p.sync_sp500 ? 'S&P 500 suivi' : loading === 'sp500' ? 'Chargement…' : 'Remplir et suivre le S&P 500'}
+          </button>
           <button type="button" className="btn btn-ghost btn-sm" disabled={loading === 'sp500'} onClick={async () => {
             const u = await loadUniverse('sp500');
-            if (u) { setBulk(u.tickers.join(' ')); flash(`${u.tickers.length} tickers S&P 500 chargés dans la boîte.`); }
+            if (u) { setKeepSymbols(true); setBulk(u.tickers.join(' ')); flash(`${u.tickers.length} tickers S&P 500 dans la boîte (symboles tels quels, sans alias).`); }
           }}>
             {loading === 'sp500' ? 'Chargement…' : 'Charger le S&P 500'}
           </button>
@@ -173,7 +190,7 @@ export default function TickerTools({ portfolio: p }: { portfolio: EditablePortf
           </button>
           <button type="button" className="btn btn-ghost btn-sm" disabled={loading === 'us'} onClick={async () => {
             const u = await loadUniverse('us');
-            if (u) { setBulk(u.tickers.join(' ')); flash(`${u.tickers.length} actions US chargées dans la boîte.`); }
+            if (u) { setKeepSymbols(true); setBulk(u.tickers.join(' ')); flash(`${u.tickers.length} actions US chargées dans la boîte (symboles tels quels, sans alias).`); }
           }}>
             {loading === 'us' ? 'Chargement…' : 'Charger toutes les actions US'}
           </button>
@@ -185,7 +202,8 @@ export default function TickerTools({ portfolio: p }: { portfolio: EditablePortf
           </button>
         </div>
         <div className={styles.hint}>
-          S&P 500 : liste Wikipedia actuelle avec dates d’entrée. Actions US : annuaire Nasdaq Trader (NYSE/NASDAQ/AMEX, sans ETF ni warrants, microcaps incluses) ; un backtest de cet univers télécharge des milliers de séries.
+          S&P 500 : liste Wikipédia. « Remplir et suivre » pose le flag : au moins une fois par jour la liste est revérifiée et les titres sont remplacés s’ils diffèrent. « Charger » ne fait que remplir la boîte.
+          {p.sync_sp500 && sp500Note ? ` ${sp500Note}` : ''}
         </div>
         {uniError && <div className={styles.errorBox}>{uniError}</div>}
         {us && <div className={styles.hint}>{us.tickers.length} actions US ordinaires.</div>}
@@ -257,22 +275,26 @@ export default function TickerTools({ portfolio: p }: { portfolio: EditablePortf
           </div>
         )}
 
-        <div className={styles.groupLabel}>Tickers spéciaux (clic = ajouter)</div>
+        <div className={styles.groupLabel}>Tickers spéciaux (clic = ajouter, vert = déjà dans le portfolio)</div>
         {SPECIAL_TICKERS.map((g) => (
           <div key={g.group} style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
             <span className={styles.hint}>{g.group}</span>
             <div className={styles.chipGrid}>
               {g.items.map((it) => {
                 const resolved = resolveTicker(it.alias);
+                const present = p.stocks.some((s) => s.ticker.toUpperCase() === resolved.toUpperCase());
                 return (
                   <button
                     key={it.alias}
                     type="button"
-                    className={`${styles.chip} ${current.has(resolved) ? styles.chipOn : ''}`}
-                    title={`${it.alias} → ${resolved}${it.help ? `\n${it.help}` : ''}`}
+                    className={`${styles.chip} ${present ? styles.chipIn : ''}`}
+                    aria-pressed={present}
+                    title={present
+                      ? `${resolved} est déjà dans le portfolio`
+                      : `${it.alias} → ${resolved}${it.help ? `\n${it.help}` : ''}`}
                     onClick={() => addStocks(p._id, [it.alias])}
                   >
-                    {it.label}
+                    {present ? '✓ ' : ''}{it.label}
                   </button>
                 );
               })}

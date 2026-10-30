@@ -23,7 +23,7 @@ function canonical(value: unknown): unknown {
  * simulation axis from the whole set, so the same set gives the same numbers in any order.
  */
 export async function requestKey(req: RunRequest): Promise<string> {
-  const portfolios = [...req.portfolios].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const portfolios = req.portfolios.map(({ sync_sp500: _linked, ...p }) => p).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const { price_update: _prices, ...options } = req.options;
   return sha256(JSON.stringify(canonical({ portfolios, options })));
 }
@@ -43,7 +43,7 @@ const NOT_IDENTITY_OPTIONS = new Set(['end_date', 'align_start', 'start_date', '
 export async function configKeys(req: RunRequest): Promise<string[]> {
   const options = Object.fromEntries(Object.entries(req.options).filter(([k]) => !NOT_IDENTITY_OPTIONS.has(k)));
   const strip = (p: PortfolioConfig) => {
-    const { end_date_user: _end, start_date_user: _start, ...rest } = p as PortfolioConfig & { end_date_user?: unknown; start_date_user?: unknown };
+    const { end_date_user: _end, start_date_user: _start, sync_sp500: _linked, ...rest } = p as PortfolioConfig & { end_date_user?: unknown; start_date_user?: unknown };
     return rest;
   };
   return Promise.all(req.portfolios.map((p) => {

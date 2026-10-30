@@ -367,7 +367,10 @@
 .chipGrid { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .chip { font-size: 0.74rem; padding: 0.22rem 0.55rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); cursor: pointer; font-family: var(--mono); }
 .chip:hover { border-color: var(--accent); }
+.chip:focus { outline: none; }
+.chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .chipOn { border-color: var(--accent); background: rgba(77, 141, 255, 0.15); }
+.chipIn { border-color: var(--green); background: rgba(45, 212, 168, 0.12); }
 .groupLabel { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint); }
 
 .miniTable { width: 100%; border-collapse: collapse; font-size: 0.76rem; }

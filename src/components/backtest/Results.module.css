@@ -228,6 +228,18 @@
 }
 @media (max-width: 900px) { .allocGrid { grid-template-columns: 1fr; } }
 
+.allocLists {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+  padding: 0.25rem 1.1rem 0.4rem;
+}
+@media (max-width: 900px) { .allocLists { grid-template-columns: 1fr; } }
+
+.allocEvolution {
+  padding: 0.6rem 1.1rem 1.1rem;
+}
+
 .weightList { display: flex; flex-direction: column; gap: 0.3rem; max-height: 420px; overflow-y: auto; }
 .weightRow { display: grid; grid-template-columns: 80px 1fr 70px; gap: 0.6rem; align-items: center; font-size: 0.8rem; }
 .weightTicker { font-family: var(--mono); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }

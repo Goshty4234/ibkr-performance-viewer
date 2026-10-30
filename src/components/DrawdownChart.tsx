@@ -1,12 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CartesianGrid,
   Line,
   LineChart,
   ResponsiveContainer,
-  Tooltip,
   XAxis,
   YAxis,
 } from 'recharts';
@@ -15,10 +14,12 @@ import { fr } from 'date-fns/locale';
 import { formatChartTooltipDate } from '@/lib/dates';
 import type { ChartSeriesDef, MultiSeriesChartPoint } from '@/lib/chart-series';
 import { visibleSeries } from '@/lib/chart-series';
+import { publishChartHover, useChartHover } from '@/lib/chart-hover';
 import {
   CHART_PLOT_MARGIN_BOTTOM,
-  CHART_SYNC_ID,
   CHART_YAXIS_WIDTH,
+  clientXToDataIndex,
+  dataIndexToPlotX,
 } from '@/lib/chart-range';
 import { computeDrawdownSeries, fmtPct, getMaxDrawdown } from '@/lib/performance';
 import styles from './DrawdownChart.module.css';
@@ -32,30 +33,41 @@ interface Props {
   stacked?: boolean;
 }
 
-function TooltipContent({
-  active,
-  payload,
-  label,
-  series,
+function DrawdownPointer({
+  plotRef,
+  data,
+  shown,
 }: {
-  active?: boolean;
-  payload?: Array<{ value: number; dataKey: string; color: string; payload?: { date?: string } }>;
-  label?: unknown;
-  series: ChartSeriesDef[];
+  plotRef: React.RefObject<HTMLDivElement | null>;
+  data: Record<string, number | string>[];
+  shown: ChartSeriesDef[];
 }) {
-  if (!active || !payload?.length) return null;
-  const labelById = new Map(series.map((s) => [s.id, s.label]));
+  const hover = useChartHover();
+  const node = plotRef.current;
+  if (!hover || hover.index >= data.length || !node) return null;
+  const rect = node.getBoundingClientRect();
+  const left = dataIndexToPlotX(hover.index, rect, data.length);
   return (
-    <div className={styles.tooltip}>
-      <div className={styles.tooltipDate}>
-        {formatChartTooltipDate(label, payload)}
-      </div>
-      {payload.map((e) => (
-        <div key={e.dataKey} style={{ color: e.color }} className="mono negative">
-          {labelById.get(e.dataKey) ?? e.dataKey}: {fmtPct(e.value)}
+    <>
+      <div className={styles.hoverLine} style={{ left }} />
+      {hover.source === 'drawdown' && (
+        <div
+          className={`${styles.tooltip} ${styles.hoverTip}`}
+          style={{ left, transform: left > node.clientWidth * 0.62 ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)' }}
+        >
+          <div className={styles.tooltipDate}>{formatChartTooltipDate(data[hover.index]?.date)}</div>
+          {shown.map((s) => {
+            const v = data[hover.index]?.[s.id];
+            if (typeof v !== 'number') return null;
+            return (
+              <div key={s.id} style={{ color: s.color }} className="mono negative">
+                {s.label}: {fmtPct(v)}
+              </div>
+            );
+          })}
         </div>
-      ))}
-    </div>
+      )}
+    </>
   );
 }
 
@@ -68,6 +80,7 @@ export default function DrawdownChart({
   stacked,
 }: Props) {
   const [mounted, setMounted] = useState(false);
+  const plotRef = useRef<HTMLDivElement>(null);
   useEffect(() => { setMounted(true); }, []);
 
   const shown = useMemo(() => visibleSeries(series, hidden), [series, hidden]);
@@ -130,13 +143,23 @@ export default function DrawdownChart({
           </span>
         ))}
       </div>
-      <div className={styles.chart}>
+      <div
+        className={styles.chart}
+        ref={plotRef}
+        onMouseMove={(e) => {
+          const rect = plotRef.current?.getBoundingClientRect();
+          if (!rect) return;
+          publishChartHover({
+            index: clientXToDataIndex(e.clientX, rect, drawdownData.length),
+            source: 'drawdown',
+          });
+        }}
+        onMouseLeave={() => publishChartHover(null)}
+      >
         <ResponsiveContainer width="100%" height={220}>
           <LineChart
             data={drawdownData}
             margin={CHART_PLOT_MARGIN_BOTTOM}
-            syncId={CHART_SYNC_ID}
-            syncMethod="value"
           >
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
             <XAxis
@@ -156,22 +179,23 @@ export default function DrawdownChart({
               axisLine={false}
               width={CHART_YAXIS_WIDTH}
             />
-            <Tooltip content={<TooltipContent series={series} />} />
             {shown.map((s) => (
               <Line
                 key={s.id}
-                type="monotone"
+                type="linear"
                 dataKey={s.id}
                 name={s.label}
                 stroke={s.color}
                 strokeWidth={s.kind === 'primary' ? 2.5 : 2}
                 dot={drawdownData.length <= 24 && s.kind === 'primary'}
-                activeDot={{ r: 4, strokeWidth: 0 }}
+                activeDot={false}
+                isAnimationActive={false}
                 strokeDasharray={s.strokeDasharray}
               />
             ))}
           </LineChart>
         </ResponsiveContainer>
+        <DrawdownPointer plotRef={plotRef} data={drawdownData} shown={shown} />
       </div>
     </div>
   );

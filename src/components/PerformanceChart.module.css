@@ -170,3 +170,21 @@
   font-size: 0.75rem;
   font-weight: 600;
 }
+
+.hoverLine {
+  position: absolute;
+  top: 8px;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.hoverTip {
+  position: absolute;
+  top: 12px;
+  z-index: 5;
+  pointer-events: none;
+  max-width: min(340px, 72%);
+}

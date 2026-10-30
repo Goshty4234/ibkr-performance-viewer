@@ -10,6 +10,12 @@ import { money, qty } from './format';
 import TaxPanel from './TaxPanel';
 import styles from '../Results.module.css';
 
+function inRange(date: string, start: string, end: string): boolean {
+  if (start && date < start) return false;
+  if (end && date > end) return false;
+  return true;
+}
+
 const PCT_FIELDS = /weight|allocation|return|momentum|vol|drawdown/i;
 
 function fmtMetric(field: string, v: number | string | null | undefined): string {
@@ -22,21 +28,26 @@ function fmtMetric(field: string, v: number | string | null | undefined): string
   return Math.abs(v) >= 1000 ? v.toLocaleString('en-US', { maximumFractionDigits: 2 }) : v.toFixed(4);
 }
 
-function MetricsSection({ metrics }: { metrics: MetricsColumns }) {
+function MetricsSection({ metrics, start, end }: { metrics: MetricsColumns; start: string; end: string }) {
+  const dates = useMemo(() => metrics.dates.filter((d) => inRange(d, start, end)), [metrics, start, end]);
   const [date, setDate] = useState<string>('');
   const [allDates, setAllDates] = useState(false);
   useEffect(() => {
-    setDate(metrics.dates[metrics.dates.length - 1] ?? '');
+    setDate(dates[dates.length - 1] ?? '');
     setAllDates(false);
-  }, [metrics]);
+  }, [dates]);
   const dIdx = metrics.dates.indexOf(date);
 
   type Row = { k: number };
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
-    for (let k = 0; k < metrics.date_idx.length; k++) if (allDates || metrics.date_idx[k] === dIdx) out.push({ k });
+    for (let k = 0; k < metrics.date_idx.length; k++) {
+      const d = metrics.dates[metrics.date_idx[k]];
+      if (!inRange(d, start, end)) continue;
+      if (allDates || metrics.date_idx[k] === dIdx) out.push({ k });
+    }
     return out;
-  }, [metrics, dIdx, allDates]);
+  }, [metrics, dIdx, allDates, start, end]);
 
   const columns = useMemo<GridColumn<Row>[]>(() => {
     const cols: GridColumn<Row>[] = [];
@@ -59,7 +70,7 @@ function MetricsSection({ metrics }: { metrics: MetricsColumns }) {
     return cols;
   }, [metrics, allDates]);
 
-  const recentDates = useMemo(() => [...metrics.dates].reverse(), [metrics]);
+  const recentDates = useMemo(() => [...dates].reverse(), [dates]);
   const weightField = metrics.fields.find((f) => f === 'Calculated_Weight');
 
   return (
@@ -98,16 +109,36 @@ function MetricsSection({ metrics }: { metrics: MetricsColumns }) {
   );
 }
 
-export function AllocationHistorySection({ allocations }: { allocations: NonNullable<PortfolioDetail['allocations']> }) {
+export function AllocationHistorySection({
+  allocations,
+  start = '',
+  end = '',
+}: {
+  allocations: NonNullable<PortfolioDetail['allocations']>;
+  start?: string;
+  end?: string;
+}) {
+  const [query, setQuery] = useState('');
   type Row = { i: number };
   const tickers = useMemo(() => {
     const ts = Object.keys(allocations.weights).filter((t) => allocations.weights[t].some((v) => (v ?? 0) !== 0));
     return [...ts.filter((t) => t !== 'CASH').sort(), ...ts.filter((t) => t === 'CASH')];
   }, [allocations]);
-  const rows = useMemo<Row[]>(() => allocations.dates.map((_d, i) => ({ i })).reverse(), [allocations]);
+  const q = query.trim().toUpperCase();
+  const shown = useMemo(
+    () => (q ? tickers.filter((t) => t.toUpperCase().includes(q)) : tickers),
+    [tickers, q],
+  );
+  const rows = useMemo<Row[]>(() => {
+    const out: Row[] = [];
+    for (let i = allocations.dates.length - 1; i >= 0; i--) {
+      if (inRange(allocations.dates[i], start, end)) out.push({ i });
+    }
+    return out;
+  }, [allocations, start, end]);
   const columns = useMemo<GridColumn<Row>[]>(() => [
     { key: 'date', label: 'Date', width: 104, value: (r) => allocations.dates[r.i] },
-    ...tickers.map<GridColumn<Row>>((t) => ({
+    ...shown.map<GridColumn<Row>>((t) => ({
       key: t,
       label: t,
       width: 96,
@@ -116,26 +147,54 @@ export function AllocationHistorySection({ allocations }: { allocations: NonNull
       format: (v) => `${(v as number).toFixed(0)}%`,
       cellStyle: t === 'CASH' ? () => ({ background: 'rgba(0, 100, 0, 0.35)' }) : undefined,
     })),
-  ], [allocations, tickers]);
+  ], [allocations, shown]);
   return (
     <div className="card">
       <div className={styles.cardHead}>
         <div>
           <div className={styles.cardTitle}>Allocations historiques</div>
-          <div className={styles.cardSub}>Poids de chaque titre à chaque date de la simulation ({allocations.dates.length.toLocaleString('fr-CA')} dates, plus récentes en premier)</div>
+          <div className={styles.cardSub}>
+            {shown.length.toLocaleString('fr-CA')} titre{shown.length > 1 ? 's' : ''}
+            {q ? ` sur ${tickers.length.toLocaleString('fr-CA')}` : ''}
+            {' · '}
+            {rows.length.toLocaleString('fr-CA')} date{rows.length > 1 ? 's' : ''}, plus récentes en premier
+          </div>
         </div>
       </div>
       <div className={styles.padded}>
-        <DataGrid columns={columns} rows={rows} rowKey={(r) => r.i} maxHeight={480} csvName="allocations-historiques" />
+        <DataGrid
+          columns={columns}
+          rows={rows}
+          rowKey={(r) => r.i}
+          maxHeight={480}
+          csvName="allocations-historiques"
+          empty={q ? `Aucun ticker ne contient « ${query.trim()} ».` : 'Aucune date sur cette période.'}
+          toolbar={
+            <input
+              className="input"
+              style={{ width: 200 }}
+              placeholder="Ticker, ex. AAPL"
+              aria-label="Filtrer les tickers"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          }
+        />
       </div>
     </div>
   );
 }
 
-function HoldingsSection({ holdings }: { holdings: HoldingsTable }) {
+function HoldingsSection({ holdings, start, end }: { holdings: HoldingsTable; start: string; end: string }) {
   const [mode, setMode] = useState<'shares' | 'values'>('shares');
   type Row = { i: number };
-  const rows = useMemo<Row[]>(() => holdings.dates.map((_d, i) => ({ i })).reverse(), [holdings]);
+  const rows = useMemo<Row[]>(() => {
+    const out: Row[] = [];
+    for (let i = holdings.dates.length - 1; i >= 0; i--) {
+      if (inRange(holdings.dates[i], start, end)) out.push({ i });
+    }
+    return out;
+  }, [holdings, start, end]);
   const columns = useMemo<GridColumn<Row>[]>(() => {
     const src = mode === 'shares' ? holdings.shares : holdings.values;
     const cols: GridColumn<Row>[] = [{ key: 'date', label: 'Date', width: 104, value: (r) => holdings.dates[r.i] }];
@@ -187,6 +246,17 @@ export default function PortfolioTab({
   selected: number | null;
   onSelect: (index: number) => void;
 }) {
+  const bounds = useMemo(() => {
+    const d = result.summary.dates;
+    if (d.length) return { min: d[0], max: d[d.length - 1] };
+    return { min: '', max: '' };
+  }, [result]);
+  const [start, setStart] = useState(bounds.min);
+  const [end, setEnd] = useState(bounds.max);
+  useEffect(() => {
+    setStart(bounds.min);
+    setEnd(bounds.max);
+  }, [bounds.min, bounds.max]);
   const p = portfolios.find((x) => x.index === selected) ?? portfolios[0];
   const { detail, loading, error } = usePortfolioDetail(result, p?.index ?? null);
   if (!p) return null;
@@ -194,15 +264,25 @@ export default function PortfolioTab({
 
   return (
     <>
-      <AllocationPanel result={result} portfolios={portfolios} selected={p.index} onSelect={onSelect} />
+      <AllocationPanel
+        result={result}
+        portfolios={portfolios}
+        selected={p.index}
+        onSelect={onSelect}
+        start={start}
+        end={end}
+        onRange={(s, e) => { setStart(s); setEnd(e); }}
+      />
       {loading && !detail && <div className={`card ${styles.loadingCard}`}>Chargement du détail de {p.name}…</div>}
       {error && <div className={`card ${styles.loadingCard}`}>{error}</div>}
       {errs.length > 0 && (
         <div className={styles.inlineWarn}>Certaines analyses ont échoué pour ce portfolio : {errs.join(', ')}</div>
       )}
-      {detail?.allocations && detail.allocations.dates.length > 0 && <AllocationHistorySection allocations={detail.allocations} />}
-      {detail?.metrics && detail.metrics.dates.length > 0 && <MetricsSection metrics={detail.metrics} />}
-      {detail?.holdings && detail.holdings.dates.length > 0 && <HoldingsSection holdings={detail.holdings} />}
+      {detail?.allocations && detail.allocations.dates.length > 0 && (
+        <AllocationHistorySection allocations={detail.allocations} start={start} end={end} />
+      )}
+      {detail?.metrics && detail.metrics.dates.length > 0 && <MetricsSection metrics={detail.metrics} start={start} end={end} />}
+      {detail?.holdings && detail.holdings.dates.length > 0 && <HoldingsSection holdings={detail.holdings} start={start} end={end} />}
       {detail && <TaxPanel gains={detail.gains} tax={detail.tax_acb} />}
     </>
   );

@@ -141,6 +141,7 @@ export default function PortfolioList() {
                   </span>
                 </span>
                 {fusion && <span className={styles.pTag}>FUSION</span>}
+                {p.sync_sp500 && <span className={styles.pTag} title="Les tickers suivent la composition actuelle du S&P 500">S&P 500</span>}
                 {badAlloc && !p.use_momentum && <span className={styles.pWarn} title={`Allocation totale ${(total * 100).toFixed(1)} %`}>⚠</span>}
               </div>
             );

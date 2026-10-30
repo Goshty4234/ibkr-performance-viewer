@@ -11,6 +11,7 @@ import type { ChartBrushSelection } from '@/lib/chart-range';
 import type { PortfolioSummaryOk } from '@/lib/engine/types';
 import DataGrid, { type GridColumn } from '../grid/DataGrid';
 import { ColumnDefinitions } from '../StatsTable';
+import PeriodFields from './PeriodFields';
 import styles from '../Results.module.css';
 
 function useDebounced<T>(value: T, ms: number): T {
@@ -21,14 +22,6 @@ function useDebounced<T>(value: T, ms: number): T {
   }, [value, ms]);
   return v;
 }
-
-const PRESETS: { label: string; years: number | null }[] = [
-  { label: '1 an', years: 1 },
-  { label: '3 ans', years: 3 },
-  { label: '5 ans', years: 5 },
-  { label: '10 ans', years: 10 },
-  { label: 'Tout', years: null },
-];
 
 export default function FocusedTab({
   result,
@@ -106,18 +99,6 @@ export default function FocusedTab({
     ];
   }, [essential]);
 
-  const setPreset = (years: number | null) => {
-    setEnd(bounds.max);
-    if (years === null) {
-      setStart(bounds.min);
-      return;
-    }
-    const d = new Date(`${bounds.max}T00:00:00Z`);
-    d.setUTCFullYear(d.getUTCFullYear() - years);
-    const s = d.toISOString().slice(0, 10);
-    setStart(s < bounds.min ? bounds.min : s);
-  };
-
   return (
     <>
       <div className="card">
@@ -131,19 +112,13 @@ export default function FocusedTab({
           </div>
         </div>
         <div className={styles.toolbarRow}>
-          <label className={styles.inlineField}>
-            Début
-            <input type="date" className="input" value={start} min={bounds.min} max={bounds.max} onChange={(e) => setStart(e.target.value)} />
-          </label>
-          <label className={styles.inlineField}>
-            Fin
-            <input type="date" className="input" value={end} min={bounds.min} max={bounds.max} onChange={(e) => setEnd(e.target.value)} />
-          </label>
-          <div className={styles.segment}>
-            {PRESETS.map((p) => (
-              <button key={p.label} type="button" onClick={() => setPreset(p.years)}>{p.label}</button>
-            ))}
-          </div>
+          <PeriodFields
+            start={start}
+            end={end}
+            min={bounds.min}
+            max={bounds.max}
+            onChange={(s, e) => { setStart(s); setEnd(e); }}
+          />
           <label className={styles.inlineCheck}>
             <input type="checkbox" checked={essential} onChange={(e) => setEssential(e.target.checked)} />
             Métriques essentielles seulement

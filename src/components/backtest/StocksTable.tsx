@@ -19,6 +19,9 @@ export default function StocksTable({ portfolio: p }: { portfolio: EditablePortf
   const addStocks = useBacktestStore((s) => s.addStocks);
   const removeStock = useBacktestStore((s) => s.removeStock);
   const equalize = useBacktestStore((s) => s.equalizeStocks);
+  const linkSp500 = useBacktestStore((s) => s.linkSp500);
+  const unlinkSp500 = useBacktestStore((s) => s.unlinkSp500);
+  const sp500Note = useBacktestStore((s) => s.sp500Note);
   const update = useBacktestStore((s) => s.updatePortfolio);
   const client = useEngineStore((s) => s.client);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -27,6 +30,8 @@ export default function StocksTable({ portfolio: p }: { portfolio: EditablePortf
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [activeQuote, setActiveQuote] = useState(-1);
   const [suggestHidden, setSuggestHidden] = useState(false);
+  const [sp500Busy, setSp500Busy] = useState(false);
+  const [sp500Error, setSp500Error] = useState<string | null>(null);
 
   const showCap = p.use_momentum;
   // With momentum the engine starts at 0 % and only uses momentum weights: typed allocations are never read.
@@ -98,6 +103,28 @@ export default function StocksTable({ portfolio: p }: { portfolio: EditablePortf
   const allocOk = Math.abs(total - 1) < 0.001;
   const foreign = nonUsdTickers(p.stocks.map((s) => s.ticker));
 
+  async function toggleSp500() {
+    setSp500Error(null);
+    if (p.sync_sp500) {
+      if (confirm('Ne plus suivre le S&P 500 ? Les tickers déjà présents restent.')) unlinkSp500(p._id);
+      return;
+    }
+    if (p.stocks.some((s) => s.ticker.trim()) && !confirm('Remplacer les tickers par le S&P 500 actuel ? Le portfolio restera aligné quand la composition change.')) return;
+    if (!client) {
+      setSp500Error('Le moteur doit être lancé pour charger le S&P 500.');
+      return;
+    }
+    setSp500Busy(true);
+    try {
+      const list = await client.universe('sp500');
+      if (!linkSp500(p._id, list.tickers)) setSp500Error('La liste du S&P 500 reçue est incomplète.');
+    } catch {
+      setSp500Error('Liste S&P 500 indisponible.');
+    } finally {
+      setSp500Busy(false);
+    }
+  }
+
   return (
     <section className={`card ${styles.section}`}>
       <div className={styles.sectionHead}>
@@ -122,14 +149,35 @@ export default function StocksTable({ portfolio: p }: { portfolio: EditablePortf
           )}
           <button
             type="button"
+            className={`btn btn-sm ${p.sync_sp500 ? 'btn-secondary' : 'btn-ghost'}`}
+            disabled={sp500Busy}
+            aria-pressed={Boolean(p.sync_sp500)}
+            title={p.sync_sp500
+              ? 'Ce portfolio suit la composition actuelle du S&P 500. Cliquer pour ne plus le suivre.'
+              : 'Remplace les tickers par le S&P 500 actuel et les met à jour quand l’indice change.'}
+            onClick={() => void toggleSp500()}
+          >
+            {sp500Busy ? 'S&P 500…' : p.sync_sp500 ? 'S&P 500 lié' : 'S&P 500'}
+          </button>
+          <button
+            type="button"
             className="btn btn-ghost btn-sm"
             disabled={!p.stocks.length}
-            onClick={() => { if (confirm('Retirer tous les tickers ?')) update(p._id, { stocks: [] }); }}
+            onClick={() => { if (confirm('Retirer tous les tickers ?')) update(p._id, { stocks: [], sync_sp500: false }); }}
           >
             Tout retirer
           </button>
         </div>
       </div>
+
+      {p.sync_sp500 && (
+        <p className={styles.hint}>
+          Ce portfolio est le S&P 500 : les titres sont ceux de Wikipédia.
+          {sp500Note ? ` ${sp500Note}` : ' La liste est revérifiée au moins une fois par jour.'}
+          {' '}Un ajout ou un retrait manuel arrête ce suivi.
+        </p>
+      )}
+      {sp500Error && <div className={styles.warnBox}>{sp500Error}</div>}
 
       <div className={styles.addRow}>
         <div style={{ position: 'relative', flex: 1 }}>

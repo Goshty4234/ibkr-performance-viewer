@@ -6,6 +6,7 @@ import type { LoadedResult } from '@/lib/backtest/result-data';
 import { usePortfolioDetail } from '@/lib/backtest/use-detail';
 import { SERIES_PALETTE } from '@/lib/chart-series';
 import type { PortfolioDetail, PortfolioSummaryOk } from '@/lib/engine/types';
+import PeriodFields from './results/PeriodFields';
 import styles from './Results.module.css';
 
 const MAX_AREA_TICKERS = 12;
@@ -39,6 +40,47 @@ function compositionAt(ev: Evolution, i: number): [string, number][] {
     if (v > 0.005) out.push([t, v]);
   }
   return out.sort((a, b) => b[1] - a[1]);
+}
+
+function indexOnOrBefore(dates: string[], day: string): number {
+  let lo = 0;
+  let hi = dates.length - 1;
+  let ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (dates[mid] <= day) { ans = mid; lo = mid + 1; }
+    else hi = mid - 1;
+  }
+  return ans;
+}
+
+/** Top names inside [start, end], so a short window is not painted with names that left years ago. */
+function sliceEvolution(ev: Evolution, start: string, end: string): Evolution {
+  if (!ev.dates.length) return ev;
+  const i0 = ev.dates.findIndex((d) => d >= start);
+  const i1 = indexOnOrBefore(ev.dates, end);
+  if (i0 < 0 || i1 < i0) return { ...EMPTY_EVOLUTION, factor: ev.factor };
+  const avg = Object.keys(ev.weights).map((t) => {
+    let s = 0;
+    const series = ev.weights[t];
+    for (let i = i0; i <= i1; i++) s += series[i] ?? 0;
+    return { t, s };
+  }).sort((a, b) => b.s - a.s);
+  const top = avg.slice(0, MAX_AREA_TICKERS).filter((x) => x.s > 0).map((x) => x.t);
+  const rest = avg.slice(MAX_AREA_TICKERS).map((x) => x.t);
+  const keys = rest.length ? [...top, OTHERS] : top;
+  const rows: Record<string, number | string>[] = [];
+  for (let i = i0; i <= i1; i++) {
+    const row: Record<string, number | string> = { date: ev.dates[i], _i: i };
+    for (const t of top) row[t] = (ev.weights[t][i] ?? 0) * ev.factor;
+    if (rest.length) {
+      let o = 0;
+      for (const t of rest) o += ev.weights[t][i] ?? 0;
+      row[OTHERS] = o * ev.factor;
+    }
+    rows.push(row);
+  }
+  return { rows, keys, dates: ev.dates.slice(i0, i1 + 1), weights: ev.weights, factor: ev.factor };
 }
 
 function buildEvolution(d: PortfolioDetail): Evolution {
@@ -100,42 +142,129 @@ function EvolutionTooltip({ active, payload, ev, colors }: {
   );
 }
 
+function WeightColumn({
+  title,
+  hint,
+  rows,
+  colors,
+}: {
+  title: string;
+  hint: string;
+  rows: [string, number][];
+  colors: Map<string, string>;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? rows : rows.slice(0, 25);
+  const total = rows.reduce((a, [, v]) => a + v, 0);
+  return (
+    <div>
+      <div className={styles.subTitle}>{title}</div>
+      <div className={styles.muted} style={{ fontSize: '0.75rem', margin: '0.15rem 0 0.5rem' }}>{hint}</div>
+      {rows.length === 0 ? (
+        <div className={styles.muted}>Aucune allocation à cette date.</div>
+      ) : (
+        <>
+          <div className={styles.weightList}>
+            {visible.map(([t, v], i) => (
+              <div key={t} className={styles.weightRow}>
+                <span className={styles.weightTicker}>{t}</span>
+                <span className={styles.weightBarTrack}>
+                  <span
+                    className={styles.weightBar}
+                    style={{
+                      width: `${Math.min(100, Math.max(0, v))}%`,
+                      background: t === 'CASH' ? GREY : (colors.get(t) ?? SERIES_PALETTE[i % SERIES_PALETTE.length]),
+                    }}
+                  />
+                </span>
+                <span className={styles.num}>{v.toFixed(2)}%</span>
+              </div>
+            ))}
+          </div>
+          <div className={styles.weightFoot}>
+            <span>{rows.length} positions · total {total.toFixed(2)}%</span>
+            {rows.length > 25 && (
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowAll((s) => !s)}>
+                {showAll ? 'Réduire' : `Tout afficher (${rows.length})`}
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function AllocationPanel({
   result,
   portfolios,
   selected,
   onSelect,
+  start,
+  end,
+  onRange,
 }: {
   result: LoadedResult;
   portfolios: PortfolioSummaryOk[];
   selected: number | null;
   onSelect: (index: number) => void;
+  start: string;
+  end: string;
+  onRange: (start: string, end: string) => void;
 }) {
   const p = portfolios.find((x) => x.index === selected) ?? portfolios[0];
-  const [showAll, setShowAll] = useState(false);
   const { detail, loading, error } = usePortfolioDetail(result, p?.index ?? null);
 
-  const today = useMemo(() => {
-    if (!p) return [];
-    const src = Object.keys(p.today_weights ?? {}).length ? p.today_weights : (p.current_alloc ?? {});
-    return Object.entries(asPct(src))
-      .filter(([, v]) => Math.abs(v) > 1e-9)
-      .sort((a, b) => b[1] - a[1]);
-  }, [p]);
-
   const evolution = useMemo(() => (detail ? buildEvolution(detail) : EMPTY_EVOLUTION), [detail]);
-  const colors = useMemo(
-    () => new Map(evolution.keys.map((k, i) => [k, k === OTHERS ? GREY : SERIES_PALETTE[i % SERIES_PALETTE.length]])),
-    [evolution],
+  const view = useMemo(
+    () => (start && end ? sliceEvolution(evolution, start, end) : evolution),
+    [evolution, start, end],
   );
+  const colors = useMemo(
+    () => new Map(view.keys.map((k, i) => [k, k === OTHERS ? GREY : SERIES_PALETTE[i % SERIES_PALETTE.length]])),
+    [view],
+  );
+  const held = useMemo(() => {
+    const day = end || evolution.dates[evolution.dates.length - 1] || '';
+    const i = indexOnOrBefore(evolution.dates, day);
+    if (i < 0) return { date: '', rows: [] as [string, number][] };
+    return { date: evolution.dates[i], rows: compositionAt(evolution, i) };
+  }, [evolution, end]);
+  const target = useMemo(() => {
+    const day = end || evolution.dates[evolution.dates.length - 1] || '';
+    const last = evolution.dates[evolution.dates.length - 1] ?? '';
+    const atEnd = !day || !last || day >= last;
+    if (atEnd && p && Object.keys(p.today_weights ?? {}).length) {
+      const rows = Object.entries(asPct(p.today_weights))
+        .filter(([, v]) => v > 0.005)
+        .sort((a, b) => b[1] - a[1]);
+      return {
+        date: p.last_rebalance_date ?? last,
+        rows,
+        hint: 'Poids visés si le portefeuille était rebalancé maintenant.',
+      };
+    }
+    const reb = (detail?.metrics?.dates ?? []).filter((d) => d <= day).at(-1);
+    const i = reb ? indexOnOrBefore(evolution.dates, reb) : indexOnOrBefore(evolution.dates, day);
+    if (i < 0) return { date: '', rows: [] as [string, number][], hint: 'Pas de cible enregistrée à cette date.' };
+    return {
+      date: evolution.dates[i],
+      rows: compositionAt(evolution, i),
+      hint: reb
+        ? `Poids appliqués au rebalancement du ${evolution.dates[i]}.`
+        : 'Pas de date de rebalancement séparée : mêmes poids que la détention.',
+    };
+  }, [evolution, end, p, detail]);
   const [pinned, setPinned] = useState<number | null>(null);
   const pinnedList = useMemo(() => (pinned === null ? [] : compositionAt(evolution, pinned)), [evolution, pinned]);
   const pinnedValid = pinned !== null && pinned < evolution.dates.length;
-  useEffect(() => setPinned(null), [evolution]);
+  useEffect(() => setPinned(null), [evolution, start, end]);
 
   if (!p) return null;
-  const visible = showAll ? today : today.slice(0, 25);
-  const total = today.reduce((a, [, v]) => a + v, 0);
+  const bounds = {
+    min: result.summary.dates[0] ?? evolution.dates[0] ?? start,
+    max: result.summary.dates[result.summary.dates.length - 1] ?? evolution.dates[evolution.dates.length - 1] ?? end,
+  };
 
   return (
     <div className="card">
@@ -145,65 +274,46 @@ export default function AllocationPanel({
           <div className={styles.cardSub}>
             Dernier rebalancement : {p.last_rebalance_date ?? 'N/A'}
             {detail?.metrics?.truncated && ' · historique des métriques tronqué'}
+            {' · la période filtre aussi les tableaux plus bas'}
           </div>
         </div>
         <select className={styles.select} value={p.index} onChange={(e) => onSelect(Number(e.target.value))}>
           {portfolios.map((x) => <option key={x.index} value={x.index}>{x.name}</option>)}
         </select>
       </div>
+      <div className={styles.toolbarRow}>
+        <PeriodFields start={start} end={end} min={bounds.min} max={bounds.max} onChange={onRange} />
+      </div>
 
-      <div className={styles.allocGrid}>
-        <div>
-          <div className={styles.subTitle}>Poids cibles aujourd&apos;hui</div>
-          {today.length === 0 ? (
-            <div className={styles.muted}>Aucune allocation (cash ou données insuffisantes).</div>
-          ) : (
-            <>
-              <div className={styles.weightList}>
-                {visible.map(([t, v], i) => (
-                  <div key={t} className={styles.weightRow}>
-                    <span className={styles.weightTicker}>{t}</span>
-                    <span className={styles.weightBarTrack}>
-                      <span
-                        className={styles.weightBar}
-                        style={{ width: `${Math.min(100, Math.max(0, v))}%`, background: SERIES_PALETTE[i % SERIES_PALETTE.length] }}
-                      />
-                    </span>
-                    <span className={styles.num}>{v.toFixed(2)}%</span>
-                  </div>
-                ))}
-              </div>
-              <div className={styles.weightFoot}>
-                <span>{today.length} positions · total {total.toFixed(2)}%</span>
-                {today.length > 25 && (
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowAll((s) => !s)}>
-                    {showAll ? 'Réduire' : `Tout afficher (${today.length})`}
-                  </button>
-                )}
-              </div>
-            </>
-          )}
+      <div className={styles.allocLists}>
+        <WeightColumn title="Cible" hint={target.hint} rows={target.rows} colors={colors} />
+        <WeightColumn
+          title="Actuelle"
+          hint={held.date ? `Poids réellement détenus le ${held.date}, après la dérive des cours.` : 'Pas de détention à cette date.'}
+          rows={held.rows}
+          colors={colors}
+        />
+      </div>
+
+      <div className={styles.allocEvolution}>
+        <div className={styles.subTitle}>
+          Évolution des allocations
+          <span className={styles.muted} style={{ fontWeight: 400, marginLeft: 8 }}>
+            poids détenus · survol : composition du jour · clic : liste complète
+          </span>
         </div>
-
-        <div>
-          <div className={styles.subTitle}>
-            Évolution des allocations
-            <span className={styles.muted} style={{ fontWeight: 400, marginLeft: 8 }}>
-              survol : composition du jour · clic : liste complète
-            </span>
-          </div>
-          {loading ? (
-            <div className={styles.muted}>Chargement du détail…</div>
-          ) : error ? (
-            <div className={styles.muted}>{error}</div>
-          ) : evolution.rows.length < 2 ? (
-            <div className={styles.muted}>Pas d&apos;historique d&apos;allocation.</div>
-          ) : (
-            <>
-            <div style={{ height: 320, cursor: 'pointer' }}>
+        {loading ? (
+          <div className={styles.muted}>Chargement du détail…</div>
+        ) : error ? (
+          <div className={styles.muted}>{error}</div>
+        ) : view.rows.length < 2 ? (
+          <div className={styles.muted}>Pas d&apos;historique d&apos;allocation sur cette période.</div>
+        ) : (
+          <>
+            <div style={{ height: 360, cursor: 'pointer' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart
-                  data={evolution.rows}
+                  data={view.rows}
                   margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
                   onClick={(state) => {
                     const row = (state as { activePayload?: { payload?: Record<string, number | string> }[] } | null)?.activePayload?.[0]?.payload;
@@ -214,7 +324,7 @@ export default function AllocationPanel({
                   <XAxis dataKey="date" stroke="#5c6d85" fontSize={11} tickLine={false} minTickGap={48} tickFormatter={(d: string) => d.slice(0, 7)} />
                   <YAxis domain={[0, 100]} allowDataOverflow tickFormatter={(v) => `${v}%`} stroke="#5c6d85" fontSize={11} tickLine={false} axisLine={false} width={44} />
                   <Tooltip content={<EvolutionTooltip ev={evolution} colors={colors} />} />
-                  {evolution.keys.map((k) => (
+                  {view.keys.map((k) => (
                     <Area
                       key={k}
                       type="stepAfter"
@@ -260,9 +370,8 @@ export default function AllocationPanel({
                 )}
               </div>
             )}
-            </>
-          )}
-        </div>
+          </>
+        )}
       </div>
     </div>
   );

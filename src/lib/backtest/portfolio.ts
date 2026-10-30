@@ -63,6 +63,7 @@ export function defaultPortfolio(name = 'Nouveau portfolio'): EditablePortfolio 
       { ticker: 'SPY', allocation: 0.6, include_dividends: true, include_in_sma_filter: true },
       { ticker: 'TLT', allocation: 0.4, include_dividends: true, include_in_sma_filter: true },
     ],
+    sync_sp500: false,
     benchmark_ticker: '^GSPC',
     initial_value: 10000,
     added_amount: 1000,
@@ -159,6 +160,7 @@ export function normalizeImported(raw: Record<string, unknown>): EditablePortfol
     use_momentum: raw.use_momentum === undefined ? true : Boolean(raw.use_momentum),
     // Streamlit's JSON import defaults a missing calc_volatility to true (engine config.py too).
     calc_volatility: raw.calc_volatility === undefined ? true : Boolean(raw.calc_volatility),
+    sync_sp500: raw.sync_sp500 === true,
     fusion_portfolio: fusion && typeof fusion === 'object'
       ? { enabled: Boolean(fusion.enabled), selected_portfolios: fusion.selected_portfolios ?? [], allocations: fusion.allocations ?? {} }
       : base.fusion_portfolio,
@@ -312,6 +314,26 @@ export function fusionName(allocations: Record<string, number>, frequency: strin
   return top.length ? `Fusion ${top.join(' ')} (${frequency})` : `Fusion (${frequency})`;
 }
 
+/** Wikipedia's current S&P 500 list, keeping the settings of tickers that stay. */
+export function stocksForSp500(existing: StockConfig[], tickers: string[], momentum: boolean): StockConfig[] {
+  const by = new Map(existing.map((s) => [s.ticker.toUpperCase(), s]));
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of tickers) {
+    const ticker = raw.trim();
+    const key = ticker.toUpperCase();
+    if (!ticker || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(ticker);
+  }
+  const allocation = !momentum && unique.length ? 1 / unique.length : 0;
+  return unique.map((ticker) => {
+    const prev = by.get(ticker.toUpperCase());
+    if (prev) return { ...prev, ticker, allocation: momentum ? prev.allocation : allocation };
+    return { ticker, allocation, include_dividends: true, include_in_sma_filter: true };
+  });
+}
+
 export function equalFusionAllocations(names: string[]): Record<string, number> {
   const out: Record<string, number> = {};
   names.forEach((n) => { out[n] = names.length ? 1 / names.length : 0; });
@@ -330,6 +352,7 @@ export function normalizeWeights<T extends Record<string, number>>(allocations: 
 function withGlobalOptions(p: EditablePortfolio, options: RunOptions): Record<string, unknown> {
   return {
     ...toEngineConfig(p),
+    ...(p.sync_sp500 ? { sync_sp500: true } : {}),
     start_with: options.start_with === 'oldest' ? 'first' : 'all',
     first_rebalance_strategy: options.first_rebalance_strategy,
     auto_adjust_momentum_start: options.auto_adjust_momentum_start,

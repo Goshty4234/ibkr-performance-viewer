@@ -17,13 +17,18 @@ import { alignToCycle, allocationOptions, allocationWindow, needsCycleAnchor } f
 import { type BacktestRunRow, findRunsByConfigKeys, findRunsByKey, loadRun, type RunKind, saveRun } from './history';
 import type { LoadedResult } from './result-data';
 import { buildOffer, decide, type MergePart, mergeResults, type ReuseDecision, type ReuseOffer } from './reuse';
-import { configKeys, latestFinalDay, requestHasCrypto, requestKey, type RunRequest, sameMarketData, sameNyDay } from './run-key';
+import { configKeys, latestFinalDay, marketToday, requestHasCrypto, requestKey, type RunRequest, sameMarketData, sameNyDay } from './run-key';
+
+const SP500_DAY = 'mbt-sp500-wiki-day';
+const nyDay = () => marketToday();
 import {
   DEFAULT_OPTIONS,
   defaultPortfolio,
   type EditablePortfolio,
+  isFusion,
   newId,
   parseImport,
+  stocksForSp500,
   toEngineConfig,
   uniqueName,
   validatePortfolios,
@@ -137,6 +142,13 @@ interface BacktestState {
   addStocks: (id: string, tickers: string[]) => void;
   removeStock: (id: string, index: number) => void;
   equalizeStocks: (id: string) => void;
+  /** Replace this portfolio's tickers with the current S&P 500 and keep them aligned. */
+  linkSp500: (id: string, tickers: string[]) => boolean;
+  unlinkSp500: (id: string) => void;
+  /** Refresh every portfolio flagged as the S&P 500. No-op when none are flagged or the list is unusable. */
+  syncSp500: () => Promise<void>;
+  /** Last Wikipedia comparison, for the portfolios that follow the S&P 500. */
+  sp500Note: string | null;
   setOptions: (patch: Partial<RunOptions>) => void;
   /** 'active' = a single pasted portfolio replaces the selected one (Streamlit "Update with Pasted JSON"). */
   importJson: (text: string, mode: 'replace' | 'append' | 'active') => number;
@@ -515,6 +527,7 @@ export const useBacktestStore = create<BacktestState>()(
         alloc: null,
         reuseOffer: null,
         priceOffer: null,
+        sp500Note: null,
         reuseNotice: null,
 
         select: (id) => set({ selectedId: id }),
@@ -585,7 +598,15 @@ export const useBacktestStore = create<BacktestState>()(
         },
 
         updateStock: (id, index, patch) =>
-          patchPortfolio(id, (p) => ({ ...p, stocks: p.stocks.map((s, i) => (i === index ? { ...s, ...patch } : s)) })),
+          patchPortfolio(id, (p) => {
+            const current = p.stocks[index]?.ticker;
+            const renamed = patch.ticker !== undefined && patch.ticker.trim().toUpperCase() !== (current ?? '').toUpperCase();
+            return {
+              ...p,
+              sync_sp500: renamed ? false : p.sync_sp500,
+              stocks: p.stocks.map((s, i) => (i === index ? { ...s, ...patch } : s)),
+            };
+          }),
 
         addStocks: (id, tickers) =>
           patchPortfolio(id, (p) => {
@@ -594,10 +615,11 @@ export const useBacktestStore = create<BacktestState>()(
               .map(resolveTicker)
               .filter((t) => t && !have.has(t) && (have.add(t), true))
               .map((ticker) => ({ ticker, allocation: 0, include_dividends: !isInverse(ticker), include_in_sma_filter: true }));
-            return { ...p, stocks: [...p.stocks, ...fresh] };
+            if (!fresh.length) return p;
+            return { ...p, sync_sp500: false, stocks: [...p.stocks, ...fresh] };
           }),
 
-        removeStock: (id, index) => patchPortfolio(id, (p) => ({ ...p, stocks: p.stocks.filter((_, i) => i !== index) })),
+        removeStock: (id, index) => patchPortfolio(id, (p) => ({ ...p, sync_sp500: false, stocks: p.stocks.filter((_, i) => i !== index) })),
 
         equalizeStocks: (id) =>
           patchPortfolio(id, (p) => {
@@ -605,6 +627,63 @@ export const useBacktestStore = create<BacktestState>()(
             if (!n) return p;
             return { ...p, stocks: p.stocks.map((s) => ({ ...s, allocation: s.ticker.trim() ? 1 / n : 0 })) };
           }),
+
+        linkSp500: (id, tickers) => {
+          if (tickers.length < 400) return false;
+          patchPortfolio(id, (p) => ({
+            ...p,
+            sync_sp500: true,
+            stocks: stocksForSp500(p.stocks, tickers, Boolean(p.use_momentum)),
+          }));
+          const day = nyDay();
+          try { localStorage.setItem(SP500_DAY, day); } catch { /* private mode */ }
+          set({ sp500Note: `Wikipédia ${day} : ${tickers.length} titres, portfolio aligné.` });
+          return true;
+        },
+
+        unlinkSp500: (id) => patchPortfolio(id, (p) => ({ ...p, sync_sp500: false })),
+
+        syncSp500: async () => {
+          const flagged = get().portfolios.some((p) => p.sync_sp500 && !isFusion(p));
+          if (!flagged) return;
+          const day = nyDay();
+          let checked = '';
+          try { checked = localStorage.getItem(SP500_DAY) || ''; } catch { /* private mode */ }
+          if (checked === day && get().sp500Note) return;
+          const engineState = useEngineStore.getState();
+          const engine = engineState.engine ?? await engineState.detect();
+          const client = useEngineStore.getState().client ?? (engine ? new EngineClient(engine.url, engine.health.auth_required) : null);
+          if (!client) return;
+          const list = await client.universe('sp500').catch(() => null);
+          if (!list || list.tickers.length < 400) {
+            set({ sp500Note: 'Liste S&P 500 incomplète : les portfolios suivis n’ont pas été modifiés.' });
+            return;
+          }
+          const wanted = list.tickers;
+          const want = new Set(wanted.map((t) => t.toUpperCase()));
+          let added = 0;
+          let removed = 0;
+          set((s) => ({
+            portfolios: s.portfolios.map((p) => {
+              if (!p.sync_sp500 || isFusion(p)) return p;
+              const have = new Set(p.stocks.map((row) => row.ticker.toUpperCase()).filter(Boolean));
+              let same = have.size === want.size;
+              if (same) {
+                for (const t of want) if (!have.has(t)) { same = false; break; }
+              }
+              if (same) return p;
+              for (const t of want) if (!have.has(t)) added++;
+              for (const t of have) if (!want.has(t)) removed++;
+              return { ...p, stocks: stocksForSp500(p.stocks, wanted, Boolean(p.use_momentum)) };
+            }),
+          }));
+          try { localStorage.setItem(SP500_DAY, day); } catch { /* private mode */ }
+          set({
+            sp500Note: added || removed
+              ? `Wikipédia ${day} : ${wanted.length} titres, ${added} ajouté${added > 1 ? 's' : ''}, ${removed} retiré${removed > 1 ? 's' : ''}.`
+              : `Wikipédia ${day} : ${wanted.length} titres, identique.`,
+          });
+        },
 
         setOptions: (patch) => set((s) => ({ options: { ...s.options, ...patch } })),
 
@@ -707,6 +786,7 @@ export const useBacktestStore = create<BacktestState>()(
           })),
 
         async startRun(onlyIds, opts) {
+          await get().syncSp500();
           const options: RunOptions = get().options;
           let selected = get().portfolios;
           if (onlyIds?.length) {
@@ -772,6 +852,7 @@ export const useBacktestStore = create<BacktestState>()(
         },
 
         async startAllocationRun(portfolioId, opts) {
+          await get().syncSp500();
           const all = get().portfolios;
           const target = all.find((p) => p._id === portfolioId);
           if (!target) return null;

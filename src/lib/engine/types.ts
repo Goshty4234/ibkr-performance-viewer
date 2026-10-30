@@ -485,5 +485,7 @@ export interface PortfolioConfig {
   exclude_from_cashflow_sync?: boolean;
   exclude_from_rebalancing_sync?: boolean;
   fusion_portfolio?: { enabled: boolean; selected_portfolios: string[]; allocations: Record<string, number> };
+  /** Site-only: the stock list is the current S&P 500 and is refreshed when that list changes. */
+  sync_sp500?: boolean;
   [key: string]: unknown;
 }

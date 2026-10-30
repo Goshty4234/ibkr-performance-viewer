@@ -9,7 +9,6 @@ import {
   ReferenceDot,
   ReferenceLine,
   ResponsiveContainer,
-  Tooltip,
   XAxis,
   YAxis,
 } from 'recharts';
@@ -19,12 +18,12 @@ import { seriesGapKey, visibleSeries } from '@/lib/chart-series';
 import {
   type ChartBrushSelection,
   CHART_PLOT_MARGIN,
-  CHART_SYNC_ID,
   CHART_YAXIS_WIDTH,
   clientXToDataIndex,
   dataIndexToPlotX,
   rangeTotalReturn,
 } from '@/lib/chart-range';
+import { publishChartHover, useChartHover } from '@/lib/chart-hover';
 import { fmtPct } from '@/lib/performance';
 import ChartLegend from './ChartLegend';
 import styles from './PerformanceChart.module.css';
@@ -76,53 +75,53 @@ function logTickLabel(g: number): string {
   return `${Math.round(pct)}%`;
 }
 
-function TooltipContent({
-  active,
-  payload,
-  label,
-  series,
-  log,
-}: {
-  active?: boolean;
-  payload?: Array<{ value: number; dataKey: string; color: string; payload?: { date?: string } }>;
-  label?: unknown;
-  series: ChartSeriesDef[];
-  log?: boolean;
-}) {
-  if (!active || !payload?.length) return null;
-  const labelById = new Map(series.map((s) => [s.id, s.label]));
-  const seen = new Set<string>();
-  return (
-    <div className={styles.tooltip}>
-      <div className={styles.tooltipDate}>
-        {formatChartTooltipDate(label, payload)}
-      </div>
-      {payload
-        .filter((e) => {
-          const base = e.dataKey.replace(/_(main|gap)$/, '');
-          if (e.dataKey.endsWith('_main') || e.dataKey.endsWith('_gap')) {
-            if (e.value == null || seen.has(base)) return false;
-            seen.add(base);
-            return true;
-          }
-          return true;
-        })
-        .map((e) => {
-          const baseKey = e.dataKey.replace(/_(main|gap)$/, '');
-          return (
-            <div key={e.dataKey} style={{ color: e.color }} className="mono">
-              {labelById.get(baseKey) ?? baseKey}: {fmtPct(log ? fromGrowth(e.value) : e.value)}
-            </div>
-          );
-        })}
-    </div>
-  );
-}
-
 interface DragState {
   anchor: number;
   current: number;
   dragging: boolean;
+}
+
+function PerformancePointer({
+  plotRef,
+  length,
+  log,
+  shown,
+  chartData,
+}: {
+  plotRef: React.RefObject<HTMLDivElement | null>;
+  length: number;
+  log: boolean;
+  shown: ChartSeriesDef[];
+  chartData: MultiSeriesChartPoint[];
+}) {
+  const hover = useChartHover();
+  const node = plotRef.current;
+  if (!hover || hover.index >= length || !node) return null;
+  const rect = node.getBoundingClientRect();
+  const left = dataIndexToPlotX(hover.index, rect, length);
+  return (
+    <>
+      <div className={styles.hoverLine} style={{ left }} />
+      {hover.source === 'performance' && (
+        <div
+          className={`${styles.tooltip} ${styles.hoverTip}`}
+          style={{ left, transform: left > node.clientWidth * 0.62 ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)' }}
+        >
+          <div className={styles.tooltipDate}>{formatChartTooltipDate(chartData[hover.index]?.date)}</div>
+          {shown.map((s) => {
+            const raw = chartData[hover.index]?.[`${s.id}_main`];
+            if (typeof raw !== 'number') return null;
+            const pct = log ? fromGrowth(raw) : raw;
+            return (
+              <div key={s.id} style={{ color: s.color }} className="mono">
+                {s.label}: {fmtPct(pct)}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
 }
 
 export default function PerformanceChart({
@@ -260,8 +259,9 @@ export default function PerformanceChart({
   };
 
   const onPlotMouseMove = (e: React.MouseEvent) => {
-    if (!drag || e.buttons !== 1) return;
     const idx = resolveIndex(e.clientX);
+    publishChartHover({ index: idx, source: 'performance' });
+    if (!drag || e.buttons !== 1) return;
     const lo = Math.min(drag.anchor, idx);
     const hi = Math.max(drag.anchor, idx);
     const dragging = drag.dragging || hi - lo >= DRAG_THRESHOLD_IDX;
@@ -279,6 +279,7 @@ export default function PerformanceChart({
   };
 
   const onPlotMouseLeave = () => {
+    publishChartHover(null);
     if (drag?.dragging) {
       commitBrush(drag.anchor, drag.current);
     }
@@ -356,8 +357,6 @@ export default function PerformanceChart({
               <LineChart
                 data={chartData}
                 margin={CHART_PLOT_MARGIN}
-                syncId={CHART_SYNC_ID}
-                syncMethod="value"
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
                 {/* Hidden date axis (takes no space; the dates are shown by the Drawdown chart below).
@@ -389,11 +388,6 @@ export default function PerformanceChart({
                     width={CHART_YAXIS_WIDTH}
                   />
                 )}
-                <Tooltip
-                  content={<TooltipContent series={series} log={log} />}
-                  cursor={{ stroke: 'rgba(255,255,255,0.35)', strokeWidth: 1 }}
-                  isAnimationActive={false}
-                />
                 {refArea && (
                   <>
                     <ReferenceArea
@@ -447,13 +441,13 @@ export default function PerformanceChart({
                 {shown.map((s) => (
                   <Line
                     key={`${s.id}_main`}
-                    type="monotone"
+                    type="linear"
                     dataKey={`${s.id}_main`}
                     name={s.label}
                     stroke={s.color}
                     strokeWidth={s.kind === 'primary' ? 2.5 : 2}
                     dot={data.length <= 24 && s.kind === 'primary'}
-                    activeDot={{ r: 5, strokeWidth: 0 }}
+                    activeDot={false}
                     strokeDasharray={s.strokeDasharray}
                     connectNulls={false}
                     isAnimationActive={false}
@@ -462,7 +456,7 @@ export default function PerformanceChart({
                 {shown.map((s) => (
                   <Line
                     key={`${s.id}_gap`}
-                    type="monotone"
+                    type="linear"
                     dataKey={`${s.id}_gap`}
                     stroke={GAP_STROKE}
                     strokeWidth={1.5}
@@ -476,6 +470,8 @@ export default function PerformanceChart({
                 ))}
               </LineChart>
             </ResponsiveContainer>
+
+            <PerformancePointer plotRef={plotRef} length={chartData.length} log={log} shown={shown} chartData={chartData} />
 
             {liveSelection && selectionReturn != null && bubbleLeft != null && (
               <div
