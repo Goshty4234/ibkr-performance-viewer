@@ -23,7 +23,7 @@ import {
   dataIndexToPlotX,
   rangeTotalReturn,
 } from '@/lib/chart-range';
-import { publishChartHover, useChartHover } from '@/lib/chart-hover';
+import { leavingChartPair, publishChartHover, useChartHover } from '@/lib/chart-hover';
 import { fmtPct } from '@/lib/performance';
 import ChartLegend from './ChartLegend';
 import styles from './PerformanceChart.module.css';
@@ -102,24 +102,22 @@ function PerformancePointer({
   return (
     <>
       <div className={styles.hoverLine} style={{ left }} />
-      {hover.source === 'performance' && (
-        <div
-          className={`${styles.tooltip} ${styles.hoverTip}`}
-          style={{ left, transform: left > node.clientWidth * 0.62 ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)' }}
-        >
-          <div className={styles.tooltipDate}>{formatChartTooltipDate(chartData[hover.index]?.date)}</div>
-          {shown.map((s) => {
-            const raw = chartData[hover.index]?.[`${s.id}_main`];
-            if (typeof raw !== 'number') return null;
-            const pct = log ? fromGrowth(raw) : raw;
-            return (
-              <div key={s.id} style={{ color: s.color }} className="mono">
-                {s.label}: {fmtPct(pct)}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <div
+        className={`${styles.tooltip} ${styles.hoverTip}`}
+        style={{ left, transform: left > node.clientWidth * 0.62 ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)' }}
+      >
+        <div className={styles.tooltipDate}>{formatChartTooltipDate(chartData[hover.index]?.date)}</div>
+        {shown.map((s) => {
+          const raw = chartData[hover.index]?.[`${s.id}_main`];
+          if (typeof raw !== 'number') return null;
+          const pct = log ? fromGrowth(raw) : raw;
+          return (
+            <div key={s.id} style={{ color: s.color }} className="mono">
+              {s.label}: {fmtPct(pct)}
+            </div>
+          );
+        })}
+      </div>
     </>
   );
 }
@@ -278,8 +276,8 @@ export default function PerformanceChart({
     setDrag(null);
   };
 
-  const onPlotMouseLeave = () => {
-    publishChartHover(null);
+  const onPlotMouseLeave = (e: React.MouseEvent) => {
+    if (leavingChartPair(e.relatedTarget)) publishChartHover(null);
     if (drag?.dragging) {
       commitBrush(drag.anchor, drag.current);
     }
@@ -347,6 +345,7 @@ export default function PerformanceChart({
         <>
           <div
             className={`${styles.plotWrap} ${drag?.dragging ? styles.plotDragging : ''}`}
+            data-chart-hover=""
             ref={plotRef}
             onMouseDown={onPlotMouseDown}
             onMouseMove={onPlotMouseMove}

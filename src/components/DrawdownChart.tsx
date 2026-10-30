@@ -14,7 +14,7 @@ import { fr } from 'date-fns/locale';
 import { formatChartTooltipDate } from '@/lib/dates';
 import type { ChartSeriesDef, MultiSeriesChartPoint } from '@/lib/chart-series';
 import { visibleSeries } from '@/lib/chart-series';
-import { publishChartHover, useChartHover } from '@/lib/chart-hover';
+import { leavingChartPair, publishChartHover, useChartHover } from '@/lib/chart-hover';
 import {
   CHART_PLOT_MARGIN_BOTTOM,
   CHART_YAXIS_WIDTH,
@@ -50,23 +50,21 @@ function DrawdownPointer({
   return (
     <>
       <div className={styles.hoverLine} style={{ left }} />
-      {hover.source === 'drawdown' && (
-        <div
-          className={`${styles.tooltip} ${styles.hoverTip}`}
-          style={{ left, transform: left > node.clientWidth * 0.62 ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)' }}
-        >
-          <div className={styles.tooltipDate}>{formatChartTooltipDate(data[hover.index]?.date)}</div>
-          {shown.map((s) => {
-            const v = data[hover.index]?.[s.id];
-            if (typeof v !== 'number') return null;
-            return (
-              <div key={s.id} style={{ color: s.color }} className="mono negative">
-                {s.label}: {fmtPct(v)}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <div
+        className={`${styles.tooltip} ${styles.hoverTip}`}
+        style={{ left, transform: left > node.clientWidth * 0.62 ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)' }}
+      >
+        <div className={styles.tooltipDate}>{formatChartTooltipDate(data[hover.index]?.date)}</div>
+        {shown.map((s) => {
+          const v = data[hover.index]?.[s.id];
+          if (typeof v !== 'number') return null;
+          return (
+            <div key={s.id} style={{ color: s.color }} className="mono negative">
+              {s.label}: {fmtPct(v)}
+            </div>
+          );
+        })}
+      </div>
     </>
   );
 }
@@ -145,6 +143,7 @@ export default function DrawdownChart({
       </div>
       <div
         className={styles.chart}
+        data-chart-hover=""
         ref={plotRef}
         onMouseMove={(e) => {
           const rect = plotRef.current?.getBoundingClientRect();
@@ -154,7 +153,7 @@ export default function DrawdownChart({
             source: 'drawdown',
           });
         }}
-        onMouseLeave={() => publishChartHover(null)}
+        onMouseLeave={(e) => { if (leavingChartPair(e.relatedTarget)) publishChartHover(null); }}
       >
         <ResponsiveContainer width="100%" height={220}>
           <LineChart

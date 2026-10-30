@@ -16,6 +16,11 @@ export function publishChartHover(hover: ChartHover | null) {
   listeners.forEach((fn) => fn(hover));
 }
 
+/** True when the pointer left both synced charts, so the shared cursor should drop. */
+export function leavingChartPair(related: EventTarget | null): boolean {
+  return !(related instanceof Element && related.closest('[data-chart-hover]'));
+}
+
 export function useChartHover(): ChartHover | null {
   const [hover, setHover] = useState<ChartHover | null>(current);
   useEffect(() => {

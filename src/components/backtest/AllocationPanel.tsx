@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import type { LoadedResult } from '@/lib/backtest/result-data';
 import { usePortfolioDetail } from '@/lib/backtest/use-detail';
 import { SERIES_PALETTE } from '@/lib/chart-series';
@@ -9,8 +9,12 @@ import type { PortfolioDetail, PortfolioSummaryOk } from '@/lib/engine/types';
 import PeriodFields from './results/PeriodFields';
 import styles from './Results.module.css';
 
-const MAX_AREA_TICKERS = 12;
+const MAX_AREA_TICKERS = 16;
 const OTHERS = 'Autres';
+const PAINT_MAX = 480;
+const ALLOC_Y = 44;
+const ALLOC_RIGHT = 8;
+const OTHERS_COLOR = '#9aa8bc';
 
 /** Engine weights are fractions (0..1); tolerate percentage inputs. */
 function asPct(weights: Record<string, number>): Record<string, number> {
@@ -21,15 +25,22 @@ function asPct(weights: Record<string, number>): Record<string, number> {
 }
 
 interface Evolution {
-  rows: Record<string, number | string>[];
-  keys: string[];
   dates: string[];
   weights: Record<string, (number | null)[]>;
   factor: number;
 }
 
-const EMPTY_EVOLUTION: Evolution = { rows: [], keys: [], dates: [], weights: {}, factor: 100 };
-const TOOLTIP_LINES = 15;
+interface EvolutionView {
+  /** First index of the window inside `Evolution.dates`. */
+  i0: number;
+  /** One entry per simulated day in the window. The painted chart is a sample of these. */
+  count: number;
+  keys: string[];
+  paint: Record<string, number | string>[];
+}
+
+const EMPTY_EVOLUTION: Evolution = { dates: [], weights: {}, factor: 100 };
+const EMPTY_VIEW: EvolutionView = { i0: 0, count: 0, keys: [], paint: [] };
 const GREY = '#5c6d85';
 
 /** Every non-zero position at original date index `i`, largest first (includes those grouped in "Autres"). */
@@ -54,91 +65,112 @@ function indexOnOrBefore(dates: string[], day: string): number {
   return ans;
 }
 
-/** Top names inside [start, end], so a short window is not painted with names that left years ago. */
-function sliceEvolution(ev: Evolution, start: string, end: string): Evolution {
-  if (!ev.dates.length) return ev;
-  const i0 = ev.dates.findIndex((d) => d >= start);
-  const i1 = indexOnOrBefore(ev.dates, end);
-  if (i0 < 0 || i1 < i0) return { ...EMPTY_EVOLUTION, factor: ev.factor };
-  const avg = Object.keys(ev.weights).map((t) => {
-    let s = 0;
-    const series = ev.weights[t];
-    for (let i = i0; i <= i1; i++) s += series[i] ?? 0;
-    return { t, s };
-  }).sort((a, b) => b.s - a.s);
-  const top = avg.slice(0, MAX_AREA_TICKERS).filter((x) => x.s > 0).map((x) => x.t);
-  const rest = avg.slice(MAX_AREA_TICKERS).map((x) => x.t);
-  const keys = rest.length ? [...top, OTHERS] : top;
-  const rows: Record<string, number | string>[] = [];
-  for (let i = i0; i <= i1; i++) {
-    const row: Record<string, number | string> = { date: ev.dates[i], _i: i };
-    for (const t of top) row[t] = (ev.weights[t][i] ?? 0) * ev.factor;
-    if (rest.length) {
-      let o = 0;
-      for (const t of rest) o += ev.weights[t][i] ?? 0;
-      row[OTHERS] = o * ev.factor;
-    }
-    rows.push(row);
+function paintIndices(n: number): number[] {
+  if (n <= PAINT_MAX) return Array.from({ length: n }, (_, i) => i);
+  const step = (n - 1) / (PAINT_MAX - 1);
+  const out: number[] = [];
+  let prev = -1;
+  for (let k = 0; k < PAINT_MAX; k++) {
+    const i = Math.round(k * step);
+    if (i !== prev) out.push(i);
+    prev = i;
   }
-  return { rows, keys, dates: ev.dates.slice(i0, i1 + 1), weights: ev.weights, factor: ev.factor };
+  if (out[out.length - 1] !== n - 1) out.push(n - 1);
+  return out;
+}
+
+/** Bands follow the largest weights reached inside the window, including names that have since left. The rest fills up to 100 %. */
+function buildView(ev: Evolution, start: string, end: string): EvolutionView {
+  if (!ev.dates.length) return EMPTY_VIEW;
+  const i0 = start ? ev.dates.findIndex((d) => d >= start) : 0;
+  const i1 = end ? indexOnOrBefore(ev.dates, end) : ev.dates.length - 1;
+  if (i0 < 0 || i1 < i0) return EMPTY_VIEW;
+  const ranked = Object.keys(ev.weights).map((t) => {
+    let peak = 0;
+    const series = ev.weights[t];
+    for (let i = i0; i <= i1; i++) {
+      const v = series[i] ?? 0;
+      if (v > peak) peak = v;
+    }
+    return { t, peak };
+  }).filter((x) => x.peak > 0).sort((a, b) => b.peak - a.peak);
+  const top = ranked.slice(0, MAX_AREA_TICKERS).map((x) => x.t);
+  if (!top.length) return EMPTY_VIEW;
+  const keys = [...top, OTHERS];
+  const count = i1 - i0 + 1;
+  const paint: Record<string, number | string>[] = [];
+  for (const local of paintIndices(count)) {
+    const i = i0 + local;
+    const row: Record<string, number | string> = { date: ev.dates[i] };
+    let stacked = 0;
+    for (const t of top) {
+      const v = (ev.weights[t][i] ?? 0) * ev.factor;
+      row[t] = v;
+      stacked += v;
+    }
+    row[OTHERS] = Math.max(0, 100 - stacked);
+    paint.push(row);
+  }
+  return { i0, count, keys, paint };
 }
 
 function buildEvolution(d: PortfolioDetail): Evolution {
   const { dates, weights } = d.allocations ?? { dates: [], weights: {} };
   const tickers = Object.keys(weights);
   if (!dates.length || !tickers.length) return EMPTY_EVOLUTION;
-
   let sample = 0;
   for (const t of tickers) for (const v of weights[t]) if (v !== null && Number.isFinite(v)) sample = Math.max(sample, v);
-  const factor = sample > 1.5 ? 1 : 100;
-
-  const avg = tickers.map((t) => {
-    let s = 0;
-    for (const v of weights[t]) if (v !== null && Number.isFinite(v)) s += v;
-    return { t, s };
-  }).sort((a, b) => b.s - a.s);
-  const top = avg.slice(0, MAX_AREA_TICKERS).filter((x) => x.s > 0).map((x) => x.t);
-  const rest = avg.slice(MAX_AREA_TICKERS).map((x) => x.t);
-  const keys = rest.length ? [...top, OTHERS] : top;
-
-  const rows: Record<string, number | string>[] = [];
-  for (let i = 0; i < dates.length; i++) {
-    const row: Record<string, number | string> = { date: dates[i], _i: i };
-    for (const t of top) row[t] = (weights[t][i] ?? 0) * factor;
-    if (rest.length) {
-      let o = 0;
-      for (const t of rest) o += weights[t][i] ?? 0;
-      row[OTHERS] = o * factor;
-    }
-    rows.push(row);
-  }
-  return { rows, keys, dates, weights, factor };
+  return { dates, weights, factor: sample > 1.5 ? 1 : 100 };
 }
 
-function EvolutionTooltip({ active, payload, ev, colors }: {
-  active?: boolean;
-  payload?: { payload?: Record<string, number | string> }[];
-  ev: Evolution;
+function allocIndex(clientX: number, rect: DOMRect, n: number): number {
+  if (n < 2) return 0;
+  const plot = rect.width - ALLOC_Y - ALLOC_RIGHT;
+  const x = clientX - rect.left - ALLOC_Y;
+  const ratio = Math.max(0, Math.min(1, x / Math.max(plot, 1)));
+  return Math.round(ratio * (n - 1));
+}
+
+function allocX(index: number, rect: DOMRect, n: number): number {
+  if (n < 2) return ALLOC_Y;
+  const plot = rect.width - ALLOC_Y - ALLOC_RIGHT;
+  return ALLOC_Y + (index / (n - 1)) * plot;
+}
+
+function AllocCursor({
+  left,
+  width,
+  date,
+  rows,
+  colors,
+}: {
+  left: number;
+  width: number;
+  date: string;
+  rows: [string, number][];
   colors: Map<string, string>;
 }) {
-  const row = payload?.[0]?.payload;
-  if (!active || !row) return null;
-  const list = compositionAt(ev, Number(row._i));
-  const shown = list.slice(0, TOOLTIP_LINES);
-  const rest = list.slice(TOOLTIP_LINES);
-  const restPct = rest.reduce((a, [, v]) => a + v, 0);
+  const flip = left > width * 0.62;
   return (
-    <div className={styles.evoTip}>
-      <div className={styles.evoTipHead}>{String(row.date)} · {list.length} position{list.length > 1 ? 's' : ''}</div>
-      {shown.map(([t, v]) => (
-        <div key={t} className={styles.evoTipRow}>
-          <i style={{ background: colors.get(t) ?? GREY }} />
-          <span>{t}</span>
-          <strong>{v.toFixed(2)}%</strong>
+    <>
+      <div className={styles.evoLine} style={{ left }} />
+      <div
+        className={styles.evoTip}
+        data-evo-tip=""
+        style={{ left, transform: flip ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)' }}
+      >
+        <div className={styles.evoTipHead}>{date} · {rows.length} position{rows.length > 1 ? 's' : ''}</div>
+        <div className={styles.evoTipScroll}>
+          {rows.map(([t, v]) => (
+            <div key={t} className={styles.evoTipRow}>
+              <i style={{ background: colors.get(t) ?? GREY }} />
+              <span>{t}</span>
+              <strong>{v.toFixed(2)}%</strong>
+            </div>
+          ))}
         </div>
-      ))}
-      {rest.length > 0 && <div className={styles.evoTipMore}>+{rest.length} autres · {restPct.toFixed(2)}% — clique pour la liste complète</div>}
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -216,14 +248,13 @@ export default function AllocationPanel({
   const { detail, loading, error } = usePortfolioDetail(result, p?.index ?? null);
 
   const evolution = useMemo(() => (detail ? buildEvolution(detail) : EMPTY_EVOLUTION), [detail]);
-  const view = useMemo(
-    () => (start && end ? sliceEvolution(evolution, start, end) : evolution),
-    [evolution, start, end],
-  );
+  const view = useMemo(() => buildView(evolution, start, end), [evolution, start, end]);
   const colors = useMemo(
-    () => new Map(view.keys.map((k, i) => [k, k === OTHERS ? GREY : SERIES_PALETTE[i % SERIES_PALETTE.length]])),
+    () => new Map(view.keys.map((k, i) => [k, k === OTHERS ? OTHERS_COLOR : k === 'CASH' ? GREY : SERIES_PALETTE[i % SERIES_PALETTE.length]])),
     [view],
   );
+  const plotRef = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState<number | null>(null);
   const held = useMemo(() => {
     const day = end || evolution.dates[evolution.dates.length - 1] || '';
     const i = indexOnOrBefore(evolution.dates, day);
@@ -258,7 +289,12 @@ export default function AllocationPanel({
   const [pinned, setPinned] = useState<number | null>(null);
   const pinnedList = useMemo(() => (pinned === null ? [] : compositionAt(evolution, pinned)), [evolution, pinned]);
   const pinnedValid = pinned !== null && pinned < evolution.dates.length;
-  useEffect(() => setPinned(null), [evolution, start, end]);
+  useEffect(() => { setPinned(null); setHover(null); }, [evolution, start, end]);
+  const hoverOrigin = hover === null ? -1 : view.i0 + hover;
+  const hoverList = useMemo(
+    () => (hoverOrigin < 0 ? [] : compositionAt(evolution, hoverOrigin)),
+    [evolution, hoverOrigin],
+  );
 
   if (!p) return null;
   const bounds = {
@@ -299,31 +335,42 @@ export default function AllocationPanel({
         <div className={styles.subTitle}>
           Évolution des allocations
           <span className={styles.muted} style={{ fontWeight: 400, marginLeft: 8 }}>
-            poids détenus · survol : composition du jour · clic : liste complète
+            chaque jour détenu · les bandes sont les plus gros poids de la période, le reste est « Autres » · la liste se scrolle
           </span>
         </div>
         {loading ? (
           <div className={styles.muted}>Chargement du détail…</div>
         ) : error ? (
           <div className={styles.muted}>{error}</div>
-        ) : view.rows.length < 2 ? (
+        ) : view.count < 2 ? (
           <div className={styles.muted}>Pas d&apos;historique d&apos;allocation sur cette période.</div>
         ) : (
           <>
-            <div style={{ height: 360, cursor: 'pointer' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={view.rows}
-                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-                  onClick={(state) => {
-                    const row = (state as { activePayload?: { payload?: Record<string, number | string> }[] } | null)?.activePayload?.[0]?.payload;
-                    if (row) setPinned(Number(row._i));
-                  }}
-                >
+            <div
+              className={styles.evoPlot}
+              ref={plotRef}
+              onMouseMove={(e) => {
+                if ((e.target as HTMLElement).closest('[data-evo-tip]')) return;
+                const rect = plotRef.current?.getBoundingClientRect();
+                if (!rect) return;
+                setHover(allocIndex(e.clientX, rect, view.count));
+              }}
+              onMouseLeave={(e) => {
+                if (e.relatedTarget instanceof Element && e.relatedTarget.closest('[data-evo-tip]')) return;
+                setHover(null);
+              }}
+              onClick={(e) => {
+                if ((e.target as HTMLElement).closest('[data-evo-tip]')) return;
+                const rect = plotRef.current?.getBoundingClientRect();
+                if (!rect) return;
+                setPinned(view.i0 + allocIndex(e.clientX, rect, view.count));
+              }}
+            >
+              <ResponsiveContainer width="100%" height={360}>
+                <AreaChart data={view.paint} margin={{ top: 8, right: ALLOC_RIGHT, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
                   <XAxis dataKey="date" stroke="#5c6d85" fontSize={11} tickLine={false} minTickGap={48} tickFormatter={(d: string) => d.slice(0, 7)} />
-                  <YAxis domain={[0, 100]} allowDataOverflow tickFormatter={(v) => `${v}%`} stroke="#5c6d85" fontSize={11} tickLine={false} axisLine={false} width={44} />
-                  <Tooltip content={<EvolutionTooltip ev={evolution} colors={colors} />} />
+                  <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} stroke="#5c6d85" fontSize={11} tickLine={false} axisLine={false} width={ALLOC_Y} />
                   {view.keys.map((k) => (
                     <Area
                       key={k}
@@ -332,12 +379,21 @@ export default function AllocationPanel({
                       stackId="1"
                       stroke={colors.get(k)}
                       fill={colors.get(k)}
-                      fillOpacity={0.55}
+                      fillOpacity={k === OTHERS ? 0.45 : 0.72}
                       isAnimationActive={false}
                     />
                   ))}
                 </AreaChart>
               </ResponsiveContainer>
+              {hover !== null && hoverOrigin >= 0 && plotRef.current && (
+                <AllocCursor
+                  left={allocX(hover, plotRef.current.getBoundingClientRect(), view.count)}
+                  width={plotRef.current.clientWidth}
+                  date={evolution.dates[hoverOrigin] ?? ''}
+                  rows={hoverList}
+                  colors={colors}
+                />
+              )}
             </div>
             {pinnedValid && (
               <div className={styles.evoPinned}>
