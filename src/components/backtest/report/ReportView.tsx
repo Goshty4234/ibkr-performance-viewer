@@ -19,7 +19,7 @@ function pct(v: number | null | undefined, d = 2) {
 }
 
 function ValueDrawdownCharts({ result, portfolios }: { result: LoadedResult; portfolios: PortfolioSummaryOk[] }) {
-  const charts = useAnalytics<ChartsResult>(result, { op: 'charts', mode: 'with_additions', benchmarks: [], maxPoints: 900 });
+  const charts = useAnalytics<ChartsResult>(result, { op: 'charts', mode: 'with_additions', benchmarks: [] });
   const shown = useMemo(() => new Set(portfolios.slice(0, MAX_SERIES).map((p) => `pf:${p.index}`)), [portfolios]);
   const options = useMemo(() => {
     const c = charts.data?.charts;

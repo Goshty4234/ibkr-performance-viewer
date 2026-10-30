@@ -20,8 +20,12 @@ async function main() {
   const charts = prepareCharts(dates, series);
   const t2 = performance.now();
   console.log(`job ${done.id.slice(0, 6)}: summary ${(summaryText.length / 1e6).toFixed(2)} MB json, parse ${(t1 - t0).toFixed(0)} ms, charts ${(t2 - t1).toFixed(0)} ms`);
-  console.log(`axis ${summary.dates.length} dates, chart axis ${dates.length}, sampled ${charts.pctData.length} points, ${series.length} series`);
+  console.log(`axis ${summary.dates.length} dates, chart axis ${dates.length}, drawn ${charts.pctData.length} points, ${series.length} series`);
   let bad = 0;
+  if (charts.pctData.length !== dates.length) {
+    console.error(`chart dropped days: ${dates.length} calculated, ${charts.pctData.length} drawn`);
+    bad++;
+  }
   for (const p of okSummaries(summary)) {
     const d = portfolioDates(summary, p);
     const last = p.series.with_additions[p.series.with_additions.length - 1] ?? NaN;

@@ -3,8 +3,6 @@ import { SERIES_PALETTE } from '@/lib/chart-series';
 import type { ResultSummary } from '@/lib/engine/types';
 import { benchmarkSeries, noAdditions, okSummaries, portfolioDates } from './result-data';
 
-export const MAX_CHART_POINTS = 1800;
-
 export interface ResultSeries {
   id: string;
   label: string;
@@ -95,42 +93,17 @@ function toCumulativePct(values: (number | null)[]): (number | null)[] {
   });
 }
 
-/** Indices kept for display: uniform sampling + peak/trough of each series' max drawdown + last point. */
-function sampleIndices(n: number, aligned: (number | null)[][], maxPoints: number): number[] {
-  if (n <= maxPoints) return Array.from({ length: n }, (_, i) => i);
-  const keep = new Set<number>();
-  const step = n / maxPoints;
-  for (let k = 0; k < maxPoints; k++) keep.add(Math.floor(k * step));
-  keep.add(n - 1);
-  for (const vals of aligned) {
-    let peak = -Infinity;
-    let peakIdx = 0;
-    let worst = 0;
-    let worstIdx = -1;
-    let worstPeakIdx = 0;
-    for (let i = 0; i < n; i++) {
-      const v = vals[i];
-      if (v === null) continue;
-      if (v > peak) { peak = v; peakIdx = i; }
-      const dd = peak > 0 ? v / peak - 1 : 0;
-      if (dd < worst) { worst = dd; worstIdx = i; worstPeakIdx = peakIdx; }
-    }
-    if (worstIdx >= 0) { keep.add(worstIdx); keep.add(worstPeakIdx); }
-  }
-  return [...keep].sort((a, b) => a - b);
-}
-
 export interface PreparedCharts {
   defs: ChartSeriesDef[];
-  /** Cumulative % per series, downsampled for charts. */
+  /** Cumulative % per series, one point per simulated day. */
   pctData: MultiSeriesChartPoint[];
-  /** Raw values ($) per series, downsampled. */
+  /** Raw values ($) per series, one point per simulated day. */
   valueData: MultiSeriesChartPoint[];
   /** Cumulative % at each month end (exact, for period tables). */
   monthEndData: MultiSeriesChartPoint[];
 }
 
-export function prepareCharts(dates: string[], series: ResultSeries[], maxPoints = MAX_CHART_POINTS): PreparedCharts {
+export function prepareCharts(dates: string[], series: ResultSeries[]): PreparedCharts {
   const defs: ChartSeriesDef[] = series.map((s) => ({
     id: s.id,
     label: s.label,
@@ -140,11 +113,10 @@ export function prepareCharts(dates: string[], series: ResultSeries[], maxPoints
   }));
   const aligned = series.map((s) => alignValues(dates, s));
   const pct = aligned.map(toCumulativePct);
-  const idx = sampleIndices(dates.length, aligned, maxPoints);
 
   const pctData: MultiSeriesChartPoint[] = [];
   const valueData: MultiSeriesChartPoint[] = [];
-  for (const i of idx) {
+  for (let i = 0; i < dates.length; i++) {
     const pr: MultiSeriesChartPoint = { date: dates[i] };
     const vr: MultiSeriesChartPoint = { date: dates[i] };
     series.forEach((s, k) => {

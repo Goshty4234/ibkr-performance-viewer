@@ -9,7 +9,6 @@ import type { PortfolioDetail, PortfolioSummaryOk } from '@/lib/engine/types';
 import styles from './Results.module.css';
 
 const MAX_AREA_TICKERS = 12;
-const MAX_AREA_POINTS = 700;
 const OTHERS = 'Autres';
 
 /** Engine weights are fractions (0..1); tolerate percentage inputs. */
@@ -60,9 +59,8 @@ function buildEvolution(d: PortfolioDetail): Evolution {
   const rest = avg.slice(MAX_AREA_TICKERS).map((x) => x.t);
   const keys = rest.length ? [...top, OTHERS] : top;
 
-  const step = Math.max(1, Math.ceil(dates.length / MAX_AREA_POINTS));
   const rows: Record<string, number | string>[] = [];
-  for (let i = 0; i < dates.length; i += step) {
+  for (let i = 0; i < dates.length; i++) {
     const row: Record<string, number | string> = { date: dates[i], _i: i };
     for (const t of top) row[t] = (weights[t][i] ?? 0) * factor;
     if (rest.length) {

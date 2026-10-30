@@ -57,31 +57,29 @@ export class ResultAnalytics {
     return this.cached(`built:${mode}:${benchmarks.join(',')}`, () => buildResultSeries(this.summary, mode, benchmarks));
   }
 
-  charts(mode: 'no_additions' | 'with_additions', benchmarks: string[], maxPoints?: number): ChartsResult {
-    return this.cached(`charts:${mode}:${benchmarks.join(',')}:${maxPoints ?? ''}`, () => {
+  charts(mode: 'no_additions' | 'with_additions', benchmarks: string[]): ChartsResult {
+    return this.cached(`charts:${mode}:${benchmarks.join(',')}`, () => {
       const { dates, series } = this.built(mode, benchmarks);
-      return { dates, charts: prepareCharts(dates, series, maxPoints) };
+      return { dates, charts: prepareCharts(dates, series) };
     });
   }
 
   /**
    * The same charts over [start, end] only: every curve restarts at 0 % on the first day of the window and
-   * the drawdown is measured from there. Cut from the full-resolution series before any sampling, so a short
-   * window is never a coarse sample of the whole run.
+   * the drawdown is measured from there. Every simulated day inside the window is kept.
    */
   rangeCharts(
     mode: 'no_additions' | 'with_additions',
     benchmarks: string[],
     start: string,
     end: string,
-    maxPoints?: number,
   ): ChartsResult {
-    const key = `${mode}|${benchmarks.join(',')}|${start}|${end}|${maxPoints ?? ''}`;
+    const key = `${mode}|${benchmarks.join(',')}|${start}|${end}`;
     const hit = this.ranges.get(key);
     if (hit) return hit;
     const full = this.built(mode, benchmarks);
     const w = sliceWindow(full.dates, full.series, start, end);
-    const out: ChartsResult = { dates: w.dates, charts: prepareCharts(w.dates, w.series, maxPoints) };
+    const out: ChartsResult = { dates: w.dates, charts: prepareCharts(w.dates, w.series) };
     this.ranges.set(key, out);
     if (this.ranges.size > 6) this.ranges.delete(this.ranges.keys().next().value as string);
     return out;

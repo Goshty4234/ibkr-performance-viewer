@@ -10,8 +10,8 @@ export function dispatch(a: ResultAnalytics, call: AnalyticsCall): unknown {
     case 'focused':
       return a.focused(call.start, call.end);
     case 'charts':
-      return a.charts(call.mode, call.benchmarks, call.maxPoints);
+      return a.charts(call.mode, call.benchmarks);
     case 'rangeCharts':
-      return a.rangeCharts(call.mode, call.benchmarks, call.start, call.end, call.maxPoints);
+      return a.rangeCharts(call.mode, call.benchmarks, call.start, call.end);
   }
 }
