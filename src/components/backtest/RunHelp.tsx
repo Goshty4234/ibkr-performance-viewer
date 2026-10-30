@@ -9,8 +9,8 @@ const ITEMS: { what: string; where: string; does: string; reuse?: string }[] = [
       + 'Statistiques, graphiques, périodes et détail par portfolio arrivent dans l’onglet Résultats.',
     reuse:
       'Si un portfolio a déjà tourné avec exactement les mêmes réglages (n’importe quel jour), une fenêtre « Déjà calculé » s’ouvre : '
-      + '« ♻ Reprendre · fin au … » reprend ces résultats et s’arrête à leur date la plus ancienne ; '
-      + '« ↻ Tout recalculer jusqu’à aujourd’hui » affiche la date du jour et relance tout jusque-là. La question est posée à chaque fois.',
+      + '« ♻ Reprendre · fin au … » reprend ces résultats et s’arrête à leur date, sans la dépasser ; '
+      + 'quand cette date est en retard, le bouton bleu est « ↻ Tout recalculer jusqu’à aujourd’hui » : il met les prix à jour et va jusqu’au jour affiché. La question est posée à chaque fois.',
   },
   {
     what: '▶ Lancer l’allocation',

@@ -92,28 +92,35 @@ function Prompt({ offer }: { offer: ReuseOffer }) {
 
         {late > 0 && (
           <div className={styles.reuseEnd}>
-            Reprendre s’arrête au <strong>{pretty(decision.end)}</strong> ({plural(late, 'jour')} avant {offer.untilToday ? `aujourd’hui, le ${pretty(offer.targetEnd)}` : `le ${pretty(offer.targetEnd)}`}).
-            C’est la fin la plus ancienne des résultats cochés. Pour aller jusqu’à cette date, décoche les portfolios en retard
-            ou choisis « Tout recalculer ».
+            L’historique s’arrête au <strong>{pretty(decision.end)}</strong> ({plural(late, 'jour')} avant {offer.untilToday ? `aujourd’hui, le ${pretty(offer.targetEnd)}` : `le ${pretty(offer.targetEnd)}`}).
+            Le bouton bleu va jusqu’à cette date et met les prix à jour. « Reprendre » garde le résultat déjà calculé et ne le dépasse pas.
           </div>
         )}
 
         <div className={styles.dialogActions}>
           <button type="button" className="btn btn-ghost" onClick={cancel}>Annuler</button>
-          {decision.reuse.size > 0 && (
-            <button type="button" className={`btn btn-secondary ${styles.choiceBtn}`} onClick={() => resolve({ action: 'fresh' })}>
-              <span>{offer.untilToday ? `↻ Tout recalculer jusqu’à aujourd’hui · ${pretty(offer.targetEnd)}` : `↻ Tout recalculer jusqu’au ${pretty(offer.targetEnd)}`}</span>
-              <small>{late > 0 ? 'met les prix à jour · recalcul complet' : 'même résultat · recalcul complet, plus lent'}</small>
+          {late > 0 && decision.reuse.size > 0 && (
+            <button type="button" className={`btn btn-secondary ${styles.choiceBtn}`} onClick={accept}>
+              <span>{`♻ Reprendre · fin au ${pretty(decision.end)}`}</span>
+              <small>{`${plural(late, 'jour')} de retard · ne va pas plus loin · instantané`}</small>
             </button>
           )}
-          <button type="button" className={`btn btn-primary ${styles.choiceBtn}`} autoFocus onClick={accept}>
-            <span>{decision.reuse.size ? `♻ Reprendre · fin au ${pretty(decision.end)}` : `Lancer jusqu’au ${pretty(decision.end)}`}</span>
-            <small>
-              {!decision.compute.length
-                ? `${late > 0 ? `${plural(late, 'jour')} de retard` : 'à jour'} · instantané`
-                : `${decision.reuse.size} repris · ${decision.compute.length} à calculer`}
-            </small>
-          </button>
+          {decision.reuse.size > 0 && (
+            <button type="button" className={`btn ${late > 0 ? 'btn-primary' : 'btn-secondary'} ${styles.choiceBtn}`} autoFocus={late > 0} onClick={() => resolve({ action: 'fresh' })}>
+              <span>{offer.untilToday ? `↻ Tout recalculer jusqu’à aujourd’hui · ${pretty(offer.targetEnd)}` : `↻ Tout recalculer jusqu’au ${pretty(offer.targetEnd)}`}</span>
+              <small>{late > 0 ? 'dépasse l’historique · prix à jour · recalcul complet' : 'même résultat · recalcul complet, plus lent'}</small>
+            </button>
+          )}
+          {late === 0 && (
+            <button type="button" className={`btn btn-primary ${styles.choiceBtn}`} autoFocus onClick={accept}>
+              <span>{decision.reuse.size ? `♻ Reprendre · fin au ${pretty(decision.end)}` : `Lancer jusqu’au ${pretty(decision.end)}`}</span>
+              <small>
+                {!decision.compute.length
+                  ? 'à jour · instantané'
+                  : `${decision.reuse.size} repris · ${decision.compute.length} à calculer`}
+              </small>
+            </button>
+          )}
         </div>
       </div>
     </div>

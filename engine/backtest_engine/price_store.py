@@ -7,8 +7,9 @@ A run picks a mode:
 
     stored  use the stored histories as they are (the backtest ends where they end);
             only tickers never downloaded are fetched
-    topup   stored tickers not checked since the last market close get only their recent
-            days (default)
+    topup   stored tickers whose last bar is behind the last settled close get only
+            their recent days (default). A check stamped today does not count when
+            that bar is still more than a few days behind
     full    download every history again
 
 A top-up downloads a few already stored days again: when one of them differs (split,
@@ -124,9 +125,33 @@ def describe(store: Any, ticker: str) -> dict | None:
     return meta
 
 
+# A check made today does not make a series current when its last bar is still weeks
+# behind the last settled close. Long weekends and holidays fit in GRACE_DAYS; a gap
+# past that means the last download did not actually move the series.
+GRACE_DAYS = 4
+
+
+def settled_day(now: datetime | None = None) -> pd.Timestamp:
+    """Calendar day of the last settled US close, in New York."""
+    moment = datetime.fromtimestamp(last_close(now), Y._NY)
+    return pd.Timestamp(moment.year, moment.month, moment.day)
+
+
+def days_behind(meta: dict, now: datetime | None = None) -> int:
+    last = meta.get("last")
+    if not last:
+        return 10_000
+    return int((settled_day(now) - pd.Timestamp(last).normalize()).days)
+
+
+def up_to_date(meta: dict, now: datetime | None = None) -> bool:
+    """True when the series was checked since the last close AND its last bar is that close
+    (a few days of slack for weekends and holidays)."""
+    return float(meta.get("checked") or 0) >= last_close(now) and days_behind(meta, now) <= GRACE_DAYS
+
+
 def status(tickers: list[str], now: datetime | None = None) -> dict:
     store = Y.open_cache()
-    lc = last_close(now)
     current = stale = missing = unknown = 0
     stale_last: list[str] = []
     for t in dict.fromkeys(tickers):
@@ -136,7 +161,7 @@ def status(tickers: list[str], now: datetime | None = None) -> dict:
                 unknown += 1
             else:
                 missing += 1
-        elif meta["checked"] >= lc:
+        elif up_to_date(meta, now):
             current += 1
         else:
             stale += 1
@@ -154,7 +179,6 @@ def status(tickers: list[str], now: datetime | None = None) -> dict:
 
 def list_stored() -> list[dict]:
     store = Y.open_cache()
-    lc = last_close()
     out = []
     for k in list(store.iterkeys()):
         if not (isinstance(k, str) and k.endswith("_max_False")):
@@ -164,7 +188,7 @@ def list_stored() -> list[dict]:
             continue
         meta = describe(store, t)
         if meta:
-            out.append({"ticker": t, **meta, "current": meta["checked"] >= lc})
+            out.append({"ticker": t, **meta, "current": up_to_date(meta)})
     return sorted(out, key=lambda r: r["ticker"])
 
 
@@ -225,7 +249,6 @@ def update(tickers: dict[str, str], mode: str = "topup", *, lock: Any = None,
 
     mode = mode if mode in MODES else "topup"
     store = Y.open_cache()
-    lc = last_close()
     say = progress or (lambda _m: None)
     check = check_cancelled or (lambda: None)
     frames: dict[str, pd.DataFrame] = {}
@@ -246,7 +269,7 @@ def update(tickers: dict[str, str], mode: str = "topup", *, lock: Any = None,
                 report["unknown"] += 1
             else:
                 full.append(t)
-        elif mode == "stored" or meta["checked"] >= lc:
+        elif mode == "stored" or up_to_date(meta):
             frames[t] = normalize(store.get(Y.price_key(t)))
             report["stored"] += 1
         elif not meta.get("bars"):
@@ -287,7 +310,7 @@ def update(tickers: dict[str, str], mode: str = "topup", *, lock: Any = None,
             todo = []
             for t, meta in group:
                 fresh = store.get(meta_key(t))
-                if isinstance(fresh, dict) and fresh["checked"] >= lc:
+                if isinstance(fresh, dict) and up_to_date(fresh):
                     frames[t] = normalize(store.get(Y.price_key(t)))
                     report["stored"] += 1
                 else:
@@ -305,7 +328,12 @@ def update(tickers: dict[str, str], mode: str = "topup", *, lock: Any = None,
                         continue
                     if new is None or new.empty:
                         frames[t] = old
-                        if not report["rate_limited"]:
+                        # An empty answer for a series already far behind the last close is a
+                        # failed attempt. Stamping `checked` there froze every later run on the
+                        # old last bar, so a saved history became a ceiling the next run never passed.
+                        if report["rate_limited"] or days_behind(meta) > GRACE_DAYS:
+                            report["failed"] += 1
+                        else:
                             store.set(meta_key(t), {**meta, "checked": time.time()})
                             report["unchanged"] += 1
                         continue

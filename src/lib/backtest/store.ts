@@ -755,6 +755,16 @@ export const useBacktestStore = create<BacktestState>()(
                   set({ launchError: `Reprise impossible (${e instanceof Error ? e.message : String(e)}) : calcul complet.` });
                 }
               }
+            } else if (choice.action === 'fresh') {
+              // The saved end is not a ceiling. "Jusqu'à aujourd'hui" drops any end date
+              // and forces a top-up, so the run reaches the latest prices instead of
+              // stopping where the history stopped.
+              const openEnded = offer.untilToday;
+              const fresh: RunRequest = {
+                portfolios: request.portfolios.map((p) => ({ ...p, end_date_user: openEnded ? null : p.end_date_user })),
+                options: { ...request.options, end_date: openEnded ? null : request.options.end_date, price_update: 'topup' },
+              };
+              return launch(engine, fresh, label, { purpose: 'backtest', configKeys: keys });
             }
           }
           const priced = await choosePrices(engine, request);
