@@ -17,7 +17,7 @@ import { alignToCycle, allocationOptions, allocationWindow, needsCycleAnchor } f
 import { type BacktestRunRow, findRunsByConfigKeys, findRunsByKey, loadRun, type RunKind, saveRun } from './history';
 import type { LoadedResult } from './result-data';
 import { buildOffer, decide, type MergePart, mergeResults, type ReuseDecision, type ReuseOffer } from './reuse';
-import { configKeys, requestKey, type RunRequest, sameMarketData, sameNyDay } from './run-key';
+import { configKeys, marketToday, requestKey, type RunRequest, sameMarketData, sameNyDay } from './run-key';
 import {
   DEFAULT_OPTIONS,
   defaultPortfolio,
@@ -756,9 +756,8 @@ export const useBacktestStore = create<BacktestState>()(
                 }
               }
             } else if (choice.action === 'fresh') {
-              // The saved end is not a ceiling. "Jusqu'à aujourd'hui" drops any end date
-              // and forces a top-up, so the run reaches the latest prices instead of
-              // stopping where the history stopped.
+              // Full run from the first day, aimed at today. The saved end is not copied
+              // onto the request, and every stored ticker behind the last close is fetched.
               const openEnded = offer.untilToday;
               const fresh: RunRequest = {
                 portfolios: request.portfolios.map((p) => ({ ...p, end_date_user: openEnded ? null : p.end_date_user })),
@@ -796,14 +795,16 @@ export const useBacktestStore = create<BacktestState>()(
               : null;
             window.start = plan?.simulation.start ? alignToCycle(window.start, plan.simulation.start) : null;
           }
-          const options = allocationOptions(window);
+          const options = { ...allocationOptions(window), price_update: 'topup' as const };
           const portfolios = configs.map((c) => ({ ...c, start_date_user: options.start_date, end_date_user: null }));
           const request: RunRequest = { portfolios, options };
           const key = await requestKey(request).catch(() => null);
           if (key && !opts?.force) {
             const row = await findReusable(key, request, engine?.health.code, true);
             const rerun = () => void get().startAllocationRun(portfolioId, { force: true });
-            if (row && (await openSaved(row, 'allocations', target.name, rerun, request).catch(() => false))) return null;
+            // A saved analysis that stops before today is not today's rebalance. Recompute it.
+            const endsToday = (row?.simulation_end ?? '').slice(0, 10) >= marketToday();
+            if (row && endsToday && (await openSaved(row, 'allocations', target.name, rerun, request).catch(() => false))) return null;
           }
           if (!engine) {
             set({ launchError: NO_ENGINE });

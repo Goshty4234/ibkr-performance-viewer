@@ -256,12 +256,27 @@ def _download(all_tickers: list[str], configs: list[dict], ctx: RunContext, run:
     return data
 
 
+# A series that stopped more than a week before the newest bar (a delisting, a renamed
+# ticker, a failed download) must not freeze every portfolio on that old day. Weekends and
+# a holiday fit inside the week.
+_LAG_DAYS = 7
+
+
+def _close_end(df: pd.DataFrame) -> pd.Timestamp | None:
+    if df.empty:
+        return None
+    last = df["Close"].last_valid_index() if "Close" in df.columns else df.last_valid_index()
+    if last is None or pd.isna(last):
+        return None
+    return pd.Timestamp(last)
+
+
 def _simulation_range(data: dict, configs: list[dict], options: RunOptions, ctx: RunContext) -> tuple:
-    frames = [df for df in data.values() if not isinstance(df, str)]
-    if frames:
-        common_end = min(df.last_valid_index() for df in frames)
-    else:
-        common_end = pd.Timestamp.now()
+    frames = [df for df in data.values() if isinstance(df, pd.DataFrame)]
+    ends = [end for df in frames if (end := _close_end(df)) is not None]
+    # The newest bar we actually have. The shortest series used to set this date, so one
+    # ticker stopped on an old day (and unavailable at Yahoo) froze today's weights there.
+    common_end = max(ends) if ends else pd.Timestamp.now().normalize()
 
     all_portfolio_tickers = set()
     for cfg in configs:
@@ -302,6 +317,21 @@ def _simulation_range(data: dict, configs: list[dict], options: RunOptions, ctx:
             final_start = max(final_start, pd.to_datetime(cfg["start_date_user"]))
         if cfg.get("end_date_user"):
             common_end = min(common_end, pd.to_datetime(cfg["end_date_user"]))
+
+    left_behind = []
+    for ticker, df in data.items():
+        if not isinstance(df, pd.DataFrame):
+            continue
+        last = _close_end(df)
+        if last is not None and (common_end.normalize() - last.normalize()).days > _LAG_DAYS:
+            left_behind.append(f"{ticker} ({last.date()})")
+    if left_behind:
+        shown = ", ".join(sorted(left_behind)[:12])
+        extra = f" (+{len(left_behind) - 12})" if len(left_behind) > 12 else ""
+        ctx.warn(
+            "These tickers stop before the simulation end and are not traded after their last bar: "
+            f"{shown}{extra}"
+        )
 
     original_display_start = final_start
 
@@ -344,8 +374,14 @@ def _reindex(data: dict, simulation_index: pd.DatetimeIndex) -> dict:
         if isinstance(ticker_data, str):
             out[t] = ticker_data
         else:
+            last = _close_end(ticker_data)
             df = ticker_data.reindex(simulation_index)
+            # Weekends and holidays inside the series stay filled. Past the series' own last
+            # bar the price is missing, so momentum cannot buy a dead ticker, while a position
+            # already held keeps a 0% day (Price_change below) instead of turning the book into NaN.
             df["Close"] = df["Close"].ffill()
+            if last is not None:
+                df.loc[df.index > last, "Close"] = np.nan
             df["Dividends"] = df["Dividends"].fillna(0)
             df["Price_change"] = df["Close"].pct_change(fill_method=None).fillna(0)
             out[t] = df
