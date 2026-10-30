@@ -53,6 +53,7 @@
   width: max-content;
   max-width: none;
   white-space: nowrap;
+  overscroll-behavior: contain;
 }
 
 .tooltip {

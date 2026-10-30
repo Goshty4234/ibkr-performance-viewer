@@ -22,7 +22,7 @@ import {
   rangeTotalReturn,
   sampleEvenExtremes,
 } from '@/lib/chart-range';
-import { leavingChartPair, publishChartHover, subscribeChartHover } from '@/lib/chart-hover';
+import { fitHoverTip, leavingChartPair, publishChartHover, subscribeChartHover } from '@/lib/chart-hover';
 import { fmtPct } from '@/lib/performance';
 import ChartLegend from './ChartLegend';
 import styles from './PerformanceChart.module.css';
@@ -135,6 +135,7 @@ function PerformancePointer({
         el.hidden = false;
         el.textContent = `${shown[i].label}: ${fmtPct(log ? fromGrowth(raw) : raw)}`;
       }
+      fitHoverTip(tip, node, 12, 'primary');
     };
     place(null);
     return subscribeChartHover(place);
@@ -143,7 +144,12 @@ function PerformancePointer({
   return (
     <>
       <div ref={lineRef} className={styles.hoverLine} hidden />
-      <div ref={tipRef} className={`${styles.tooltip} ${styles.hoverTip}`} hidden>
+      <div
+        ref={tipRef}
+        className={`${styles.tooltip} ${styles.hoverTip}`}
+        hidden
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <div ref={dateRef} className={styles.tooltipDate} />
         <div ref={rowsRef} />
       </div>

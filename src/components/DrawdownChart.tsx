@@ -14,7 +14,7 @@ import { fr } from 'date-fns/locale';
 import { formatChartTooltipDate } from '@/lib/dates';
 import type { ChartSeriesDef, MultiSeriesChartPoint } from '@/lib/chart-series';
 import { visibleSeries } from '@/lib/chart-series';
-import { leavingChartPair, publishChartHover, subscribeChartHover } from '@/lib/chart-hover';
+import { fitHoverTip, leavingChartPair, publishChartHover, subscribeChartHover } from '@/lib/chart-hover';
 import {
   CHART_PLOT_MARGIN_BOTTOM,
   CHART_YAXIS_WIDTH,
@@ -86,6 +86,7 @@ function DrawdownPointer({
         el.hidden = false;
         el.textContent = `${shown[i].label}: ${fmtPct(v)}`;
       }
+      fitHoverTip(tip, node, 8, 'secondary');
     };
     place(null);
     return subscribeChartHover(place);
@@ -94,7 +95,12 @@ function DrawdownPointer({
   return (
     <>
       <div ref={lineRef} className={styles.hoverLine} hidden />
-      <div ref={tipRef} className={`${styles.tooltip} ${styles.hoverTip}`} hidden>
+      <div
+        ref={tipRef}
+        className={`${styles.tooltip} ${styles.hoverTip}`}
+        hidden
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <div ref={dateRef} className={styles.tooltipDate} />
         <div ref={rowsRef} />
       </div>
