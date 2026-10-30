@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import type { LoadedResult } from '@/lib/backtest/result-data';
 import { usePortfolioDetail } from '@/lib/backtest/use-detail';
 import { SERIES_PALETTE } from '@/lib/chart-series';
@@ -36,12 +36,22 @@ interface EvolutionView {
   /** One entry per simulated day in the window. The painted chart is a sample of these. */
   count: number;
   keys: string[];
-  paint: Record<string, number | string>[];
+  paint: Record<string, number | string | [number, number]>[];
 }
 
 const EMPTY_EVOLUTION: Evolution = { dates: [], weights: {}, factor: 100 };
 const EMPTY_VIEW: EvolutionView = { i0: 0, count: 0, keys: [], paint: [] };
 const GREY = '#5c6d85';
+
+/** Stocks with a real weight that day. Cash is not a stock. */
+function heldCount(ev: Evolution, i: number): number {
+  let n = 0;
+  for (const [t, series] of Object.entries(ev.weights)) {
+    if (t === 'CASH') continue;
+    if ((series[i] ?? 0) * ev.factor > 0.05) n += 1;
+  }
+  return n;
+}
 
 /** Every non-zero position at original date index `i`, largest first (includes those grouped in "Autres"). */
 function compositionAt(ev: Evolution, i: number): [string, number][] {
@@ -98,17 +108,20 @@ function buildView(ev: Evolution, start: string, end: string): EvolutionView {
   if (!top.length) return EMPTY_VIEW;
   const keys = [...top, OTHERS];
   const count = i1 - i0 + 1;
-  const paint: Record<string, number | string>[] = [];
+  const paint: Record<string, number | string | [number, number]>[] = [];
   for (const local of paintIndices(count)) {
     const i = i0 + local;
-    const row: Record<string, number | string> = { date: ev.dates[i] };
-    let stacked = 0;
+    const row: Record<string, number | string | [number, number]> = { date: ev.dates[i], n: heldCount(ev, i) };
+    // Explicit [bottom, top] bands. Recharts' own stack with stepAfter collapses
+    // toward 0 even when the day has real weights.
+    let floor = 0;
     for (const t of top) {
-      const v = (ev.weights[t][i] ?? 0) * ev.factor;
-      row[t] = v;
-      stacked += v;
+      const v = Math.max(0, (ev.weights[t][i] ?? 0) * ev.factor);
+      row[t] = [floor, floor + v];
+      floor += v;
     }
-    row[OTHERS] = Math.max(0, 100 - stacked);
+    const rest = Math.max(0, 100 - floor);
+    row[OTHERS] = [floor, floor + rest];
     paint.push(row);
   }
   return { i0, count, keys, paint };
@@ -221,6 +234,9 @@ export default function AllocationPanel({
   const tipRef = useRef<HTMLDivElement>(null);
   const headRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const countPlotRef = useRef<HTMLDivElement>(null);
+  const countLineRef = useRef<HTMLDivElement>(null);
+  const countTipRef = useRef<HTMLDivElement>(null);
   const allocSnap = useRef({ evolution, view, colors });
   allocSnap.current = { evolution, view, colors };
   const allocPending = useRef<number | null>(null);
@@ -268,9 +284,19 @@ export default function AllocationPanel({
     const tip = tipRef.current;
     const list = listRef.current;
     const node = plotRef.current;
+    const countLine = countLineRef.current;
+    const countTip = countTipRef.current;
+    const countNode = countPlotRef.current;
     const local = allocPending.current;
     if (!line || !tip || !list || !node) return;
-    if (local === null) { line.hidden = true; tip.hidden = true; allocLast.current = -1; return; }
+    if (local === null) {
+      line.hidden = true;
+      tip.hidden = true;
+      if (countLine) countLine.hidden = true;
+      if (countTip) countTip.hidden = true;
+      allocLast.current = -1;
+      return;
+    }
     const { evolution: ev, view: vw, colors: cols } = allocSnap.current;
     const origin = vw.i0 + local;
     const left = allocX(local, node.getBoundingClientRect(), vw.count);
@@ -279,11 +305,22 @@ export default function AllocationPanel({
     line.style.left = `${left}px`;
     tip.style.left = `${left}px`;
     tip.style.transform = left > node.clientWidth * 0.62 ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)';
+    if (countLine && countTip && countNode) {
+      const cleft = allocX(local, countNode.getBoundingClientRect(), vw.count);
+      countLine.hidden = false;
+      countTip.hidden = false;
+      countLine.style.left = `${cleft}px`;
+      countTip.style.left = `${cleft}px`;
+      countTip.style.transform = cleft > countNode.clientWidth * 0.62 ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)';
+    }
     if (local === allocLast.current) return;
     allocLast.current = local;
     const rows = compositionAt(ev, origin);
+    const nHeld = heldCount(ev, origin);
+    const actionLabel = `${nHeld} action${nHeld === 1 ? '' : 's'}`;
+    if (countTip) countTip.textContent = `${ev.dates[origin] ?? ''} · ${actionLabel}`;
     if (headRef.current) {
-      headRef.current.textContent = `${ev.dates[origin] ?? ''} · ${rows.length} position${rows.length > 1 ? 's' : ''}`;
+      headRef.current.textContent = `${ev.dates[origin] ?? ''} · ${actionLabel}`;
     }
     if (list.childElementCount !== rows.length) {
       const scroll = list.scrollTop;
@@ -359,6 +396,7 @@ export default function AllocationPanel({
           <>
             <div
               className={styles.evoPlot}
+              data-evo-plot=""
               ref={plotRef}
               onMouseMove={(e) => {
                 if ((e.target as HTMLElement).closest('[data-evo-tip]')) return;
@@ -369,7 +407,8 @@ export default function AllocationPanel({
                 allocFrame.current = requestAnimationFrame(() => { allocFrame.current = 0; paintAlloc(); });
               }}
               onMouseLeave={(e) => {
-                if (e.relatedTarget instanceof Element && e.relatedTarget.closest('[data-evo-tip]')) return;
+                const next = e.relatedTarget;
+                if (next instanceof Element && (next.closest('[data-evo-tip]') || next.closest('[data-count-plot]'))) return;
                 allocPending.current = null;
                 paintAlloc();
               }}
@@ -390,10 +429,9 @@ export default function AllocationPanel({
                       key={k}
                       type="stepAfter"
                       dataKey={k}
-                      stackId="1"
-                      stroke={colors.get(k)}
+                      stroke="none"
                       fill={colors.get(k)}
-                      fillOpacity={k === OTHERS ? 0.45 : 0.72}
+                      fillOpacity={k === OTHERS ? 0.72 : 0.9}
                       isAnimationActive={false}
                     />
                   ))}
@@ -404,6 +442,43 @@ export default function AllocationPanel({
                 <div ref={headRef} className={styles.evoTipHead} />
                 <div ref={listRef} className={styles.evoTipScroll} />
               </div>
+            </div>
+            <div className={styles.countHead}>
+              <div className={styles.subTitle}>
+                Nombre d&apos;actions
+                <span className={styles.muted} style={{ fontWeight: 400, marginLeft: 8 }}>
+                  titres qui ont un poids ce jour-là · le cash n&apos;est pas compté
+                </span>
+              </div>
+            </div>
+            <div
+              className={styles.countPlot}
+              data-count-plot=""
+              ref={countPlotRef}
+              onMouseMove={(e) => {
+                const rect = countPlotRef.current?.getBoundingClientRect();
+                if (!rect) return;
+                allocPending.current = allocIndex(e.clientX, rect, view.count);
+                if (allocFrame.current) return;
+                allocFrame.current = requestAnimationFrame(() => { allocFrame.current = 0; paintAlloc(); });
+              }}
+              onMouseLeave={(e) => {
+                const next = e.relatedTarget;
+                if (next instanceof Element && (next.closest('[data-evo-plot]') || next.closest('[data-evo-tip]'))) return;
+                allocPending.current = null;
+                paintAlloc();
+              }}
+            >
+              <ResponsiveContainer width="100%" height={140}>
+                <LineChart data={view.paint} margin={{ top: 8, right: ALLOC_RIGHT, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                  <XAxis dataKey="date" stroke="#5c6d85" fontSize={11} tickLine={false} minTickGap={48} tickFormatter={(d: string) => d.slice(0, 7)} />
+                  <YAxis allowDecimals={false} stroke="#5c6d85" fontSize={11} tickLine={false} axisLine={false} width={ALLOC_Y} />
+                  <Line type="stepAfter" dataKey="n" stroke="#4d8dff" strokeWidth={2} dot={false} isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+              <div ref={countLineRef} className={styles.evoLine} hidden />
+              <div ref={countTipRef} className={styles.countTip} hidden />
             </div>
             {pinnedValid && (
               <div className={styles.evoPinned}>

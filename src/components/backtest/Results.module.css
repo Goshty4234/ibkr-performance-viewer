@@ -249,6 +249,25 @@
 
 .evoPlot { position: relative; height: 360px; cursor: crosshair; }
 .evoPlot :global(.recharts-wrapper) { pointer-events: none; }
+.countHead { margin-top: 0.85rem; }
+.countPlot { position: relative; height: 140px; cursor: crosshair; }
+.countPlot :global(.recharts-wrapper) { pointer-events: none; }
+.countTip {
+  position: absolute;
+  top: 8px;
+  z-index: 5;
+  width: max-content;
+  background: #141c2b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 0.35rem 0.55rem;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
 .valuePlot { position: relative; height: 100%; }
 .valuePlot :global(.recharts-wrapper) { pointer-events: none; }
 .evoLine {
