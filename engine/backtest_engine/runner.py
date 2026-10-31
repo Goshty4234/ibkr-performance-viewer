@@ -395,13 +395,28 @@ def _reindex(data: dict, simulation_index: pd.DatetimeIndex) -> dict:
 
 _MCAP_CHUNK = 200
 _MCAP_BACKOFF_S = (5.0, 15.0, 45.0, 90.0)
+# Shares outstanding barely move day to day. A stored quote this fresh is reused;
+# only the ones with no archive, or an archive older than this, go to Yahoo.
+_MCAP_ARCHIVE_DAYS = 7
+
+
+def _quote_recent(row: dict | None, today: str) -> bool:
+    stamp = str((row or {}).get("_day") or "")[:10]
+    if not stamp:
+        return False
+    try:
+        age = (pd.Timestamp(today) - pd.Timestamp(stamp)).days
+    except (ValueError, TypeError):
+        return False
+    return age <= _MCAP_ARCHIVE_DAYS
 
 
 def _market_cap_scales(tickers: list[str], ctx: RunContext) -> dict:
-    """Same map as legacy fetch_yahoo_quote_market_caps (key -> marketCap / price, 24h cache, same
-    cache entries), but each quote chunk is retried with a back-off when Yahoo refuses it, and the
-    run stops when caps stay unavailable: the legacy function returned an empty map and the
-    "minimum market cap" portfolio then ran unfiltered."""
+    """Map key -> marketCap / price. The 24h cache and the quote archive are read first.
+
+    Yahoo is asked only for symbols with no usable stored quote. Each chunk is retried
+    when Yahoo refuses it. The run stops when caps stay unavailable: an empty map would
+    let the minimum-market-cap portfolio run unfiltered."""
     import diskcache
 
     cache = diskcache.Cache("marketdata/ticker_info_temp")
@@ -422,16 +437,25 @@ def _market_cap_scales(tickers: list[str], ctx: RunContext) -> dict:
         cache.set(f"yahoo_mcap_quote_v1_{key}", {"scale": cap / price, "market_cap": cap, "price": price}, expire=86400)
 
     scales: dict[str, float] = {}
-    missing = []
-    day = quote_store.today()
+    uncached: list[str] = []
     for key in keys:
         hit = cache.get(f"yahoo_mcap_quote_v1_{key}")
         if isinstance(hit, dict) and hit.get("scale"):
             scales[key] = float(hit["scale"])
-            continue
-        # Today's archived quote (taken while the prices were updated) saves the request.
-        row = quote_store.latest(key) or quote_store.latest(key.replace("-", "."))
-        if row and row.get("_day") == day:
+        else:
+            uncached.append(key)
+    day = quote_store.today()
+    lookup: list[str] = []
+    for key in uncached:
+        lookup.append(key)
+        dotted = key.replace("-", ".")
+        if dotted != key:
+            lookup.append(dotted)
+    archived = quote_store.latest_many(lookup) if lookup else {}
+    missing = []
+    for key in uncached:
+        row = archived.get(key) or archived.get(key.replace("-", "."))
+        if _quote_recent(row, day):
             take(key, row)
         if key not in scales:
             missing.append(key)
