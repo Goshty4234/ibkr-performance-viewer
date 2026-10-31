@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { exitsFromBook, referenceBook } from '@/lib/backtest/allocation-exits';
 import { supplementReturns } from '@/lib/backtest/returns-rows';
 import { allocationWindow } from '@/lib/backtest/allocation-window';
@@ -596,6 +596,9 @@ export default function AllocationsView() {
     }
     return map;
   }, [report]);
+  const [soldNames, setSoldNames] = useState<Record<string, string>>({});
+  const askedNames = useRef(new Set<string>());
+  const names = useMemo(() => ({ ...soldNames, ...companyNames }), [soldNames, companyNames]);
   const programmed = p?.timer?.last_rebalance || p?.last_rebalance_date || '';
   const [refDate, setRefDate] = useState('');
   const [returnsOpen, setReturnsOpen] = useState(false);
@@ -620,6 +623,44 @@ export default function AllocationsView() {
     const current = new Set((table?.rows ?? []).filter((r) => r.ticker !== 'CASH').map((r) => r.ticker));
     return exitsFromBook(book.held, current);
   }, [book, table]);
+  useEffect(() => {
+    const quoteName = (latest: Record<string, unknown> | null | undefined) => {
+      const n = latest?.longName ?? latest?.shortName;
+      return typeof n === 'string' ? n.trim() : '';
+    };
+    if (!client) return;
+    const need = exits
+      .map((e) => e.ticker)
+      .filter((t) => t && !companyNames[t] && !soldNames[t] && !askedNames.current.has(t));
+    if (!need.length) return;
+    for (const t of need) askedNames.current.add(t);
+    let cancel = false;
+    (async () => {
+      const found: Record<string, string> = {};
+      const missing: string[] = [];
+      await Promise.all(need.map(async (t) => {
+        const q = await client.storeQuote(t, false).catch(() => null);
+        const name = q ? quoteName(q.latest) : '';
+        if (name) found[t] = name;
+        else missing.push(t);
+      }));
+      let cursor = 0;
+      const refreshOne = async () => {
+        while (cursor < missing.length) {
+          const t = missing[cursor++];
+          const q = await client.storeQuote(t, true).catch(() => null);
+          const name = q ? quoteName(q.latest) : '';
+          if (name) found[t] = name;
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(4, missing.length) }, refreshOne));
+      if (!cancel && Object.keys(found).length) setSoldNames((prev) => ({ ...prev, ...found }));
+    })();
+    return () => {
+      cancel = true;
+      for (const t of need) askedNames.current.delete(t);
+    };
+  }, [exits, companyNames, soldNames, client]);
   const returnsRows = useMemo(
     () => (analysis?.returns === undefined ? null : supplementReturns(analysis.returns, detail?.metrics)),
     [analysis, detail?.metrics],
@@ -812,7 +853,7 @@ export default function AllocationsView() {
           <div>
             <AllocTable
               table={table}
-              names={companyNames}
+              names={names}
               exits={exits}
               exitsPending={!detail?.allocations}
               held={held}
@@ -830,7 +871,7 @@ export default function AllocationsView() {
         loading={loading}
         stale={Boolean(analysis) && analysis?.returns === undefined}
         name={p.name}
-        names={companyNames}
+        names={names}
         open={returnsOpen}
         onOpen={setReturnsOpen}
       />
@@ -839,7 +880,7 @@ export default function AllocationsView() {
         <PurchaseCalculator
           weights={today.weights}
           prices={today.prices}
-          names={companyNames}
+          names={names}
           exits={exits}
           held={held}
           book={bookControl}

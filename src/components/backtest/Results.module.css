@@ -131,7 +131,11 @@
 }
 .tableFullscreen .tableScroll { max-height: none; flex: 1; }
 .tableFullscreen .padded { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.bookDate { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.55rem; }
+.bookDate { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.35rem; }
+.bookDateNote { margin: 0 0 0.55rem; font-size: 0.75rem; color: var(--text-muted); max-width: 62rem; }
+.stableNum { display: inline-grid; justify-items: end; vertical-align: baseline; }
+.stableNum > span { grid-area: 1 / 1; }
+.stableSizer { visibility: hidden; }
 .bookLegend { display: flex; gap: 0.8rem; flex-wrap: wrap; font-size: 0.75rem; color: var(--text-muted); }
 .tagNew { color: var(--green); font-weight: 700; }
 .tagExit { color: var(--red); font-weight: 700; }
@@ -273,6 +277,16 @@
   padding: 0.25rem 1.1rem 1.1rem;
 }
 @media (max-width: 900px) { .allocGrid { grid-template-columns: 1fr; } }
+.comparePies {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.1rem;
+  flex-shrink: 0;
+}
+.comparePie h3 { margin: 0 0 0.15rem; font-size: 0.92rem; font-weight: 650; text-align: center; }
+.comparePie p { margin: 0 0 0.2rem; font-size: 0.74rem; color: var(--text-muted); text-align: center; }
+@media (max-width: 900px) { .comparePies { grid-template-columns: 1fr; } }
 
 .allocLists {
   display: grid;

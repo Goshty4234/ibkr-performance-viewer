@@ -13,7 +13,18 @@ import { SortableTh, type SortValue, useTableSort } from '../SortableTh';
 import { money, pct, qty } from './format';
 import styles from '../Results.module.css';
 
-export function Pie({ slices, height = 300, labels = true }: { slices: PieSlices; height?: number; labels?: boolean }) {
+export function Pie({
+  slices,
+  height = 300,
+  labels = true,
+  colors,
+}: {
+  slices: PieSlices;
+  height?: number;
+  labels?: boolean;
+  /** Same color for the same ticker across two pies. */
+  colors?: ReadonlyMap<string, string>;
+}) {
   const option = useMemo(() => ({
     tooltip: { trigger: 'item', formatter: (p: { name: string; value: number }) => `${p.name} : <b>${p.value.toFixed(2)}%</b>` },
     series: [{
@@ -26,10 +37,14 @@ export function Pie({ slices, height = 300, labels = true }: { slices: PieSlices
         : { show: false },
       labelLine: { lineStyle: { color: 'rgba(255,255,255,0.25)' } },
       data: slices.map(([name, value], i) => ({
-        name, value, itemStyle: { color: name === 'CASH' ? '#5c6d85' : SERIES_PALETTE[i % SERIES_PALETTE.length] },
+        name,
+        value,
+        itemStyle: {
+          color: colors?.get(name) ?? (name === 'CASH' ? '#5c6d85' : SERIES_PALETTE[i % SERIES_PALETTE.length]),
+        },
       })),
     }],
-  }), [slices, labels]);
+  }), [slices, labels, colors]);
   if (!slices.length) return <div className={styles.muted}>Aucune allocation.</div>;
   return <EChart option={option} height={height} />;
 }
@@ -79,27 +94,41 @@ export interface BookDateControl {
 
 function BookDateField({ book }: { book: BookDateControl }) {
   return (
-    <div className={styles.bookDate}>
-      <label className={styles.inlineField} title="Composition détenue par le backtest à cette date. Si le 1er tombe un week-end, la séance utilisée est le jour d’ouverture suivant, celui où le site rebalance.">
-        Mon dernier rebalancement
-        <input
-          type="date"
-          className="input"
-          value={book.value}
-          min={book.min || undefined}
-          max={book.max || undefined}
-          onChange={(e) => book.onChange(e.target.value)}
-        />
-      </label>
-      {book.programmed && book.value !== book.programmed && (
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => book.onChange(book.programmed)}>
-          Date programmée
-        </button>
-      )}
-      {book.snapped && book.snapped !== book.value && (
-        <span className={styles.exitEmpty}>Séance utilisée : {book.snapped}</span>
-      )}
-    </div>
+    <>
+      <div className={styles.bookDate}>
+        <label className={styles.inlineField} title="Composition détenue par le backtest à cette date. Si le 1er tombe un week-end, la séance utilisée est le jour d’ouverture suivant, celui où le site rebalance.">
+          Mon dernier rebalancement
+          <input
+            type="date"
+            className="input"
+            value={book.value}
+            min={book.min || undefined}
+            max={book.max || undefined}
+            onChange={(e) => book.onChange(e.target.value)}
+          />
+        </label>
+        {book.programmed && book.value !== book.programmed && (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => book.onChange(book.programmed)}>
+            Date programmée
+          </button>
+        )}
+        {book.snapped && book.snapped !== book.value && (
+          <span className={styles.exitEmpty}>Séance utilisée : {book.snapped}</span>
+        )}
+      </div>
+      <p className={styles.bookDateNote}>
+        Les poids du tableau restent la cible d’aujourd’hui. Cette date ne change que les couleurs, et seulement quand elle franchit un rebalancement.
+      </p>
+    </>
+  );
+}
+
+function StableText({ text, width, muted }: { text: string; width: string; muted?: boolean }) {
+  return (
+    <span className={styles.stableNum}>
+      <span className={styles.stableSizer} aria-hidden>{width}</span>
+      <span className={muted ? styles.muted : undefined}>{text}</span>
+    </span>
   );
 }
 
@@ -307,6 +336,45 @@ const BUY_SORT: Record<string, (r: BuyRow) => SortValue> = {
 };
 const FILL_KEY = 'alloc-fill-cash';
 
+function tickerColors(target: PieSlices, actual: PieSlices): Map<string, string> {
+  const order = [...target].sort((a, b) => b[1] - a[1]).map(([name]) => name);
+  for (const [name] of [...actual].sort((a, b) => b[1] - a[1])) {
+    if (!order.includes(name)) order.push(name);
+  }
+  const colors = new Map<string, string>();
+  let i = 0;
+  for (const name of order) {
+    if (name === 'CASH') {
+      colors.set(name, '#5c6d85');
+      continue;
+    }
+    colors.set(name, SERIES_PALETTE[i % SERIES_PALETTE.length]);
+    i += 1;
+  }
+  return colors;
+}
+
+/** Target weights versus the whole-share order, as percents of the typed amount. */
+function purchaseShape(rows: readonly BuyRow[], amount: number, spent: number): { target: PieSlices; actual: PieSlices } {
+  const live = rows.filter((r) => r.kind !== 'exit');
+  const target: PieSlices = live
+    .filter((r) => r.w > 0)
+    .map((r) => [r.t, r.w * 100] as [string, number])
+    .sort((a, b) => b[1] - a[1]);
+  const dollars = new Map<string, number>();
+  for (const r of live) {
+    if (r.spent == null || r.spent <= 0) continue;
+    dollars.set(r.t, (dollars.get(r.t) ?? 0) + r.spent);
+  }
+  const left = Math.max(0, amount - spent);
+  if (left > 0.005) dollars.set('CASH', (dollars.get('CASH') ?? 0) + left);
+  const actual: PieSlices = [...dollars.entries()]
+    .filter(([, value]) => amount > 0 && value > 0)
+    .map(([name, value]) => [name, (value / amount) * 100] as [string, number])
+    .sort((a, b) => b[1] - a[1]);
+  return { target, actual };
+}
+
 export function PurchaseCalculator({
   weights,
   prices,
@@ -375,6 +443,8 @@ export function PurchaseCalculator({
     return [...live, ...gone];
   }, [weights, prices, amount, fill, capFor, names, held, compare, showExits, exits]);
   const spent = rows.reduce((a, r) => a + (r.kind === 'exit' ? 0 : (r.spent ?? 0)), 0);
+  const shape = useMemo(() => purchaseShape(rows, amount, spent), [rows, amount, spent]);
+  const shapeColors = useMemo(() => tickerColors(shape.target, shape.actual), [shape]);
   const { sorted, sort, toggle } = useTableSort(rows, BUY_SORT);
   const th = { sort, onSort: toggle };
   const showNames = names !== undefined;
@@ -477,11 +547,29 @@ export function PurchaseCalculator({
                 <td className={styles.stickyCol}>TOTAL</td>
                 {showNames && <td />}
                 <td /><td /><td className={styles.num}>{money(amount)}</td><td />
-                <td className={styles.num}>{money(spent)} <span className={styles.muted}>(reste {money(amount - spent)})</span></td>
+                <td className={styles.num}>
+                  <StableText text={money(spent)} width={money(amount)} />
+                  {' '}
+                  <StableText text={`(reste ${money(Math.max(0, amount - spent))})`} width={`(reste ${money(amount)})`} muted />
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
+        {amount > 0 && shape.target.length > 0 && (
+          <div className={styles.comparePies}>
+            <div className={styles.comparePie}>
+              <h3>Cible calculée</h3>
+              <p>Poids demandés, avant l’arrondi en actions entières.</p>
+              <Pie slices={shape.target} colors={shapeColors} height={320} />
+            </div>
+            <div className={styles.comparePie}>
+              <h3>Portefeuille acheté</h3>
+              <p>Coût réel des actions, plus le cash qui reste. Même couleur, même titre.</p>
+              <Pie slices={shape.actual} colors={shapeColors} height={320} />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
