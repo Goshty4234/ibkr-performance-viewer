@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import type { ExitedHolding } from '@/lib/backtest/allocation-exits';
+import { planPurchases } from '@/lib/backtest/purchase-plan';
 import type { LoadedResult } from '@/lib/backtest/result-data';
 import { FREQUENCY_LABELS, formatTimeUntil, nextRebalance } from '@/lib/backtest/timer';
 import { usePortfolioDetail } from '@/lib/backtest/use-detail';
@@ -33,54 +35,232 @@ export function Pie({ slices, height = 300, labels = true }: { slices: PieSlices
 }
 
 type AllocRow = AllocationTable['rows'][number];
-const NO_ROWS: AllocRow[] = [];
-const ALLOC_SORT: Record<string, (r: AllocRow) => SortValue> = {
+type ViewRow = AllocRow & { exit?: boolean; prevPct?: number; name?: string; kind?: 'new' | 'kept' | 'exit' };
+const NO_ROWS: ViewRow[] = [];
+const ALLOC_SORT: Record<string, (r: ViewRow) => SortValue> = {
   ticker: (r) => r.ticker,
+  name: (r) => r.name || null,
   alloc: (r) => r.alloc_pct,
   price: (r) => r.price,
-  shares: (r) => (r.ticker === 'CASH' ? null : r.shares),
-  value: (r) => r.value,
+  shares: (r) => (r.ticker === 'CASH' || r.exit ? null : r.shares),
+  value: (r) => (r.exit ? null : r.value),
   pct: (r) => r.pct,
 };
 
-export function AllocTable({ table }: { table: AllocationTable | null }) {
-  const { sorted, sort, toggle } = useTableSort(table?.rows ?? NO_ROWS, ALLOC_SORT);
+const EXITS_KEY = 'alloc-show-exits';
+
+function useStoredFlag(key: string, fallback = false): [boolean, (v: boolean) => void] {
+  const [value, setValue] = useState(fallback);
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(key);
+      if (stored === '0' || stored === '1') setValue(stored === '1');
+    } catch { /* private mode */ }
+  }, [key]);
+  const update = (v: boolean) => {
+    setValue(v);
+    try { localStorage.setItem(key, v ? '1' : '0'); } catch { /* private mode */ }
+  };
+  return [value, update];
+}
+
+export type AllocExit = ExitedHolding;
+
+export interface BookDateControl {
+  /** Date the user picked. Empty until the programmed date is known. */
+  value: string;
+  /** Trading session the book was read from. */
+  snapped: string | null;
+  min?: string;
+  max?: string;
+  programmed: string;
+  onChange: (day: string) => void;
+}
+
+function BookDateField({ book }: { book: BookDateControl }) {
+  return (
+    <div className={styles.bookDate}>
+      <label className={styles.inlineField} title="Composition détenue par le backtest à cette date. Si le 1er tombe un week-end, la séance utilisée est le jour d’ouverture suivant, celui où le site rebalance.">
+        Mon dernier rebalancement
+        <input
+          type="date"
+          className="input"
+          value={book.value}
+          min={book.min || undefined}
+          max={book.max || undefined}
+          onChange={(e) => book.onChange(e.target.value)}
+        />
+      </label>
+      {book.programmed && book.value !== book.programmed && (
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => book.onChange(book.programmed)}>
+          Date programmée
+        </button>
+      )}
+      {book.snapped && book.snapped !== book.value && (
+        <span className={styles.exitEmpty}>Séance utilisée : {book.snapped}</span>
+      )}
+    </div>
+  );
+}
+
+function BookLegend({ kept, added, sold }: { kept: number; added: number; sold: number }) {
+  return (
+    <div className={styles.bookLegend} aria-hidden>
+      <span className={styles.tagNew}>Nouveau {added}</span>
+      <span>Conservé {kept}</span>
+      <span className={styles.tagExit}>À vendre {sold}</span>
+    </div>
+  );
+}
+
+function rowKind(ticker: string, exit: boolean, held: ReadonlySet<string> | null): 'new' | 'kept' | 'exit' {
+  if (exit) return 'exit';
+  if (!held || ticker === 'CASH') return 'kept';
+  return held.has(ticker) ? 'kept' : 'new';
+}
+
+export function AllocTable({
+  table,
+  names,
+  exits,
+  exitsPending,
+  rebalance,
+  held,
+  book,
+  showExits: showExitsProp,
+  onShowExits,
+}: {
+  table: AllocationTable | null;
+  /** Company names already loaded with the fundamentals. Absent = no Société column. */
+  names?: Record<string, string>;
+  exits?: AllocExit[];
+  exitsPending?: boolean;
+  /** Fullscreen, company names, and the reference-book comparison. */
+  rebalance?: boolean;
+  /** Tickers held on the reference date. Null while that book is still loading. */
+  held?: ReadonlySet<string> | null;
+  book?: BookDateControl;
+  showExits?: boolean;
+  onShowExits?: (v: boolean) => void;
+}) {
+  const [storedExits, setStoredExits] = useStoredFlag(EXITS_KEY, true);
+  const showExits = showExitsProp ?? storedExits;
+  const setShowExits = onShowExits ?? setStoredExits;
+  const [fullscreen, setFullscreen] = useState(false);
+  const showNames = names !== undefined;
+  const known = held ?? null;
+  const rows = useMemo(() => {
+    const live: ViewRow[] = (table?.rows ?? []).map((r) => ({
+      ...r,
+      name: names?.[r.ticker],
+      kind: rowKind(r.ticker, false, known),
+    }));
+    if (!rebalance || !showExits) return live;
+    const gone: ViewRow[] = (exits ?? []).map((e) => ({
+      ticker: e.ticker,
+      alloc_pct: 0,
+      price: null,
+      shares: 0,
+      value: 0,
+      pct: 0,
+      exit: true,
+      prevPct: e.prevPct,
+      name: names?.[e.ticker],
+      kind: 'exit' as const,
+    }));
+    return [...live, ...gone];
+  }, [table, names, exits, rebalance, showExits, known]);
+  const { sorted, sort, toggle } = useTableSort(rows.length ? rows : NO_ROWS, ALLOC_SORT);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [fullscreen]);
+
   if (!table) return <div className={styles.muted}>Tableau indisponible.</div>;
   const th = { sort, onSort: toggle };
+  const exitCount = exits?.length ?? 0;
+  const added = known ? (table.rows.filter((r) => r.ticker !== 'CASH' && !known.has(r.ticker)).length) : 0;
+  const kept = known ? (table.rows.filter((r) => r.ticker !== 'CASH' && known.has(r.ticker)).length) : 0;
+  const kindClass = (kind?: ViewRow['kind']) => (kind === 'exit' ? styles.rowExit : kind === 'new' ? styles.rowNew : undefined);
   return (
-    <div className={styles.tableScroll} style={{ maxHeight: 360 }}>
-      <table className={styles.table}>
-        <thead>
-          <tr>
-            <SortableTh k="ticker" text className={styles.stickyCol} {...th}>Ticker</SortableTh>
-            <SortableTh k="alloc" {...th}>Allocation %</SortableTh>
-            <SortableTh k="price" {...th}>Prix</SortableTh>
-            <SortableTh k="shares" {...th}>Actions</SortableTh>
-            <SortableTh k="value" {...th}>Valeur</SortableTh>
-            <SortableTh k="pct" {...th}>% du portefeuille</SortableTh>
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((r) => (
-            <tr key={r.ticker}>
-              <td className={styles.stickyCol}><strong>{r.ticker}</strong></td>
-              <td className={styles.num}>{pct(r.alloc_pct)}</td>
-              <td className={styles.num}>{r.price === null ? 'N/A' : money(r.price)}</td>
-              <td className={styles.num}>{r.ticker === 'CASH' ? '' : r.shares.toFixed(1)}</td>
-              <td className={styles.num}>{money(r.value)}</td>
-              <td className={styles.num}>{pct(r.pct)}</td>
+    <div className={fullscreen ? styles.tableFullscreen : styles.tableStage}>
+      {rebalance && (
+        <>
+          <div className={styles.tableTools}>
+            <label className={styles.inlineField} title="Titres détenus à la date de référence et absents de la cible. En rouge : à vendre.">
+              <input type="checkbox" checked={showExits} onChange={(e) => setShowExits(e.target.checked)} />
+              Titres à retirer
+              {showExits && !exitsPending && exitCount > 0 ? ` (${exitCount})` : ''}
+            </label>
+            {known && <BookLegend kept={kept} added={added} sold={showExits ? exitCount : 0} />}
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFullscreen((v) => !v)}>
+              {fullscreen ? 'Quitter le plein écran' : 'Plein écran'}
+            </button>
+          </div>
+          {book && <BookDateField book={book} />}
+        </>
+      )}
+      {rebalance && showExits && !exitsPending && exitCount === 0 && (
+        <div className={styles.exitEmpty}>Aucun titre à retirer par rapport à cette date.</div>
+      )}
+      <div className={styles.tableScroll} style={fullscreen ? undefined : { maxHeight: 360 }}>
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <SortableTh k="ticker" text className={styles.stickyCol} {...th}>Ticker</SortableTh>
+              {showNames && (
+                <SortableTh k="name" text className={styles.companyCol} {...th} title="Nom déjà chargé avec les fondamentaux (cache Yahoo 24 h, pas d’appel en plus). Cliquer pour trier.">
+                  Société
+                </SortableTh>
+              )}
+              <SortableTh k="alloc" {...th}>Allocation %</SortableTh>
+              <SortableTh k="price" {...th}>Prix</SortableTh>
+              <SortableTh k="shares" {...th}>Actions</SortableTh>
+              <SortableTh k="value" {...th}>Valeur</SortableTh>
+              <SortableTh k="pct" {...th}>% du portefeuille</SortableTh>
             </tr>
-          ))}
-          <tr className={styles.totalRow}>
-            <td className={styles.stickyCol}>TOTAL</td>
-            <td className={styles.num}>{pct(table.total.alloc_pct)}</td>
-            <td />
-            <td />
-            <td className={styles.num}>{money(table.total.value)}</td>
-            <td className={styles.num}>{pct(table.total.pct)}</td>
-          </tr>
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {sorted.map((r) => (
+              <tr key={r.exit ? `exit-${r.ticker}` : r.ticker} className={kindClass(r.kind)}>
+                <td className={styles.stickyCol}>
+                  <strong>{r.ticker}</strong>
+                  {r.kind === 'new' && <span className={styles.tag}>Nouveau</span>}
+                  {r.kind === 'exit' && <span className={styles.tag}>À vendre</span>}
+                </td>
+                {showNames && (
+                  <td className={styles.companyCol} title={r.name || undefined}>{r.name || '—'}</td>
+                )}
+                <td className={r.exit ? `${styles.num} ${styles.exitAlloc}` : styles.num}>
+                  {pct(r.alloc_pct)}
+                  {r.exit && r.prevPct != null && <span className={styles.exitWas}>était {pct(r.prevPct)}</span>}
+                </td>
+                <td className={styles.num}>{r.exit ? '—' : r.price === null ? 'N/A' : money(r.price)}</td>
+                <td className={styles.num}>{r.ticker === 'CASH' || r.exit ? '' : r.shares.toFixed(1)}</td>
+                <td className={styles.num}>{r.exit ? '—' : money(r.value)}</td>
+                <td className={styles.num}>{pct(r.pct)}</td>
+              </tr>
+            ))}
+            <tr className={styles.totalRow}>
+              <td className={styles.stickyCol}>TOTAL</td>
+              {showNames && <td />}
+              <td className={styles.num}>{pct(table.total.alloc_pct)}</td>
+              <td />
+              <td />
+              <td className={styles.num}>{money(table.total.value)}</td>
+              <td className={styles.num}>{pct(table.total.pct)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -105,69 +285,198 @@ function Countdown({ frequency, last }: { frequency: string; last: string }) {
   );
 }
 
-interface BuyRow { t: string; w: number; price: number | null; value: number; shares: number | null; spent: number | null }
+interface BuyRow {
+  t: string;
+  w: number;
+  price: number | null;
+  value: number;
+  shares: number | null;
+  spent: number | null;
+  name?: string;
+  kind: 'new' | 'kept' | 'exit';
+  prevPct?: number;
+}
 const BUY_SORT: Record<string, (r: BuyRow) => SortValue> = {
   ticker: (r) => r.t,
+  name: (r) => r.name || null,
   w: (r) => r.w,
   price: (r) => r.price,
   value: (r) => r.value,
   shares: (r) => r.shares,
   spent: (r) => r.spent,
 };
+const FILL_KEY = 'alloc-fill-cash';
 
-export function PurchaseCalculator({ weights, prices }: { weights: Record<string, number>; prices: Record<string, number | null> }) {
+export function PurchaseCalculator({
+  weights,
+  prices,
+  names,
+  exits,
+  held,
+  book,
+  portfolioValue,
+  capFor,
+  showExits: showExitsProp,
+  onShowExits,
+}: {
+  weights: Record<string, number>;
+  prices: Record<string, number | null>;
+  names?: Record<string, string>;
+  exits?: AllocExit[];
+  held?: ReadonlySet<string> | null;
+  book?: BookDateControl;
+  /** Value typed at the top of the Allocations page. */
+  portfolioValue?: number | null;
+  /** Max fraction of the amount for one ticker, or null when that name has no cap. */
+  capFor?: (ticker: string) => number | null;
+  showExits?: boolean;
+  onShowExits?: (v: boolean) => void;
+}) {
   const [amount, setAmount] = useState(10000);
-  const rows = useMemo(() => Object.entries(weights)
-    .filter(([, w]) => w > 0)
-    .sort((a, b) => b[1] - a[1])
-    .map(([t, w]): BuyRow => {
-      const price = t === 'CASH' ? null : prices[t] ?? null;
-      const value = amount * w;
-      const shares = price && price > 0 ? Math.floor(value / price) : null;
-      return { t, w, price, value, shares, spent: shares !== null && price ? shares * price : t === 'CASH' ? value : null };
-    }), [weights, prices, amount]);
-  const spent = rows.reduce((a, r) => a + (r.spent ?? 0), 0);
+  const [fill, setFill] = useStoredFlag(FILL_KEY, false);
+  const [storedExits, setStoredExits] = useStoredFlag(EXITS_KEY, true);
+  const showExits = showExitsProp ?? storedExits;
+  const setShowExits = onShowExits ?? setStoredExits;
+  const [fullscreen, setFullscreen] = useState(false);
+  const compare = held !== undefined;
+  const rows = useMemo(() => {
+    const planned = planPurchases(
+      amount,
+      Object.entries(weights).filter(([, w]) => w > 0).map(([t, w]) => ({ ticker: t, weight: w, price: t === 'CASH' ? null : prices[t] ?? null })),
+      fill,
+      capFor ?? (() => null),
+    );
+    const live: BuyRow[] = planned.map((line) => ({
+      t: line.ticker,
+      w: line.weight,
+      price: line.price,
+      value: line.targetValue,
+      shares: line.price ? line.shares : null,
+      spent: line.spent,
+      name: names?.[line.ticker],
+      kind: rowKind(line.ticker, false, held ?? null),
+    }));
+    const cashW = weights.CASH ?? 0;
+    if (cashW > 0) {
+      live.push({ t: 'CASH', w: cashW, price: null, value: amount * cashW, shares: null, spent: amount * cashW, kind: 'kept' });
+    }
+    if (!compare || !showExits) return live;
+    const gone: BuyRow[] = (exits ?? []).map((e) => ({
+      t: e.ticker,
+      w: 0,
+      price: null,
+      value: 0,
+      shares: null,
+      spent: null,
+      name: names?.[e.ticker],
+      kind: 'exit' as const,
+      prevPct: e.prevPct,
+    }));
+    return [...live, ...gone];
+  }, [weights, prices, amount, fill, capFor, names, held, compare, showExits, exits]);
+  const spent = rows.reduce((a, r) => a + (r.kind === 'exit' ? 0 : (r.spent ?? 0)), 0);
   const { sorted, sort, toggle } = useTableSort(rows, BUY_SORT);
   const th = { sort, onSort: toggle };
+  const showNames = names !== undefined;
+  const known = held ?? null;
+  const added = known ? rows.filter((r) => r.kind === 'new').length : 0;
+  const kept = known ? rows.filter((r) => r.kind === 'kept' && r.t !== 'CASH').length : 0;
+  const sold = showExits ? (exits?.length ?? 0) : 0;
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [fullscreen]);
+
+  const kindClass = (kind: BuyRow['kind']) => (kind === 'exit' ? styles.rowExit : kind === 'new' ? styles.rowNew : undefined);
   return (
-    <div className="card">
+    <div className={fullscreen ? styles.tableFullscreen : 'card'}>
       <div className={styles.cardHead}>
         <div>
           <div className={styles.cardTitle}>Calculateur d&apos;achat</div>
-          <div className={styles.cardSub}>Répartit un montant selon les poids d&apos;aujourd&apos;hui au dernier prix connu (actions entières)</div>
+          <div className={styles.cardSub}>
+            Actions entières, arrondies vers le bas pour ne pas dépasser le montant.
+            {' '}« Remplir le cash » rachète le surplus une action à la fois, sur le titre le plus en dessous de son poids, sans passer son plafond.
+          </div>
         </div>
-        <label className={styles.inlineField}>
-          Montant
-          <input type="number" className="input" style={{ width: 140 }} min={0} step={100} value={amount} onChange={(e) => setAmount(Math.max(0, Number(e.target.value) || 0))} />
-          $
-        </label>
+        <div className={styles.tableTools}>
+          <label className={styles.inlineField}>
+            Montant
+            <input type="number" className="input" style={{ width: 140 }} min={0} step={100} value={amount} onChange={(e) => setAmount(Math.max(0, Number(e.target.value) || 0))} />
+            $
+          </label>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={portfolioValue == null}
+            title={portfolioValue == null ? 'Entre d’abord la valeur du portefeuille en haut de la page' : 'Reprend le montant saisi dans « Valeur de mon portefeuille »'}
+            onClick={() => portfolioValue != null && setAmount(portfolioValue)}
+          >
+            Reprendre ma valeur
+          </button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFullscreen((v) => !v)}>
+            {fullscreen ? 'Quitter le plein écran' : 'Plein écran'}
+          </button>
+        </div>
       </div>
       <div className={styles.padded}>
-        <div className={styles.tableScroll} style={{ maxHeight: 360 }}>
+        <div className={styles.tableTools}>
+          <label className={styles.inlineField} title="Après l’arrondi vers le bas, dépense le cash restant (hors poche cash prévue) sans dépasser le plafond de chaque titre.">
+            <input type="checkbox" checked={fill} onChange={(e) => setFill(e.target.checked)} />
+            Remplir le cash
+          </label>
+          {compare && (
+            <label className={styles.inlineField}>
+              <input type="checkbox" checked={showExits} onChange={(e) => setShowExits(e.target.checked)} />
+              Titres à vendre
+            </label>
+          )}
+          {known && <BookLegend kept={kept} added={added} sold={sold} />}
+        </div>
+        {book && <BookDateField book={book} />}
+        <div className={styles.tableScroll} style={fullscreen ? undefined : { maxHeight: 360 }}>
           <table className={styles.table}>
             <thead>
               <tr>
                 <SortableTh k="ticker" text className={styles.stickyCol} {...th}>Ticker</SortableTh>
+                {showNames && <SortableTh k="name" text className={styles.companyCol} {...th}>Société</SortableTh>}
                 <SortableTh k="w" {...th}>Poids</SortableTh>
                 <SortableTh k="price" {...th}>Prix</SortableTh>
                 <SortableTh k="value" {...th}>Montant cible</SortableTh>
-                <SortableTh k="shares" {...th}>Actions à acheter</SortableTh>
+                <SortableTh k="shares" {...th}>Actions</SortableTh>
                 <SortableTh k="spent" {...th}>Coût réel</SortableTh>
               </tr>
             </thead>
             <tbody>
               {sorted.map((r) => (
-                <tr key={r.t}>
-                  <td className={styles.stickyCol}><strong>{r.t}</strong></td>
-                  <td className={styles.num}>{pct(r.w * 100)}</td>
-                  <td className={styles.num}>{r.price === null ? 'N/A' : money(r.price)}</td>
-                  <td className={styles.num}>{money(r.value)}</td>
-                  <td className={styles.num}>{r.shares === null ? '' : qty(r.shares, 0)}</td>
+                <tr key={r.kind === 'exit' ? `exit-${r.t}` : r.t} className={kindClass(r.kind)}>
+                  <td className={styles.stickyCol}>
+                    <strong>{r.t}</strong>
+                    {r.kind === 'new' && <span className={styles.tag}>Nouveau</span>}
+                    {r.kind === 'exit' && <span className={styles.tag}>À vendre</span>}
+                  </td>
+                  {showNames && <td className={styles.companyCol} title={r.name || undefined}>{r.name || '—'}</td>}
+                  <td className={styles.num}>
+                    {pct(r.w * 100)}
+                    {r.kind === 'exit' && r.prevPct != null && <span className={styles.exitWas}>était {pct(r.prevPct)}</span>}
+                  </td>
+                  <td className={styles.num}>{r.kind === 'exit' ? '—' : r.price === null ? 'N/A' : money(r.price)}</td>
+                  <td className={styles.num}>{r.kind === 'exit' ? '—' : money(r.value)}</td>
+                  <td className={styles.num}>{r.kind === 'exit' ? 'Tout vendre' : r.shares === null ? '' : qty(r.shares, 0)}</td>
                   <td className={styles.num}>{r.spent === null ? '' : money(r.spent)}</td>
                 </tr>
               ))}
               <tr className={styles.totalRow}>
-                <td className={styles.stickyCol}>TOTAL</td><td /><td /><td className={styles.num}>{money(amount)}</td><td />
+                <td className={styles.stickyCol}>TOTAL</td>
+                {showNames && <td />}
+                <td /><td /><td className={styles.num}>{money(amount)}</td><td />
                 <td className={styles.num}>{money(spent)} <span className={styles.muted}>(reste {money(amount - spent)})</span></td>
               </tr>
             </tbody>

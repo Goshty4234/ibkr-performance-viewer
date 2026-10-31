@@ -84,19 +84,62 @@ export function computeBrushRangeReturns(
 }
 
 export const CHART_SYNC_ID = 'ibkr-portfolio-charts';
-/** Largeur réservée à l'axe Y — identique sur performance et drawdown pour aligner les abscisses. */
+/** Largeur minimale de l'axe Y. Les deux graphiques élargissent ensemble quand les % sont longs. */
 export const CHART_YAXIS_WIDTH = 48;
 export const CHART_PLOT_MARGIN = { top: 8, right: 12, left: 0, bottom: 0 };
 export const CHART_PLOT_MARGIN_BOTTOM = { top: 8, right: 12, left: 0, bottom: 4 };
+
+/** Tick d'axe : les très grands rendements tiennent dans la gouttière (10k %, 2M %). */
+export function formatAxisPct(pct: number): string {
+  if (!Number.isFinite(pct)) return '0%';
+  const sign = pct < 0 ? '-' : '';
+  const v = Math.abs(pct);
+  if (v >= 1e6) return `${sign}${Math.round(v / 1e6)}M%`;
+  if (v >= 1e4) return `${sign}${Math.round(v / 1e3)}k%`;
+  return `${sign}${Math.round(v)}%`;
+}
+
+export function maxAbsSeriesPct(
+  rows: ReadonlyArray<{ [key: string]: unknown }>,
+  ids: readonly string[],
+): number {
+  let m = 0;
+  for (const row of rows) {
+    for (const id of ids) {
+      const v = row[id];
+      if (typeof v === 'number' && Number.isFinite(v)) {
+        const a = Math.abs(v);
+        if (a > m) m = a;
+      }
+    }
+  }
+  return m;
+}
+
+/**
+ * Gouttière partagée par la performance et le drawdown. Elle grandit avec le plus
+ * grand % affiché, pour que « 2000 % » ou « 100k % » reste dans la carte.
+ */
+export function yAxisWidthForPct(maxAbs: number): number {
+  const hi = maxAbs > 0 ? maxAbs : 100;
+  const labels = [formatAxisPct(hi * 1.25), formatAxisPct(-Math.min(100, hi))];
+  if (hi >= 1_000) labels.push('-9999%');
+  if (hi >= 10_000) labels.push(formatAxisPct(Math.min(hi * 1.25, 999_999)));
+  let longest = 4;
+  for (const s of labels) if (s.length > longest) longest = s.length;
+  const px = Math.ceil(longest * 7.6) + 18;
+  return Math.max(CHART_YAXIS_WIDTH, Math.min(112, px));
+}
 
 export function clientXToDataIndex(
   clientX: number,
   rect: DOMRect,
   dataLength: number,
+  yAxis = CHART_YAXIS_WIDTH,
 ): number {
   if (dataLength < 2) return 0;
-  const plotWidth = rect.width - CHART_YAXIS_WIDTH - CHART_PLOT_MARGIN.right;
-  const x = clientX - rect.left - CHART_YAXIS_WIDTH;
+  const plotWidth = rect.width - yAxis - CHART_PLOT_MARGIN.right;
+  const x = clientX - rect.left - yAxis;
   const ratio = Math.max(0, Math.min(1, x / Math.max(plotWidth, 1)));
   return Math.round(ratio * (dataLength - 1));
 }
@@ -106,11 +149,12 @@ export function dataIndexToPlotX(
   index: number,
   rect: DOMRect,
   dataLength: number,
+  yAxis = CHART_YAXIS_WIDTH,
 ): number {
-  if (dataLength < 2) return CHART_YAXIS_WIDTH;
-  const plotWidth = rect.width - CHART_YAXIS_WIDTH - CHART_PLOT_MARGIN.right;
+  if (dataLength < 2) return yAxis;
+  const plotWidth = rect.width - yAxis - CHART_PLOT_MARGIN.right;
   const ratio = index / (dataLength - 1);
-  return CHART_YAXIS_WIDTH + ratio * plotWidth;
+  return yAxis + ratio * plotWidth;
 }
 
 /** Points drawn on screen. The cursor still walks every simulated day. */

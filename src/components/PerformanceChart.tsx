@@ -15,12 +15,14 @@ import { seriesGapKey, visibleSeries } from '@/lib/chart-series';
 import {
   type ChartBrushSelection,
   CHART_PLOT_MARGIN,
-  CHART_YAXIS_WIDTH,
   clientXToDataIndex,
   dataIndexToPlotX,
+  formatAxisPct,
+  maxAbsSeriesPct,
   PAINT_POINTS,
   rangeTotalReturn,
   sampleEvenExtremes,
+  yAxisWidthForPct,
 } from '@/lib/chart-range';
 import { fitHoverTip, leavingChartPair, publishChartHover, subscribeChartHover } from '@/lib/chart-hover';
 import { fmtPct } from '@/lib/performance';
@@ -68,10 +70,7 @@ function logTicks(lo: number, hi: number): number[] {
 }
 
 function logTickLabel(g: number): string {
-  const pct = fromGrowth(g);
-  if (Math.abs(pct) >= 1e6) return `${Math.round(pct / 1e6)}M%`;
-  if (Math.abs(pct) >= 1e4) return `${Math.round(pct / 1e3)}k%`;
-  return `${Math.round(pct)}%`;
+  return formatAxisPct(fromGrowth(g));
 }
 
 interface DragState {
@@ -86,12 +85,14 @@ function PerformancePointer({
   log,
   shown,
   chartData,
+  yWidth,
 }: {
   plotRef: React.RefObject<HTMLDivElement | null>;
   length: number;
   log: boolean;
   shown: ChartSeriesDef[];
   chartData: MultiSeriesChartPoint[];
+  yWidth: number;
 }) {
   const lineRef = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
@@ -119,7 +120,7 @@ function PerformancePointer({
         tip.hidden = true;
         return;
       }
-      const left = dataIndexToPlotX(hover.index, node.getBoundingClientRect(), length);
+      const left = dataIndexToPlotX(hover.index, node.getBoundingClientRect(), length, yWidth);
       const flip = left > node.clientWidth * 0.62;
       line.hidden = false;
       tip.hidden = false;
@@ -139,7 +140,7 @@ function PerformancePointer({
     };
     place(null);
     return subscribeChartHover(place);
-  }, [plotRef, length, log, shown, chartData]);
+  }, [plotRef, length, log, shown, chartData, yWidth]);
 
   return (
     <>
@@ -194,6 +195,10 @@ export default function PerformanceChart({
   }, [onBrushChange]);
 
   const shown = useMemo(() => visibleSeries(series, hidden), [series, hidden]);
+  const yWidth = useMemo(
+    () => yAxisWidthForPct(maxAbsSeriesPct(data, shown.map((s) => s.id))),
+    [data, shown],
+  );
   const showChart = mounted && !loading && hasStatements && !noDataInRange && data.length > 0;
 
   const chartData = useMemo(() => {
@@ -250,8 +255,8 @@ export default function PerformanceChart({
       return;
     }
     const rect = node.getBoundingClientRect();
-    const x1 = dataIndexToPlotX(lo, rect, data.length);
-    const x2 = dataIndexToPlotX(hi, rect, data.length);
+    const x1 = dataIndexToPlotX(lo, rect, data.length, yWidth);
+    const x2 = dataIndexToPlotX(hi, rect, data.length, yWidth);
     const ret = highlightSeries
       ? rangeTotalReturn((data[lo][highlightSeries.id] as number) ?? 0, (data[hi][highlightSeries.id] as number) ?? 0)
       : null;
@@ -268,7 +273,7 @@ export default function PerformanceChart({
     bubbleValueRef.current.textContent = `${ret >= 0 ? '▲' : '▼'} ${fmtPct(ret)}`;
     bubbleValueRef.current.className = `mono ${ret >= 0 ? 'positive' : 'negative'}`;
     bubbleDatesRef.current.textContent = formatShortDateRange(data[lo].date, data[hi].date);
-  }, [data, highlightSeries]);
+  }, [data, highlightSeries, yWidth]);
 
   useEffect(() => {
     if (dragRef.current?.dragging) return;
@@ -283,8 +288,8 @@ export default function PerformanceChart({
   const resolveIndex = useCallback((clientX: number) => {
     const rect = plotRef.current?.getBoundingClientRect();
     if (!rect) return 0;
-    return clientXToDataIndex(clientX, rect, data.length);
-  }, [data.length]);
+    return clientXToDataIndex(clientX, rect, data.length, yWidth);
+  }, [data.length, yWidth]);
 
   const commitBrush = useCallback((startIdx: number, endIdx: number) => {
     const lo = Math.min(startIdx, endIdx);
@@ -411,16 +416,16 @@ export default function PerformanceChart({
                     fontSize={11}
                     tickLine={false}
                     axisLine={false}
-                    width={CHART_YAXIS_WIDTH}
+                    width={yWidth}
                   />
                 ) : (
                   <YAxis
-                    tickFormatter={(v) => `${v}%`}
+                    tickFormatter={(v) => formatAxisPct(Number(v))}
                     stroke="#5c6d85"
                     fontSize={11}
                     tickLine={false}
                     axisLine={false}
-                    width={CHART_YAXIS_WIDTH}
+                    width={yWidth}
                   />
                 )}
                 {shown.map((s) => (
@@ -461,7 +466,7 @@ export default function PerformanceChart({
               <div ref={bubbleValueRef} className="mono" />
               <div ref={bubbleDatesRef} className={styles.rangeBubbleDates} />
             </div>
-            <PerformancePointer plotRef={plotRef} length={chartData.length} log={log} shown={shown} chartData={chartData} />
+            <PerformancePointer plotRef={plotRef} length={chartData.length} log={log} shown={shown} chartData={chartData} yWidth={yWidth} />
           </div>
           <ChartLegend series={series} hidden={hidden} onToggle={onToggleSeries} />
         </>

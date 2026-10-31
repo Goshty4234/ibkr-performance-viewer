@@ -1,6 +1,8 @@
 'use client';
 
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { exitsFromBook, referenceBook } from '@/lib/backtest/allocation-exits';
+import { supplementReturns } from '@/lib/backtest/returns-rows';
 import { allocationWindow } from '@/lib/backtest/allocation-window';
 import { isGuest } from '@/lib/guest';
 import { aiContext, downloadJson, useAllocationAnalysis } from '@/lib/backtest/allocations';
@@ -332,7 +334,7 @@ const BENCH_SORT: Record<string, (r: BenchmarkRow) => SortValue> = {
 };
 const benchPinned = (r: BenchmarkRow) => r.ticker === 'PORTFOLIO';
 const RETURNS_SORT: Record<string, (r: ReturnsRow) => SortValue> = {
-  ticker: (r) => r.ticker, weight: (r) => r.weight, momentum: (r) => r.momentum, beta: (r) => r.beta, volatility: (r) => r.volatility, ...periodGetters<ReturnsRow>(),
+  ticker: (r) => r.ticker, name: (r) => (r as ReturnsRow & { name?: string }).name || null, weight: (r) => r.weight, momentum: (r) => r.momentum, beta: (r) => r.beta, volatility: (r) => r.volatility, ...periodGetters<ReturnsRow>(),
 };
 const returnsPinned = (r: ReturnsRow) => !!r.portfolio;
 const NO_BENCH: BenchmarkRow[] = [];
@@ -377,49 +379,79 @@ function BenchmarksSection({ rows, loading, name }: { rows: BenchmarkRow[] | nul
   );
 }
 
-function ReturnsSection({ rows, loading, stale, name }: { rows: ReturnsRow[] | null; loading: boolean; stale: boolean; name: string }) {
+function ReturnsSection({
+  rows, loading, stale, name, names, open, onOpen,
+}: {
+  rows: ReturnsRow[] | null;
+  loading: boolean;
+  stale: boolean;
+  name: string;
+  names: Record<string, string>;
+  open: boolean;
+  onOpen: (open: boolean) => void;
+}) {
   const na = <span className={styles.faint}>N/A</span>;
-  const { sorted, sort, toggle } = useTableSort(rows ?? NO_RETURNS, RETURNS_SORT, returnsPinned);
+  const named = useMemo(() => (rows ?? NO_RETURNS).map((r) => ({ ...r, name: r.portfolio ? name : names[r.ticker] })), [rows, names, name]);
+  const { sorted, sort, toggle } = useTableSort(named, RETURNS_SORT, returnsPinned);
   const th = { sort, onSort: toggle };
+  const scored = rows?.filter((r) => !r.portfolio).length ?? 0;
   return (
-    <Section
-      id="alloc-returns"
-      title="Rendements par position"
-      sub="Momentum, bêta et volatilité des dernières métriques (sinon mesurés sur 365 jours) · rendements de prix sur des périodes calendaires · positions à 0 % en fin de liste"
-    >
-      {!rows && loading ? (
-        <Skeleton height={240} />
-      ) : rows?.length ? (
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <SortableTh k="ticker" text {...th}>Ticker</SortableTh>
-                <SortableTh k="weight" {...th}>Poids</SortableTh>
-                <SortableTh k="momentum" {...th}>Momentum</SortableTh>
-                <SortableTh k="beta" {...th}>Bêta</SortableTh>
-                <SortableTh k="volatility" {...th}>Volatilité</SortableTh>
-                {PERIOD_COLS.map(([k, l]) => <SortableTh key={l} k={k} {...th}>{l}</SortableTh>)}
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((r) => (
-                <tr key={r.ticker} className={r.portfolio ? styles.rowHighlight : r.weight <= 0.0001 ? styles.rowMuted : ''}>
-                  <td className={styles.tickerCell}>{r.portfolio ? <>★ {name}</> : r.ticker}</td>
-                  <td>{r.portfolio ? '' : `${(r.weight * 100).toFixed(1)}%`}</td>
-                  <td>{finite(r.momentum) ? signed(r.momentum) : na}</td>
-                  <td>{finite(r.beta) ? r.beta.toFixed(2) : na}</td>
-                  <td>{finite(r.volatility) ? `${r.volatility.toFixed(2)}%` : na}</td>
-                  {PERIOD_COLS.map(([k]) => <td key={k}>{signed(r[k as keyof ReturnsRow] as number | null)}</td>)}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className={styles.emptyLine}>{stale ? 'Analyse enregistrée avant l’ajout de ce tableau : clique « Actualiser » pour le calculer.' : 'Rendements indisponibles.'}</div>
+    <section id="alloc-returns" className={styles.section}>
+      <button type="button" className={styles.collapseHead} aria-expanded={open} onClick={() => onOpen(!open)}>
+        <span className={styles.collapseMark}>{open ? '▾' : '▸'}</span>
+        <span>
+          <span className={styles.sectionTitle}>Rendements par position</span>
+          <span className={styles.sectionSub}>
+            {scored > 0 ? `${scored} sociétés notées au dernier calcul. ` : ''}
+            Fermé par défaut. Le poids est la position en fin de backtest, pas la cible d’aujourd’hui.
+          </span>
+        </span>
+      </button>
+      {open && (
+        <>
+          <p className={styles.returnsNote}>
+            Chaque ligne est une société que le dernier calcul a pu noter, ou qui est encore détenue dans la simulation.
+            Un momentum <strong>N/A</strong> veut dire que ce titre n’a pas reçu de score ce jour-là : fenêtre incomplète, filtre (moyenne mobile, S&amp;P) ou exclusion. Ce n’est pas un prix manquant.
+            Les rendements 1 sem.–1 an viennent des prix déjà en cache, seulement pour les titres passés dans le portefeuille. Les autres ne sont pas redemandés à Yahoo.
+            Le nom de société vient des fondamentaux déjà chargés pour les positions actuelles.
+          </p>
+          {!rows && loading ? (
+            <Skeleton height={240} />
+          ) : rows?.length ? (
+            <div className={`${styles.tableWrap} ${styles.returnsScroll}`}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <SortableTh k="ticker" text {...th}>Ticker</SortableTh>
+                    <SortableTh k="name" text {...th}>Société</SortableTh>
+                    <SortableTh k="weight" {...th}>Poids détenu</SortableTh>
+                    <SortableTh k="momentum" {...th} title="Score du dernier calcul. N/A = pas de score ce jour-là (fenêtre, filtre ou exclusion).">Momentum</SortableTh>
+                    <SortableTh k="beta" {...th}>Bêta</SortableTh>
+                    <SortableTh k="volatility" {...th}>Volatilité</SortableTh>
+                    {PERIOD_COLS.map(([k, l]) => <SortableTh key={l} k={k} {...th}>{l}</SortableTh>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sorted.map((r) => (
+                    <tr key={r.ticker} className={r.portfolio ? styles.rowHighlight : r.weight <= 0.0001 ? styles.rowMuted : ''}>
+                      <td className={styles.tickerCell}>{r.portfolio ? <>★ {name}</> : r.ticker}</td>
+                      <td className={styles.plain} title={r.name || undefined}>{r.portfolio ? '' : (r.name || '—')}</td>
+                      <td>{r.portfolio ? '' : `${(r.weight * 100).toFixed(1)}%`}</td>
+                      <td title={finite(r.momentum) ? undefined : 'Pas de score au dernier calcul'}>{finite(r.momentum) ? signed(r.momentum) : na}</td>
+                      <td>{finite(r.beta) ? r.beta.toFixed(2) : na}</td>
+                      <td>{finite(r.volatility) ? `${r.volatility.toFixed(2)}%` : na}</td>
+                      {PERIOD_COLS.map(([k]) => <td key={k}>{signed(r[k as keyof ReturnsRow] as number | null)}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className={styles.emptyLine}>{stale ? 'Analyse enregistrée avant l’ajout de ce tableau : clique « Actualiser » pour le calculer.' : 'Rendements indisponibles.'}</div>
+          )}
+        </>
       )}
-    </Section>
+    </section>
   );
 }
 
@@ -556,6 +588,57 @@ export default function AllocationsView() {
   const report = useMemo(() => (myValue ? rescaleReport(baseReport, myValue) : baseReport), [baseReport, myValue]);
   const todayTable = p?.today?.table ?? null;
   const table = useMemo(() => (myValue ? rescaleTable(todayTable, myValue) : todayTable), [todayTable, myValue]);
+  const companyNames = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const row of report?.rows ?? []) {
+      const name = typeof row.name === 'string' ? row.name.trim() : '';
+      if (name && !name.startsWith('Erreur')) map[row.ticker] = name;
+    }
+    return map;
+  }, [report]);
+  const programmed = p?.timer?.last_rebalance || p?.last_rebalance_date || '';
+  const [refDate, setRefDate] = useState('');
+  const [returnsOpen, setReturnsOpen] = useState(false);
+  const [showExits, setShowExits] = useState(true);
+  useEffect(() => { setRefDate(programmed); }, [p?.index, programmed]);
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('alloc-show-exits');
+      if (stored === '0' || stored === '1') setShowExits(stored === '1');
+    } catch { /* private mode */ }
+  }, []);
+  const toggleExits = (v: boolean) => {
+    setShowExits(v);
+    try { localStorage.setItem('alloc-show-exits', v ? '1' : '0'); } catch { /* private mode */ }
+  };
+  const book = useMemo(
+    () => referenceBook(detail?.allocations, refDate || programmed || null),
+    [detail?.allocations, refDate, programmed],
+  );
+  const held = useMemo(() => (detail?.allocations ? new Set(book.held.keys()) : null), [detail?.allocations, book]);
+  const exits = useMemo(() => {
+    const current = new Set((table?.rows ?? []).filter((r) => r.ticker !== 'CASH').map((r) => r.ticker));
+    return exitsFromBook(book.held, current);
+  }, [book, table]);
+  const returnsRows = useMemo(
+    () => (analysis?.returns === undefined ? null : supplementReturns(analysis.returns, detail?.metrics)),
+    [analysis, detail?.metrics],
+  );
+  const capFor = useMemo(() => {
+    const stocks = p?.config.stocks ?? [];
+    const individual = new Map<string, number>();
+    for (const s of stocks) {
+      const cap = s.max_allocation_percent;
+      if (cap != null && cap > 0) individual.set(s.ticker, cap / 100);
+    }
+    const global = p?.config.use_max_allocation ? (p.config.max_allocation_percent ?? 20) / 100 : null;
+    return (ticker: string) => {
+      const own = individual.get(ticker) ?? null;
+      if (global == null) return own;
+      if (own == null) return global;
+      return Math.min(global, own);
+    };
+  }, [p]);
   if (!result || !p) {
     return (
       <div className={styles.page}>
@@ -575,6 +658,15 @@ export default function AllocationsView() {
   const positions = pie.filter(([t]) => t !== 'CASH').length;
   const w = report?.weighted ?? {};
   const updated = analysis ? new Date(analysis.created_at) : null;
+  const allocDates = detail?.allocations?.dates ?? [];
+  const bookControl = {
+    value: refDate || programmed,
+    snapped: book.date,
+    min: allocDates[0],
+    max: allocDates[allocDates.length - 1],
+    programmed,
+    onChange: setRefDate,
+  };
 
   const exportAi = () => {
     if (!analysis) return;
@@ -689,7 +781,14 @@ export default function AllocationsView() {
 
       <nav className={styles.sectionNav} aria-label="Sections">
         {SECTIONS.map((s) => (
-          <button key={s.id} type="button" onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => {
+              if (s.id === 'alloc-returns') setReturnsOpen(true);
+              document.getElementById(s.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}
+          >
             {s.label}
           </button>
         ))}
@@ -710,13 +809,46 @@ export default function AllocationsView() {
         <ValueControl value={myValue} backtestValue={today?.portfolio_value ?? null} onChange={setMyValue} />
         <div className={styles.todayGrid}>
           <div className={styles.pieBox}><Pie slices={pie} height={320} /></div>
-          <div><AllocTable table={table} /></div>
+          <div>
+            <AllocTable
+              table={table}
+              names={companyNames}
+              exits={exits}
+              exitsPending={!detail?.allocations}
+              held={held}
+              book={bookControl}
+              showExits={showExits}
+              onShowExits={toggleExits}
+              rebalance
+            />
+          </div>
         </div>
       </Section>
 
-      <ReturnsSection rows={analysis?.returns ?? null} loading={loading} stale={Boolean(analysis) && analysis?.returns === undefined} name={p.name} />
+      <ReturnsSection
+        rows={returnsRows}
+        loading={loading}
+        stale={Boolean(analysis) && analysis?.returns === undefined}
+        name={p.name}
+        names={companyNames}
+        open={returnsOpen}
+        onOpen={setReturnsOpen}
+      />
 
-      {today && Object.keys(today.weights).length > 0 && <PurchaseCalculator weights={today.weights} prices={today.prices} />}
+      {today && Object.keys(today.weights).length > 0 && (
+        <PurchaseCalculator
+          weights={today.weights}
+          prices={today.prices}
+          names={companyNames}
+          exits={exits}
+          held={held}
+          book={bookControl}
+          portfolioValue={myValue}
+          capFor={capFor}
+          showExits={showExits}
+          onShowExits={toggleExits}
+        />
+      )}
 
       <FundamentalsSection report={report} loading={loading} name={p.name} />
       <RiskSection report={report} loading={loading} />

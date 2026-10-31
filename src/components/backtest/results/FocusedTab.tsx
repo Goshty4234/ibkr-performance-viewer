@@ -5,7 +5,7 @@ import DrawdownChart from '@/components/DrawdownChart';
 import PerformanceChart from '@/components/PerformanceChart';
 import { type ChartsResult, FOCUSED_COLUMNS, FOCUSED_DEFINITIONS, formatFocused, type FocusedRow } from '@/lib/backtest/analytics';
 import { portfolioColor } from '@/lib/backtest/chart-data';
-import type { LoadedResult } from '@/lib/backtest/result-data';
+import { firstPortfolioDay, type LoadedResult } from '@/lib/backtest/result-data';
 import { useAnalytics } from '@/lib/backtest/worker/use-analytics';
 import type { ChartBrushSelection } from '@/lib/chart-range';
 import type { PortfolioSummaryOk } from '@/lib/engine/types';
@@ -38,7 +38,10 @@ export default function FocusedTab({
 }) {
   const bounds = useMemo(() => {
     const d = result.summary.dates;
-    if (d.length) return { min: d[0], max: d[d.length - 1] };
+    const axisMax = d.length ? d[d.length - 1] : '';
+    const visible = firstPortfolioDay(result.summary, portfolios);
+    if (visible) return { min: visible, max: axisMax && axisMax >= visible ? axisMax : visible };
+    if (d.length) return { min: d[0], max: axisMax };
     const all = portfolios.flatMap((p) => (p.series.dates ? [p.series.dates[0], p.series.dates[p.series.dates.length - 1]] : []));
     all.sort();
     return { min: all[0] ?? '', max: all[all.length - 1] ?? '' };

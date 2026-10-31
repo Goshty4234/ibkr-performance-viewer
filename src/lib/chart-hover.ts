@@ -78,6 +78,7 @@ export function fitHoverTip(
     tip.style.transform = flipped ? 'translateX(14px)' : 'translateX(calc(-100% - 14px))';
   }
   tip.style.top = `${viewTop - plotTop}px`;
+  clampHoverX(tip, plot);
   if (needed > height + 1) {
     tip.style.maxHeight = `${height}px`;
     tip.style.overflowY = 'auto';
@@ -90,4 +91,29 @@ export function fitHoverTip(
     tip.style.overscrollBehavior = '';
   }
   if (kind === 'primary') pairedTip = { top: viewTop, bottom: viewTop + height };
+}
+
+/** Keep a wide legend (long names, large %) inside the window instead of past the left edge. */
+function clampHoverX(tip: HTMLElement, plot: HTMLElement) {
+  const plotLeft = plot.getBoundingClientRect().left;
+  const anchor = Number.parseFloat(tip.style.left) || 0;
+  const flipped = tip.style.transform.includes('-100%');
+  const gap = 14;
+  const room = window.innerWidth - TIP_PAD * 2;
+  let width = tip.offsetWidth;
+  if (width > room) {
+    tip.style.maxWidth = `${room}px`;
+    tip.style.overflowX = 'auto';
+    width = room;
+  } else {
+    tip.style.maxWidth = '';
+    tip.style.overflowX = '';
+  }
+  let viewLeft = flipped ? plotLeft + anchor - width - gap : plotLeft + anchor + gap;
+  const minX = TIP_PAD;
+  const maxX = Math.max(minX, window.innerWidth - TIP_PAD - width);
+  if (viewLeft < minX) viewLeft = minX;
+  if (viewLeft > maxX) viewLeft = maxX;
+  tip.style.transform = 'none';
+  tip.style.left = `${viewLeft - plotLeft}px`;
 }

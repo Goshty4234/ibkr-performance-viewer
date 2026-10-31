@@ -17,11 +17,13 @@ import { visibleSeries } from '@/lib/chart-series';
 import { fitHoverTip, leavingChartPair, publishChartHover, subscribeChartHover } from '@/lib/chart-hover';
 import {
   CHART_PLOT_MARGIN_BOTTOM,
-  CHART_YAXIS_WIDTH,
   clientXToDataIndex,
   dataIndexToPlotX,
+  formatAxisPct,
+  maxAbsSeriesPct,
   PAINT_POINTS,
   sampleEvenExtremes,
+  yAxisWidthForPct,
 } from '@/lib/chart-range';
 import { computeDrawdownSeries, fmtPct, getMaxDrawdown } from '@/lib/performance';
 import styles from './DrawdownChart.module.css';
@@ -39,10 +41,12 @@ function DrawdownPointer({
   plotRef,
   data,
   shown,
+  yWidth,
 }: {
   plotRef: React.RefObject<HTMLDivElement | null>;
   data: Record<string, number | string>[];
   shown: ChartSeriesDef[];
+  yWidth: number;
 }) {
   const lineRef = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
@@ -70,7 +74,7 @@ function DrawdownPointer({
         tip.hidden = true;
         return;
       }
-      const left = dataIndexToPlotX(hover.index, node.getBoundingClientRect(), data.length);
+      const left = dataIndexToPlotX(hover.index, node.getBoundingClientRect(), data.length, yWidth);
       const flip = left > node.clientWidth * 0.62;
       line.hidden = false;
       tip.hidden = false;
@@ -90,7 +94,7 @@ function DrawdownPointer({
     };
     place(null);
     return subscribeChartHover(place);
-  }, [plotRef, data, shown]);
+  }, [plotRef, data, shown, yWidth]);
 
   return (
     <>
@@ -121,6 +125,10 @@ export default function DrawdownChart({
   useEffect(() => { setMounted(true); }, []);
 
   const shown = useMemo(() => visibleSeries(series, hidden), [series, hidden]);
+  const yWidth = useMemo(
+    () => yAxisWidthForPct(maxAbsSeriesPct(data, shown.map((s) => s.id))),
+    [data, shown],
+  );
 
   const drawdownData = useMemo(() => {
     if (!data.length) return [];
@@ -193,7 +201,7 @@ export default function DrawdownChart({
           const rect = plotRef.current?.getBoundingClientRect();
           if (!rect) return;
           publishChartHover({
-            index: clientXToDataIndex(e.clientX, rect, drawdownData.length),
+            index: clientXToDataIndex(e.clientX, rect, drawdownData.length, yWidth),
             source: 'drawdown',
           });
         }}
@@ -215,12 +223,12 @@ export default function DrawdownChart({
             />
             <YAxis
               domain={[yMin, 0]}
-              tickFormatter={(v) => `${v}%`}
+              tickFormatter={(v) => formatAxisPct(Number(v))}
               stroke="#5c6d85"
               fontSize={11}
               tickLine={false}
               axisLine={false}
-              width={CHART_YAXIS_WIDTH}
+              width={yWidth}
             />
             {shown.map((s) => (
               <Line
@@ -238,7 +246,7 @@ export default function DrawdownChart({
             ))}
           </LineChart>
         </ResponsiveContainer>
-        <DrawdownPointer plotRef={plotRef} data={drawdownData} shown={shown} />
+        <DrawdownPointer plotRef={plotRef} data={drawdownData} shown={shown} yWidth={yWidth} />
       </div>
     </div>
   );

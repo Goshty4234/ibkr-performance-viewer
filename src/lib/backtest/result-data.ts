@@ -35,6 +35,25 @@ export function portfolioDates(summary: ResultSummary, p: PortfolioSummaryOk): s
   return refDates(summary, p.series, p.series.with_additions.length);
 }
 
+/** First day a portfolio curve is drawn. Ignores a longer reference axis (S&P 500 from 1962). */
+export function firstPortfolioDay(summary: ResultSummary, portfolios: PortfolioSummaryOk[]): string {
+  let best = '';
+  for (const p of portfolios) {
+    if (!p.series) continue;
+    const dates = portfolioDates(summary, p);
+    const values = noAdditions(p);
+    const n = Math.min(dates.length, values.length);
+    for (let i = 0; i < n; i++) {
+      const v = values[i];
+      if (v !== null && Number.isFinite(v) && v > 0) {
+        if (!best || dates[i] < best) best = dates[i];
+        break;
+      }
+    }
+  }
+  return best;
+}
+
 export function noAdditions(p: PortfolioSummaryOk): (number | null)[] {
   return p.series.no_additions ?? p.series.with_additions;
 }

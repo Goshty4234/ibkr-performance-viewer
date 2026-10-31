@@ -111,6 +111,52 @@
 .compareGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; padding: 0 1.1rem 1.1rem; }
 @media (max-width: 900px) { .compareGrid { grid-template-columns: 1fr; } }
 .totalRow td { font-weight: 700; border-top: 1px solid var(--border); background: rgba(255, 255, 255, 0.02); }
+.tableStage { min-width: 0; }
+.tableTools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.55rem;
+}
+.tableFullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  padding: 1rem 1.25rem 1.25rem;
+}
+.tableFullscreen .tableScroll { max-height: none; flex: 1; }
+.tableFullscreen .padded { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.bookDate { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.55rem; }
+.bookLegend { display: flex; gap: 0.8rem; flex-wrap: wrap; font-size: 0.75rem; color: var(--text-muted); }
+.tagNew { color: var(--green); font-weight: 700; }
+.tagExit { color: var(--red); font-weight: 700; }
+.tag { margin-left: 0.45rem; font-size: 0.68rem; font-weight: 700; }
+.rowNew td { color: var(--green); }
+.rowNew .stickyCol { color: var(--green); box-shadow: inset 3px 0 0 var(--green); }
+.rowExit .stickyCol { box-shadow: inset 3px 0 0 var(--red); }
+.companyCol {
+  text-align: left !important;
+  font-family: var(--font);
+  font-weight: 500;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rowExit td { color: var(--red); }
+.rowExit .stickyCol { background: #1c1216; }
+.exitAlloc { white-space: normal; }
+.exitWas { display: block; margin-top: 0.1rem; font-size: 0.68rem; font-weight: 600; white-space: nowrap; }
+.exitEmpty { margin: 0 0 0.45rem; font-size: 0.78rem; color: var(--text-muted); }
+@media print {
+  .tableTools { display: none !important; }
+  .tableFullscreen { position: static; inset: auto; z-index: auto; padding: 0; background: transparent; }
+}
 .codeBlock {
   margin: 0 1.1rem 1.1rem;
   padding: 0.8rem;
@@ -248,7 +294,7 @@
 .weightFoot { display: flex; justify-content: space-between; align-items: center; margin-top: 0.6rem; font-size: 0.75rem; color: var(--text-faint); }
 
 .evoPlot { position: relative; height: 360px; cursor: crosshair; }
-.evoPlot :global(.recharts-wrapper) { pointer-events: none; }
+.evoChart { height: 360px; pointer-events: none; }
 .countHead { margin-top: 0.85rem; }
 .countPlot { position: relative; height: 140px; cursor: crosshair; }
 .countPlot :global(.recharts-wrapper) { pointer-events: none; }

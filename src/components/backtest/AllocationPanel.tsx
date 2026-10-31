@@ -1,20 +1,18 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import type { EChartsCoreOption } from 'echarts/core';
+import { buildAllocationView, heldCount, type AllocationEvolution } from '@/lib/backtest/allocation-stack';
 import type { LoadedResult } from '@/lib/backtest/result-data';
 import { usePortfolioDetail } from '@/lib/backtest/use-detail';
-import { SERIES_PALETTE } from '@/lib/chart-series';
 import type { PortfolioDetail, PortfolioSummaryOk } from '@/lib/engine/types';
+import EChart from './charts/EChart';
 import PeriodFields from './results/PeriodFields';
 import styles from './Results.module.css';
 
-const MAX_AREA_TICKERS = 16;
-const OTHERS = 'Autres';
-const PAINT_MAX = 480;
 const ALLOC_Y = 44;
 const ALLOC_RIGHT = 8;
-const OTHERS_COLOR = '#9aa8bc';
 
 /** Engine weights are fractions (0..1); tolerate percentage inputs. */
 function asPct(weights: Record<string, number>): Record<string, number> {
@@ -24,36 +22,18 @@ function asPct(weights: Record<string, number>): Record<string, number> {
   return Object.fromEntries(Object.entries(weights).map(([k, v]) => [k, (Number.isFinite(v) ? v : 0) * factor]));
 }
 
-interface Evolution {
-  dates: string[];
-  weights: Record<string, (number | null)[]>;
-  factor: number;
-}
-
-interface EvolutionView {
-  /** First index of the window inside `Evolution.dates`. */
-  i0: number;
-  /** One entry per simulated day in the window. The painted chart is a sample of these. */
-  count: number;
-  keys: string[];
-  paint: Record<string, number | string | [number, number]>[];
-}
+type Evolution = AllocationEvolution;
 
 const EMPTY_EVOLUTION: Evolution = { dates: [], weights: {}, factor: 100 };
-const EMPTY_VIEW: EvolutionView = { i0: 0, count: 0, keys: [], paint: [] };
 const GREY = '#5c6d85';
 
-/** Stocks with a real weight that day. Cash is not a stock. */
-function heldCount(ev: Evolution, i: number): number {
-  let n = 0;
-  for (const [t, series] of Object.entries(ev.weights)) {
-    if (t === 'CASH') continue;
-    if ((series[i] ?? 0) * ev.factor > 0.05) n += 1;
-  }
-  return n;
+/** Distinct hue per band so two neighbours are not the same colour. */
+function bandColor(index: number): string {
+  const hue = Math.round((index * 137.508) % 360);
+  return `hsl(${hue} 68% 58%)`;
 }
 
-/** Every non-zero position at original date index `i`, largest first (includes those grouped in "Autres"). */
+/** Every non-zero position at original date index `i`, largest first. */
 function compositionAt(ev: Evolution, i: number): [string, number][] {
   const out: [string, number][] = [];
   for (const [t, series] of Object.entries(ev.weights)) {
@@ -73,58 +53,6 @@ function indexOnOrBefore(dates: string[], day: string): number {
     else hi = mid - 1;
   }
   return ans;
-}
-
-function paintIndices(n: number): number[] {
-  if (n <= PAINT_MAX) return Array.from({ length: n }, (_, i) => i);
-  const step = (n - 1) / (PAINT_MAX - 1);
-  const out: number[] = [];
-  let prev = -1;
-  for (let k = 0; k < PAINT_MAX; k++) {
-    const i = Math.round(k * step);
-    if (i !== prev) out.push(i);
-    prev = i;
-  }
-  if (out[out.length - 1] !== n - 1) out.push(n - 1);
-  return out;
-}
-
-/** Bands follow the largest weights reached inside the window, including names that have since left. The rest fills up to 100 %. */
-function buildView(ev: Evolution, start: string, end: string): EvolutionView {
-  if (!ev.dates.length) return EMPTY_VIEW;
-  const i0 = start ? ev.dates.findIndex((d) => d >= start) : 0;
-  const i1 = end ? indexOnOrBefore(ev.dates, end) : ev.dates.length - 1;
-  if (i0 < 0 || i1 < i0) return EMPTY_VIEW;
-  const ranked = Object.keys(ev.weights).map((t) => {
-    let peak = 0;
-    const series = ev.weights[t];
-    for (let i = i0; i <= i1; i++) {
-      const v = series[i] ?? 0;
-      if (v > peak) peak = v;
-    }
-    return { t, peak };
-  }).filter((x) => x.peak > 0).sort((a, b) => b.peak - a.peak);
-  const top = ranked.slice(0, MAX_AREA_TICKERS).map((x) => x.t);
-  if (!top.length) return EMPTY_VIEW;
-  const keys = [...top, OTHERS];
-  const count = i1 - i0 + 1;
-  const paint: Record<string, number | string | [number, number]>[] = [];
-  for (const local of paintIndices(count)) {
-    const i = i0 + local;
-    const row: Record<string, number | string | [number, number]> = { date: ev.dates[i], n: heldCount(ev, i) };
-    // Explicit [bottom, top] bands. Recharts' own stack with stepAfter collapses
-    // toward 0 even when the day has real weights.
-    let floor = 0;
-    for (const t of top) {
-      const v = Math.max(0, (ev.weights[t][i] ?? 0) * ev.factor);
-      row[t] = [floor, floor + v];
-      floor += v;
-    }
-    const rest = Math.max(0, 100 - floor);
-    row[OTHERS] = [floor, floor + rest];
-    paint.push(row);
-  }
-  return { i0, count, keys, paint };
 }
 
 function buildEvolution(d: PortfolioDetail): Evolution {
@@ -181,7 +109,7 @@ function WeightColumn({
                     className={styles.weightBar}
                     style={{
                       width: `${Math.min(100, Math.max(0, v))}%`,
-                      background: t === 'CASH' ? GREY : (colors.get(t) ?? SERIES_PALETTE[i % SERIES_PALETTE.length]),
+                      background: t === 'CASH' ? GREY : (colors.get(t) ?? bandColor(i)),
                     }}
                   />
                 </span>
@@ -224,11 +152,41 @@ export default function AllocationPanel({
   const { detail, loading, error } = usePortfolioDetail(result, p?.index ?? null);
 
   const evolution = useMemo(() => (detail ? buildEvolution(detail) : EMPTY_EVOLUTION), [detail]);
-  const view = useMemo(() => buildView(evolution, start, end), [evolution, start, end]);
+  const view = useMemo(() => buildAllocationView(evolution, start, end), [evolution, start, end]);
   const colors = useMemo(
-    () => new Map(view.keys.map((k, i) => [k, k === OTHERS ? OTHERS_COLOR : k === 'CASH' ? GREY : SERIES_PALETTE[i % SERIES_PALETTE.length]])),
+    () => new Map(view.keys.map((k, i) => [k, k === 'CASH' ? GREY : bandColor(i)])),
     [view],
   );
+  const areaOption = useMemo<EChartsCoreOption>(() => ({
+    animation: false,
+    grid: { left: ALLOC_Y, right: ALLOC_RIGHT, top: 8, bottom: 28 },
+    xAxis: {
+      type: 'category',
+      data: view.paint.map((r) => r.date),
+      boundaryGap: false,
+      axisLabel: { formatter: (d: string) => String(d).slice(0, 7), hideOverlap: true, color: '#5c6d85', fontSize: 11 },
+      axisLine: { lineStyle: { color: 'rgba(255,255,255,0.14)' } },
+      axisTick: { show: false },
+    },
+    yAxis: {
+      type: 'value',
+      min: 0,
+      max: 100,
+      axisLabel: { formatter: (v: number) => `${v}%`, color: '#5c6d85', fontSize: 11 },
+      splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } },
+    },
+    series: view.keys.map((k) => ({
+      name: k,
+      type: 'line',
+      stack: 'alloc',
+      step: 'end',
+      symbol: 'none',
+      silent: true,
+      lineStyle: { width: 0 },
+      areaStyle: { color: colors.get(k), opacity: 0.95 },
+      data: view.paint.map((row) => Number(row[k]) || 0),
+    })),
+  }), [view, colors]);
   const plotRef = useRef<HTMLDivElement>(null);
   const lineRef = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
@@ -383,7 +341,7 @@ export default function AllocationPanel({
         <div className={styles.subTitle}>
           Évolution des allocations
           <span className={styles.muted} style={{ fontWeight: 400, marginLeft: 8 }}>
-            chaque jour détenu · les bandes sont les plus gros poids de la période, le reste est « Autres » · la liste se scrolle
+            chaque jour détenu · une bande par titre · la liste se scrolle
           </span>
         </div>
         {loading ? (
@@ -419,24 +377,9 @@ export default function AllocationPanel({
                 setPinned(view.i0 + allocIndex(e.clientX, rect, view.count));
               }}
             >
-              <ResponsiveContainer width="100%" height={360}>
-                <AreaChart data={view.paint} margin={{ top: 8, right: ALLOC_RIGHT, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-                  <XAxis dataKey="date" stroke="#5c6d85" fontSize={11} tickLine={false} minTickGap={48} tickFormatter={(d: string) => d.slice(0, 7)} />
-                  <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} stroke="#5c6d85" fontSize={11} tickLine={false} axisLine={false} width={ALLOC_Y} />
-                  {view.keys.map((k) => (
-                    <Area
-                      key={k}
-                      type="stepAfter"
-                      dataKey={k}
-                      stroke="none"
-                      fill={colors.get(k)}
-                      fillOpacity={k === OTHERS ? 0.72 : 0.9}
-                      isAnimationActive={false}
-                    />
-                  ))}
-                </AreaChart>
-              </ResponsiveContainer>
+              <div className={styles.evoChart}>
+                <EChart option={areaOption} height={360} />
+              </div>
               <div ref={lineRef} className={styles.evoLine} hidden />
               <div ref={tipRef} className={styles.evoTip} data-evo-tip="" hidden>
                 <div ref={headRef} className={styles.evoTipHead} />
@@ -489,11 +432,6 @@ export default function AllocationPanel({
                   </span>
                   <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPinned(null)}>✕ Fermer</button>
                 </div>
-                {pinnedList.some(([t]) => !colors.has(t)) && (
-                  <div className={styles.muted} style={{ fontSize: '0.72rem', marginBottom: '0.4rem' }}>
-                    Gris : titre regroupé dans « Autres » sur le graphique.
-                  </div>
-                )}
                 {pinnedList.length === 0 ? (
                   <div className={styles.muted}>Tout en cash ce jour-là.</div>
                 ) : (

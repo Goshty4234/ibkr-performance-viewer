@@ -138,6 +138,30 @@
   scroll-margin-top: calc(var(--header-h) + 64px);
 }
 .sectionHead { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; }
+.collapseHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.collapseHead .sectionTitle { display: block; }
+.collapseMark { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.2rem; }
+.returnsNote { margin: 0.35rem 0 0.8rem; font-size: 0.8rem; line-height: 1.45; color: var(--text-muted); max-width: 920px; }
+.returnsScroll { max-height: 70vh; overflow: auto; }
+.table td.plain {
+  text-align: left;
+  font-family: var(--font);
+  font-weight: 500;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .sectionTitle { margin: 0; font-size: 1.02rem; font-weight: 700; letter-spacing: -0.01em; }
 .sectionSub { margin-top: 0.2rem; font-size: 0.76rem; color: var(--text-muted); max-width: 900px; }
 .sectionActions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
