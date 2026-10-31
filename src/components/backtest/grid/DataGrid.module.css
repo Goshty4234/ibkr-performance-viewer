@@ -123,6 +123,16 @@
   background: #16223a;
 }
 
+.followed,
+.followed:hover,
+.followed .frozen,
+.followed:hover .frozen {
+  background: #1a2d52;
+}
+.followed .frozen {
+  box-shadow: inset 3px 0 0 #4d8dff;
+}
+
 .empty {
   padding: 1rem;
   color: var(--text-faint);

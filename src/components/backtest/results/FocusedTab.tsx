@@ -72,6 +72,15 @@ export default function FocusedTab({
   const firstDay = cd?.pctData[0]?.date;
   const lastDay = cd?.pctData[cd.pctData.length - 1]?.date;
 
+  const [followed, setFollowed] = useState<Set<number>>(new Set());
+  const toggleFollow = (row: FocusedRow) => {
+    setFollowed((prev) => {
+      const next = new Set(prev);
+      if (next.has(row.index)) next.delete(row.index);
+      else next.add(row.index);
+      return next;
+    });
+  };
   const columns = useMemo<GridColumn<FocusedRow>[]>(() => {
     const cols = FOCUSED_COLUMNS.filter((c) => !essential || c.essential);
     return [
@@ -164,6 +173,15 @@ export default function FocusedTab({
                 maxHeight={620}
                 csvName={`analyse-ciblee-${range.start}-${range.end}`}
                 empty={loading ? 'Calcul…' : 'Aucun portfolio n’a assez de données sur cette période.'}
+                highlightedKeys={followed}
+                onRowClick={toggleFollow}
+                toolbar={followed.size > 0 ? (
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFollowed(new Set())}>
+                    Retirer le surlignage ({followed.size})
+                  </button>
+                ) : (
+                  <span className={styles.muted}>Cliquer une ligne pour la suivre quand le tri la déplace. Recliquer pour l’enlever.</span>
+                )}
               />
               <ColumnDefinitions
                 columns={FOCUSED_COLUMNS.filter((c) => !essential || c.essential).map((c) => ({ label: c.label, title: FOCUSED_DEFINITIONS[c.key] }))}

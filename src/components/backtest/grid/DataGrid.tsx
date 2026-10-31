@@ -1,6 +1,6 @@
 'use client';
 
-import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import styles from './DataGrid.module.css';
 
 export interface GridColumn<T> {
@@ -29,6 +29,8 @@ export interface DataGridProps<T> {
   initialSort?: { key: string; dir: 'asc' | 'desc' } | null;
   onRowClick?: (row: T) => void;
   selectedKey?: string | number | null;
+  /** Rows to keep in sight when a sort moves them. */
+  highlightedKeys?: ReadonlySet<string | number>;
   csvName?: string;
   toolbar?: ReactNode;
   empty?: ReactNode;
@@ -53,6 +55,7 @@ export default function DataGrid<T>({
   initialSort = null,
   onRowClick,
   selectedKey,
+  highlightedKeys,
   csvName,
   toolbar,
   empty,
@@ -112,6 +115,37 @@ export default function DataGrid<T>({
       if (scroller.current) setScrollTop(scroller.current.scrollTop);
     });
   }, []);
+
+  const sortedRef = useRef(sorted);
+  sortedRef.current = sorted;
+  const highlightRef = useRef(highlightedKeys);
+  highlightRef.current = highlightedKeys;
+  const rowKeyRef = useRef(rowKey);
+  rowKeyRef.current = rowKey;
+  const sortSig = sort ? `${sort.key}:${sort.dir}` : '';
+  useEffect(() => {
+    const marks = highlightRef.current;
+    const el = scroller.current;
+    const keyFn = rowKeyRef.current;
+    if (!marks?.size || !el) return;
+    const positions: number[] = [];
+    sortedRef.current.forEach(({ r, i }, n) => {
+      const key = keyFn ? keyFn(r, i) : i;
+      if (marks.has(key)) positions.push(n);
+    });
+    if (!positions.length) return;
+    const viewTop = el.scrollTop;
+    const viewBottom = viewTop + el.clientHeight - rowHeight;
+    const visible = positions.some((n) => {
+      const y = n * rowHeight;
+      return y >= viewTop && y <= viewBottom;
+    });
+    if (visible) return;
+    const target = positions.reduce((best, n) => (
+      Math.abs(n * rowHeight - viewTop) < Math.abs(best * rowHeight - viewTop) ? n : best
+    ));
+    el.scrollTop = Math.max(0, target * rowHeight - rowHeight);
+  }, [sortSig, rowHeight]);
 
   const toggleSort = (c: GridColumn<T>) => {
     if (c.sortable === false) return;
@@ -205,7 +239,7 @@ export default function DataGrid<T>({
                   <div
                     key={key}
                     role="row"
-                    className={`${styles.row} ${onRowClick ? styles.clickable : ''} ${selectedKey !== undefined && selectedKey === key ? styles.selected : ''}`}
+                    className={`${styles.row} ${onRowClick ? styles.clickable : ''} ${selectedKey !== undefined && selectedKey === key ? styles.selected : ''} ${highlightedKeys?.has(key) ? styles.followed : ''}`}
                     style={{ gridTemplateColumns: template, height: rowHeight, transform: `translateY(${(first + n) * rowHeight}px)` }}
                     onClick={onRowClick ? () => onRowClick(r) : undefined}
                   >

@@ -28,7 +28,7 @@ _lock = threading.Lock()
 INFO_TTL = 24 * 3600
 _MISS = object()
 
-BENCHMARKS = ["SPY", "QQQ", "SPMO", "VTI", "VT", "SSO", "QLD", "BITCOIN"]
+BENCHMARKS = ["SPY", "QQQ", "SPMO", "FMTM", "SCHD", "BRK-B", "VTI", "VT", "SSO", "QLD", "GLD", "TLT", "SGOV", "BITCOIN"]
 PERIODS = {"1W": 7, "1M": 30, "3M": 90, "6M": 180, "1Y": 365}
 COMMODITIES = {"GLD", "SLV", "USO", "UNG"}
 
@@ -435,13 +435,36 @@ def returns_summary(
     return rows
 
 
-def _histories(tickers: list[str]) -> dict[str, pd.Series]:
+def _total_return(df: pd.DataFrame | None) -> pd.Series | None:
+    """Growth of 1 from the stored close plus the cash dividend kept beside it.
+
+    The backtest does the same thing on a dividend day: price change plus dividend / previous close.
+    No Dividends column leaves the price series unchanged.
+    """
+    close = _close(df)
+    if close is None or not len(close):
+        return None
+    if not isinstance(df, pd.DataFrame) or "Dividends" not in df.columns or len(close) < 2:
+        return close
+    div = pd.to_numeric(df["Dividends"], errors="coerce").fillna(0.0)
+    div.index = pd.to_datetime(div.index)
+    if getattr(div.index, "tz", None) is not None:
+        div.index = div.index.tz_localize(None)
+    div = div.reindex(close.index).fillna(0.0)
+    prev = close.shift(1)
+    growth = ((close + div) / prev).replace([np.inf, -np.inf], np.nan)
+    growth.iloc[0] = 1.0
+    return growth.fillna(1.0).cumprod()
+
+
+def _histories(tickers: list[str], total: bool = False) -> dict[str, pd.Series]:
     from .data_api import price_frames
 
     frames, _report = price_frames(tickers, "topup")
     out = {}
     for t in tickers:
-        s = _close(frames.get(t))
+        frame = frames.get(t)
+        s = _total_return(frame) if total else _close(frame)
         if s is not None and len(s):
             out[t] = s
     return out
@@ -451,7 +474,7 @@ def benchmarks(portfolio: dict[str, list] | None, benchmark_ticker: str | None, 
     """Benchmark comparison table: the portfolio's no_additions series first, then BENCHMARKS."""
     A = _alloc()
     extra = [benchmark_ticker] if benchmark_ticker and benchmark_ticker not in BENCHMARKS else []
-    hist = _histories(BENCHMARKS + extra)
+    hist = _histories(BENCHMARKS + extra, total=True)
     info_map = infos(BENCHMARKS)
     rows: list[dict[str, Any]] = []
 

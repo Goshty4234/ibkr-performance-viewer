@@ -344,7 +344,7 @@ function BenchmarksSection({ rows, loading, name }: { rows: BenchmarkRow[] | nul
   const { sorted, sort, toggle } = useTableSort(rows ?? NO_BENCH, BENCH_SORT, benchPinned);
   const th = { sort, onSort: toggle };
   return (
-    <Section id="alloc-benchmarks" title="Comparaison aux benchmarks" sub="Rendements de prix approximatifs sur des périodes calendaires · volatilité annualisée sur 365 jours · bêta vs SPY (portefeuille : vs son benchmark)">
+    <Section id="alloc-benchmarks" title="Comparaison aux benchmarks" sub="Rendements dividendes compris, à partir du prix et du dividende déjà en cache · volatilité annualisée sur 365 jours · bêta vs SPY (portefeuille : vs son benchmark)">
       {!rows && loading ? (
         <Skeleton height={300} />
       ) : rows?.length ? (
