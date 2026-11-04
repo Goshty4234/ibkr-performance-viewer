@@ -29,8 +29,11 @@ export const TIPS = {
     + 'et les autres reçoivent leur rendement ÷ le meilleur ; le pire rendement négatif reçoit −100 % du poids et les autres négatifs reçoivent leur rendement ÷ |le pire|. '
     + 'Le score final est la somme des fenêtres, entre −100 et +100 : un titre qui explose sur une seule fenêtre mais s’effondre sur les autres ne domine plus. '
     + 'Décoché : score classique (somme des rendements pondérés).',
-  discardNegative: 'Un titre dont le rendement sur cette fenêtre est négatif est exclu de ce rebalancement.',
-  requireRecentPositive: 'Avec « Rejeter si négatif » : le titre est gardé malgré tout si son rendement récent est positif.',
+  discardNegative: 'Un titre dont le rendement sur cette fenêtre est négatif est exclu de ce rebalancement. Par défaut le test utilise la même période que le score (lookback → exclusion).',
+  discardThroughToday:
+    'Avec « Rejeter si négatif » : le test regarde le rendement du lookback jusqu’à aujourd’hui (ex. 120 → 0), même si la fenêtre du score exclut encore les derniers jours (120 → 30). '
+    + 'Le poids momentum, lui, reste calculé sur la fenêtre avec exclusion.',
+  requireRecentPositive: 'Avec « Rejeter si négatif » et sans « Jusqu’à aujourd’hui » : le titre est gardé malgré tout si son rendement sur les jours exclus est positif.',
   betaWeighting:
     'Pondération inverse au bêta : le poids momentum de chaque titre est divisé par |bêta| (mesuré contre le benchmark), puis les poids sont remis à 100 %. '
     + 'Les titres qui amplifient les mouvements du marché reçoivent donc moins de poids.',

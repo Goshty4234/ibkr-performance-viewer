@@ -206,16 +206,30 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
                     ret = ((price_end + divs_in_period) - price_start) / price_start
                 else:
                     ret = (price_end - price_start) / price_start
+                # Score keeps `ret` (lookback→exclude). The negative filter may instead
+                # look at lookback→today when discard_through_today is set.
+                discard_ret = ret
+                if (
+                    parse_bool_from_json(window.get("discard_if_negative", False), False)
+                    and parse_bool_from_json(window.get("discard_through_today", False), False)
+                    and end_mom != date
+                ):
+                    through_today = _momentum_return_between(
+                        df_t, start_mom, date, include_dividends.get(t, False)
+                    )
+                    if through_today is not None:
+                        discard_ret = through_today
                 recent_ret = None
                 if (
-                    ret < 0
+                    discard_ret < 0
                     and parse_bool_from_json(window.get("discard_if_negative", False), False)
                     and parse_bool_from_json(window.get("discard_unless_recent_positive", False), False)
+                    and not parse_bool_from_json(window.get("discard_through_today", False), False)
                 ):
                     recent_ret = _momentum_return_between(
                         df_t, end_mom, date, include_dividends.get(t, False)
                     )
-                if _momentum_window_discards_negative(window, ret, recent_ret):
+                if _momentum_window_discards_negative(window, discard_ret, recent_ret):
                     is_valid = False
                     break
                 asset_returns += ret * weight

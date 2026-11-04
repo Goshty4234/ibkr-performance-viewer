@@ -61,6 +61,7 @@ function parseWindows(text: string): MomentumWindow[] {
       exclude: Math.round(exclude),
       weight: weight / 100,
       discard_if_negative: false,
+      discard_through_today: false,
       discard_unless_recent_positive: false,
     }));
 }

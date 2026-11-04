@@ -457,8 +457,21 @@ function MomentumSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
             <NumField label="Lookback" value={w.lookback} min={1} step={5} title={TIPS.lookback} onChange={(v) => setWin(i, { lookback: Math.round(v) })} />
             <NumField label="Exclusion" value={w.exclude} min={0} step={5} title={TIPS.exclude} onChange={(v) => setWin(i, { exclude: Math.round(v) })} />
             <NumField label="Poids" value={w.weight} scale={100} suffix="%" min={0} max={100} step={5} title={TIPS.windowWeight} onChange={(v) => setWin(i, { weight: v })} />
-            <Check checked={Boolean(w.discard_if_negative)} onChange={(v) => setWin(i, { discard_if_negative: v })} title={TIPS.discardNegative}>Rejeter si négatif</Check>
-            <Check checked={Boolean(w.discard_unless_recent_positive)} onChange={(v) => setWin(i, { discard_unless_recent_positive: v })} title={TIPS.requireRecentPositive}>
+            <Check checked={Boolean(w.discard_if_negative)} onChange={(v) => setWin(i, { discard_if_negative: v, ...(v ? {} : { discard_through_today: false, discard_unless_recent_positive: false }) })} title={TIPS.discardNegative}>Rejeter si négatif</Check>
+            <Check
+              checked={Boolean(w.discard_through_today)}
+              onChange={(v) => setWin(i, { discard_through_today: v, ...(v ? { discard_unless_recent_positive: false } : {}) })}
+              title={TIPS.discardThroughToday}
+              disabled={!w.discard_if_negative}
+            >
+              Jusqu’à aujourd’hui
+            </Check>
+            <Check
+              checked={Boolean(w.discard_unless_recent_positive)}
+              onChange={(v) => setWin(i, { discard_unless_recent_positive: v })}
+              title={TIPS.requireRecentPositive}
+              disabled={!w.discard_if_negative || Boolean(w.discard_through_today)}
+            >
               Exiger récent positif
             </Check>
             <button

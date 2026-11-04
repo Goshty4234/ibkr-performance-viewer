@@ -150,7 +150,13 @@ def _momentum_windows(cfg: dict) -> list[dict]:
             w["weight"] = weight
         if isinstance(w, dict):
             w["discard_if_negative"] = parse_bool(w.get("discard_if_negative", False))
+            w["discard_through_today"] = parse_bool(w.get("discard_through_today", False))
             w["discard_unless_recent_positive"] = parse_bool(w.get("discard_unless_recent_positive", False))
+            if not w["discard_if_negative"]:
+                w["discard_through_today"] = False
+                w["discard_unless_recent_positive"] = False
+            elif w["discard_through_today"]:
+                w["discard_unless_recent_positive"] = False
     return windows
 
 

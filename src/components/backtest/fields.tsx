@@ -120,15 +120,16 @@ export function Toggle({ on, onChange, label, title }: { on: boolean; onChange: 
   );
 }
 
-export function Check({ checked, onChange, children, title }: {
+export function Check({ checked, onChange, children, title, disabled }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   children: React.ReactNode;
   title?: string;
+  disabled?: boolean;
 }) {
   return (
-    <label className={styles.checkRow} title={title}>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <label className={styles.checkRow} title={title} style={disabled ? { opacity: 0.45 } : undefined}>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       {children}
     </label>
   );

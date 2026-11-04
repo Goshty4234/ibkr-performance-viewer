@@ -37,9 +37,9 @@ export interface VariantSpec {
 }
 
 export const DEFAULT_WINDOWS: MomentumWindow[] = [
-  { lookback: 365, exclude: 30, weight: 0.5, discard_if_negative: false, discard_unless_recent_positive: false },
-  { lookback: 180, exclude: 30, weight: 0.3, discard_if_negative: false, discard_unless_recent_positive: false },
-  { lookback: 120, exclude: 30, weight: 0.2, discard_if_negative: false, discard_unless_recent_positive: false },
+  { lookback: 365, exclude: 30, weight: 0.5, discard_if_negative: false, discard_through_today: false, discard_unless_recent_positive: false },
+  { lookback: 180, exclude: 30, weight: 0.3, discard_if_negative: false, discard_through_today: false, discard_unless_recent_positive: false },
+  { lookback: 120, exclude: 30, weight: 0.2, discard_if_negative: false, discard_through_today: false, discard_unless_recent_positive: false },
 ];
 
 export function defaultVariantSpec(): VariantSpec {

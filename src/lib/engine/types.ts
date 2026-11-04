@@ -442,6 +442,8 @@ export interface MomentumWindow {
   exclude: number;
   weight: number;
   discard_if_negative?: boolean;
+  /** When discarding negatives, test lookback→today instead of lookback→exclude. */
+  discard_through_today?: boolean;
   discard_unless_recent_positive?: boolean;
 }
 

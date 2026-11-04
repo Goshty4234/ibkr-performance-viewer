@@ -575,7 +575,7 @@
 
 .winRow {
   display: grid;
-  grid-template-columns: repeat(3, minmax(80px, 1fr)) auto auto 34px;
+  grid-template-columns: repeat(3, minmax(80px, 1fr)) auto auto auto 34px;
   gap: 0.5rem;
   align-items: end;
 }
