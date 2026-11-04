@@ -224,8 +224,9 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
                     discard_ret < 0
                     and parse_bool_from_json(window.get("discard_if_negative", False), False)
                     and parse_bool_from_json(window.get("discard_unless_recent_positive", False), False)
-                    and not parse_bool_from_json(window.get("discard_through_today", False), False)
                 ):
+                    # Days excluded from the score (ex. 30→0). Can rescue a negative
+                    # lookback→exclude or lookback→today discard test.
                     recent_ret = _momentum_return_between(
                         df_t, end_mom, date, include_dividends.get(t, False)
                     )

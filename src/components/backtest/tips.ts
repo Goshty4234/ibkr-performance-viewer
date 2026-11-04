@@ -33,7 +33,8 @@ export const TIPS = {
   discardThroughToday:
     'Avec « Rejeter si négatif » : le test regarde le rendement du lookback jusqu’à aujourd’hui (ex. 120 → 0), même si la fenêtre du score exclut encore les derniers jours (120 → 30). '
     + 'Le poids momentum, lui, reste calculé sur la fenêtre avec exclusion.',
-  requireRecentPositive: 'Avec « Rejeter si négatif » et sans « Jusqu’à aujourd’hui » : le titre est gardé malgré tout si son rendement sur les jours exclus est positif.',
+  requireRecentPositive:
+    'Avec « Rejeter si négatif » : si le test (120 → 30, ou 120 → 0 avec « Jusqu’à aujourd’hui ») est négatif, le titre est quand même gardé quand le rendement des jours exclus (ex. 30 → 0) est positif.',
   betaWeighting:
     'Pondération inverse au bêta : le poids momentum de chaque titre est divisé par |bêta| (mesuré contre le benchmark), puis les poids sont remis à 100 %. '
     + 'Les titres qui amplifient les mouvements du marché reçoivent donc moins de poids.',

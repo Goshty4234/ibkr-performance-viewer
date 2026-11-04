@@ -155,8 +155,6 @@ def _momentum_windows(cfg: dict) -> list[dict]:
             if not w["discard_if_negative"]:
                 w["discard_through_today"] = False
                 w["discard_unless_recent_positive"] = False
-            elif w["discard_through_today"]:
-                w["discard_unless_recent_positive"] = False
     return windows
 
 

@@ -460,7 +460,7 @@ function MomentumSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
             <Check checked={Boolean(w.discard_if_negative)} onChange={(v) => setWin(i, { discard_if_negative: v, ...(v ? {} : { discard_through_today: false, discard_unless_recent_positive: false }) })} title={TIPS.discardNegative}>Rejeter si négatif</Check>
             <Check
               checked={Boolean(w.discard_through_today)}
-              onChange={(v) => setWin(i, { discard_through_today: v, ...(v ? { discard_unless_recent_positive: false } : {}) })}
+              onChange={(v) => setWin(i, { discard_through_today: v })}
               title={TIPS.discardThroughToday}
               disabled={!w.discard_if_negative}
             >
@@ -470,7 +470,7 @@ function MomentumSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
               checked={Boolean(w.discard_unless_recent_positive)}
               onChange={(v) => setWin(i, { discard_unless_recent_positive: v })}
               title={TIPS.requireRecentPositive}
-              disabled={!w.discard_if_negative || Boolean(w.discard_through_today)}
+              disabled={!w.discard_if_negative}
             >
               Exiger récent positif
             </Check>
