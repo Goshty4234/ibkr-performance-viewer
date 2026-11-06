@@ -642,15 +642,16 @@ def _cash_flows(cfg: dict, total_series: pd.Series) -> pd.Series:
 def _process_regular(i: int, cfg: dict, simulation_index, data_reindexed: dict) -> dict:
     try:
         name = cfg.get("name", f"Portfolio {i}")
+        tax_events: list = []
         has_special = any(L.is_special_dynamic_ticker(stock["ticker"]) for stock in cfg["stocks"])
         if has_special:
             total_series, total_series_no_additions, historical_allocations, historical_metrics, today_weights_map = (
                 L.single_backtest_year_aware(cfg, simulation_index, data_reindexed)
             )
         else:
-            total_series, total_series_no_additions, historical_allocations, historical_metrics = L.single_backtest(
-                cfg, simulation_index, data_reindexed
-            )
+            _sb = L.single_backtest(cfg, simulation_index, data_reindexed)
+            total_series, total_series_no_additions, historical_allocations, historical_metrics = _sb[:4]
+            tax_events = list(_sb[4]) if len(_sb) > 4 and _sb[4] else []
         today_weights_map = {}
         alloc_dates: list = []
         try:
@@ -738,7 +739,7 @@ def _process_regular(i: int, cfg: dict, simulation_index, data_reindexed: dict) 
                 today_weights_map["CASH"] = 1.0 - total_alloc if total_alloc < 1.0 else 0
 
         if total_series is not None and len(total_series) > 0:
-            return {
+            out = {
                 "index": i - 1,
                 "name": name,
                 "success": True,
@@ -750,6 +751,9 @@ def _process_regular(i: int, cfg: dict, simulation_index, data_reindexed: dict) 
                 "cash_flows": _cash_flows(cfg, total_series),
                 "portfolio_values": total_series,
             }
+            if tax_events:
+                out["tax_events"] = tax_events
+            return out
         return {"index": i - 1, "name": name, "success": False, "error": "Empty results from backtest"}
     except StopRun:
         raise
@@ -804,6 +808,8 @@ def _store(run: BacktestRun, result: dict, extra_keys: tuple[str, ...] = ()) -> 
         unique = f"{base} ({suffix})"
         suffix += 1
     entry = {k: result[k] for k in ("no_additions", "with_additions", "today_weights_map", "cash_flows", "portfolio_values")}
+    if result.get("tax_events"):
+        entry["tax_events"] = result["tax_events"]
     for k in extra_keys:
         entry[k] = result[k]
     run.all_results[unique] = entry

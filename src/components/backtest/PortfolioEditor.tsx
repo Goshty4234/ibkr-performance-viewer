@@ -190,6 +190,32 @@ export default function PortfolioEditor() {
             Cash rémunéré (taux T-bill)
           </Check>
           <Check
+            checked={Boolean(p.use_canadian_tax)}
+            onChange={(v) => set(v
+              ? {
+                  use_canadian_tax: true,
+                  canadian_tax_inclusion_rate: p.canadian_tax_inclusion_rate ?? 50,
+                  canadian_tax_marginal_rate: p.canadian_tax_marginal_rate ?? 53,
+                  canadian_tax_dividend_rate: p.canadian_tax_dividend_rate ?? 38,
+                }
+              : {
+                  use_canadian_tax: undefined,
+                  canadian_tax_inclusion_rate: undefined,
+                  canadian_tax_marginal_rate: undefined,
+                  canadian_tax_dividend_rate: undefined,
+                })}
+            title={TIPS.canadianTax}
+          >
+            Impôt canadien retiré du portefeuille
+          </Check>
+          {p.use_canadian_tax && (
+            <>
+              <NumField label="Inclusion gains (%)" value={p.canadian_tax_inclusion_rate ?? 50} min={0} max={100} step={1} title={TIPS.canadianTaxInclusion} onChange={(v) => set({ canadian_tax_inclusion_rate: v })} />
+              <NumField label="Taux marginal (%)" value={p.canadian_tax_marginal_rate ?? 53} min={0} max={100} step={1} title={TIPS.canadianTaxMarginal} onChange={(v) => set({ canadian_tax_marginal_rate: v })} />
+              <NumField label="Taxe dividendes (%)" value={p.canadian_tax_dividend_rate ?? 38} min={0} max={100} step={1} title={TIPS.canadianTaxDividend} onChange={(v) => set({ canadian_tax_dividend_rate: v })} />
+            </>
+          )}
+          <Check
             checked={Boolean(p.use_min_available_stocks)}
             onChange={(v) => set(v
               ? { use_min_available_stocks: true, min_available_stocks: p.min_available_stocks && p.min_available_stocks > 0 ? p.min_available_stocks : 20 }

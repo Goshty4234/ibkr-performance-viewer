@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import type { ChartSeriesDef, MultiSeriesChartPoint } from '@/lib/chart-series';
 import { visibleSeries } from '@/lib/chart-series';
 import { formatChartTooltipDate } from '@/lib/dates';
@@ -36,12 +36,15 @@ export default function ValueChart({
   hidden,
   title,
   subtitle,
+  taxMarkers,
 }: {
   data: MultiSeriesChartPoint[];
   series: ChartSeriesDef[];
   hidden: Set<string>;
   title: string;
   subtitle: string;
+  /** Vertical markers on Canadian tax-payment sessions (not a crash). */
+  taxMarkers?: { date: string; label?: string }[];
 }) {
   const [log, setLog] = useState(true);
   const [closest, setClosest] = useState(false);
@@ -187,6 +190,17 @@ export default function ValueChart({
               axisLine={false}
               width={Y_AXIS}
             />
+            {(taxMarkers ?? []).map((m) => (
+              <ReferenceLine
+                key={`tax-${m.date}`}
+                x={m.date}
+                stroke="#e11d48"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+                ifOverflow="extendDomain"
+                label={{ value: m.label ?? 'Impôt', position: 'insideTopRight', fill: '#e11d48', fontSize: 10 }}
+              />
+            ))}
             {shown.map((s) => (
               <Line key={s.id} type="linear" dataKey={s.id} stroke={s.color} dot={false} strokeWidth={s.kind === 'primary' ? 2 : 1.5} isAnimationActive={false} connectNulls activeDot={false} />
             ))}

@@ -22,6 +22,14 @@ def _stock_count(value: Any, default: int) -> int:
     return n if n > 0 else default
 
 
+def _float(value: Any, default: float) -> float:
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return default
+    return n if n == n else default  # NaN → default
+
+
 def min_available_blocks(cfg: dict | None, available: int) -> bool:
     """True when this rebalance must be 100% cash: fewer stocks can be bought than the portfolio requires."""
     if not isinstance(cfg, dict) or not parse_bool(cfg.get("use_min_available_stocks", False)):
@@ -196,6 +204,12 @@ def normalize_one(cfg: dict) -> dict:
         "exclude_days_vol": cfg.get("exclude_days_vol", 30),
         "collect_dividends_as_cash": parse_bool(cfg.get("collect_dividends_as_cash", False)),
         "idle_cash_earns_treasury_yield": parse_bool(cfg.get("idle_cash_earns_treasury_yield", False)),
+        "use_canadian_tax": parse_bool(cfg.get("use_canadian_tax", False)),
+        "canadian_tax_inclusion_rate": _float(cfg.get("canadian_tax_inclusion_rate"), 50.0),
+        "canadian_tax_marginal_rate": _float(cfg.get("canadian_tax_marginal_rate"), 53.0),
+        "canadian_tax_dividend_rate": _float(cfg.get("canadian_tax_dividend_rate"), 38.0),
+        "canadian_tax_payment_month": int(_float(cfg.get("canadian_tax_payment_month"), 4)),
+        "canadian_tax_payment_day": int(_float(cfg.get("canadian_tax_payment_day"), 30)),
         "exclude_from_cashflow_sync": parse_bool(cfg.get("exclude_from_cashflow_sync", False)),
         "exclude_from_rebalancing_sync": parse_bool(cfg.get("exclude_from_rebalancing_sync", False)),
         "use_targeted_rebalancing": parse_bool(cfg.get("use_targeted_rebalancing", False)),

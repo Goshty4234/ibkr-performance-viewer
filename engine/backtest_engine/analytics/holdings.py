@@ -395,10 +395,17 @@ def acb_tax(cfg: dict, entry: dict, allocations: dict, reindexed: dict, configs:
             nonlocal next_end
             while next_end is not None and next_end[1] < upto:
                 y, e = next_end
-                p = price[e] if pvalid[e] else np.nan
-                if held > 0 and np.isfinite(p):
-                    per_year[y]["market_value"] += held * p
-                per_year[y]["acb"] += cost
+                if held > 0:
+                    # Prefer year-end close; else last valid price up to that day so
+                    # ACB is never counted without a matching market value (fake loss).
+                    p = price[e] if pvalid[e] else np.nan
+                    if not np.isfinite(p):
+                        prior = np.nonzero(pvalid[: e + 1])[0]
+                        if len(prior):
+                            p = float(price[prior[-1]])
+                    if np.isfinite(p):
+                        per_year[y]["market_value"] += held * float(p)
+                        per_year[y]["acb"] += cost
                 next_end = next(ends, None)
 
         for i in steps:
@@ -525,4 +532,5 @@ def acb_tax(cfg: dict, entry: dict, allocations: dict, reindexed: dict, configs:
         },
         "positions": positions,
         "dividends_reinvested": not collect_cash,
+        "as_of": date_key(idx[-1]) if len(idx) else None,
     }

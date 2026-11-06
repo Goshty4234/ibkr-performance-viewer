@@ -2,6 +2,7 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
     # Copy of the legacy single_backtest with the per-day pandas lookups replaced by numpy arrays
     # (see backtest_engine/accel). Every formula and branch is kept; only how values are read changes.
     from backtest_engine.config import min_available_blocks
+    from backtest_engine.analytics.canadian_tax import TaxLedger, apply_tax_day, tax_enabled as _tax_on
     
     stocks_list = config['stocks']
     tickers = [s['ticker'] for s in stocks_list if s['ticker']]
@@ -1179,6 +1180,70 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
     
     historical_allocations[sim_index[0]] = {t: values[t][0] / initial_value if initial_value > 0 else 0 for t in tickers}
     historical_allocations[sim_index[0]]['CASH'] = unallocated_cash[0] / initial_value if initial_value > 0 else 0
+
+    # Optional Canadian tax withdrawal (default off → identical path / results).
+    tax_ledger = TaxLedger.from_config(config) if _tax_on(config) else None
+    tax_events = []
+    _last_i = len(sim_index) - 1
+
+    def _tax_prices_at(i_day, d_day):
+        out = {}
+        for t in tickers:
+            _rr = _day.get(t)
+            if _rr is not None and _rr.close is not None:
+                p = float(_rr.close[i_day])
+                if np.isfinite(p) and p > 0:
+                    out[t] = p
+                    continue
+            df = reindexed_data.get(t)
+            if df is not None and d_day in df.index:
+                p = df.loc[d_day, "Close"]
+                if isinstance(p, pd.Series):
+                    p = p.iloc[0] if len(p) else np.nan
+                p = float(p) if pd.notna(p) else np.nan
+                if np.isfinite(p) and p > 0:
+                    out[t] = p
+        return out
+
+    def _tax_sync(i_day, d_day):
+        if tax_ledger is None:
+            return
+        prices = _tax_prices_at(i_day, d_day)
+        vals = {t: float(values[t][-1]) for t in tickers}
+        tax_ledger.sync_portfolio(vals, prices, int(pd.Timestamp(d_day).year))
+
+    def _tax_pay(i_day, d_day):
+        if tax_ledger is None:
+            return 0.0
+        prices = _tax_prices_at(i_day, d_day)
+        vals = {t: float(values[t][-1]) for t in tickers}
+        force = int(pd.Timestamp(d_day).year) if i_day == _last_i else None
+        new_vals, uc, ur, events, paid = apply_tax_day(
+            tax_ledger,
+            pd.Timestamp(d_day),
+            vals,
+            prices,
+            float(unallocated_cash[-1]),
+            float(unreinvested_cash[-1]),
+            force_settle_through=force,
+        )
+        if paid > 0:
+            for t in tickers:
+                values[t][-1] = new_vals.get(t, values[t][-1])
+            unallocated_cash[-1] = uc
+            unreinvested_cash[-1] = ur
+            # Same proportional haircut on the no-additions curve (external tax outflow).
+            prev = float(portfolio_no_additions[-1])
+            cur = sum(float(values[t][-1]) for t in tickers) + uc + ur
+            # paid already removed from cur; scale no-additions by remaining fraction of pre-tax total.
+            pretax = cur + paid
+            if pretax > 0 and prev > 0:
+                portfolio_no_additions[-1] = prev * (cur / pretax)
+            tax_events.extend(events)
+        return paid
+
+    if tax_ledger is not None:
+        _tax_sync(0, sim_index[0])
     
     # Daily Treasury yield on idle cash (^IRX family via get_risk_free_rate_robust), optional
     # One fetch per backtest; 0% daily if no Treasury data / failure / pre-history (plain cash)
@@ -1237,9 +1302,13 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
                         nb_shares = val_prev / price_prev if price_prev > 0 else 0
                         dividend_cash = nb_shares * div
                         total_unreinvested_dividends += dividend_cash
+                        if tax_ledger is not None and dividend_cash > 0:
+                            tax_ledger.record_dividend(dividend_cash, int(date.year))
                         rate_of_return = var
                         val_new = val_prev * (1 + rate_of_return)
                     else:
+                        if div > 0 and tax_ledger is not None and price_prev > 0:
+                            tax_ledger.record_dividend(val_prev / price_prev * div, int(date.year))
                         if _r.leveraged:
                             if _r.base_close is not None:
                                 base_price_prev = _r.base_close[i - 1]
@@ -1296,10 +1365,14 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
                     nb_shares = val_prev / price_prev if price_prev > 0 else 0
                     dividend_cash = nb_shares * div
                     total_unreinvested_dividends += dividend_cash
+                    if tax_ledger is not None and dividend_cash > 0:
+                        tax_ledger.record_dividend(dividend_cash, int(date.year))
                     # Don't include dividend in rate of return
                     rate_of_return = var
                     val_new = val_prev * (1 + rate_of_return)
                 else:
+                    if div > 0 and tax_ledger is not None and price_prev > 0:
+                        tax_ledger.record_dividend(val_prev / price_prev * div, int(date.year))
                     # Reinvest dividends (original behavior)
                     # CRITICAL FIX: For leveraged tickers, dividends should be handled differently
                     # When simulating leveraged ETFs, the dividend RATE should be the same as the base asset
@@ -1350,6 +1423,13 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
             portfolio_no_additions.append(portfolio_no_additions[-1])
         
         current_total = sum([_v[-1] for _v in _vl]) + unallocated_cash[-1] + unreinvested_cash[-1]
+
+        # Canadian tax season: withdraw after market move / additions, before rebalance.
+        if tax_ledger is not None:
+            _tax_sync(i, date)
+            paid = _tax_pay(i, date)
+            if paid > 0:
+                current_total = sum([_v[-1] for _v in _vl]) + unallocated_cash[-1] + unreinvested_cash[-1]
         
         # Check if we should rebalance
         should_rebalance = False
@@ -1431,6 +1511,7 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
                         values[t][-1] = 0
                     unallocated_cash[-1] = current_total
                     unreinvested_cash[-1] = 0
+                    _tax_sync(i, date)
                     continue
                 assets_to_calculate = set(assets_to_calculate)
                 if config.get('use_sma_filter', False) and ma_filter_data is not None:
@@ -1444,6 +1525,7 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
                             values[t][-1] = 0
                         unallocated_cash[-1] = current_total
                         unreinvested_cash[-1] = 0
+                        _tax_sync(i, date)
                         # Skip rest of rebalancing logic
                         continue
                     
@@ -1917,6 +1999,7 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
             daily_allocs = {t: values[t][-1] / current_total_after_rebal for t in available_tickers_at_date}
             daily_allocs['CASH'] = (unallocated_cash[-1] + unreinvested_cash[-1]) / current_total_after_rebal
             historical_allocations[date] = daily_allocs
+        _tax_sync(i, date)
 
     # Store last allocation
     last_date = sim_index[-1]
@@ -1965,4 +2048,10 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
     results["Total_with_dividends_plus_cash"] = results["Total_assets"] + results["Unallocated_cash"] + results["Unreinvested_cash"]
     results['Portfolio_Value_No_Additions'] = portfolio_no_additions
 
-    return results["Total_with_dividends_plus_cash"], results['Portfolio_Value_No_Additions'], historical_allocations, historical_metrics
+    return (
+        results["Total_with_dividends_plus_cash"],
+        results['Portfolio_Value_No_Additions'],
+        historical_allocations,
+        historical_metrics,
+        tax_events,
+    )

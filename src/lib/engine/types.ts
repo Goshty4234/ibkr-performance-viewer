@@ -107,7 +107,22 @@ export interface PortfolioSummaryOk {
   today?: TodayBlock | null;
   timer?: TimerInfo | null;
   analytics_errors?: string[];
+  /** Tax-season withdrawals when use_canadian_tax was on (dates for chart markers). */
+  tax_events?: TaxEvent[];
   [key: string]: unknown;
+}
+
+export interface TaxEvent {
+  date: string;
+  tax_year: number;
+  amount: number;
+  cg_tax?: number;
+  div_tax?: number;
+  taxable_cg?: number;
+  dividends?: number;
+  from_cash?: number;
+  from_sales?: number;
+  carryforward_after?: number;
 }
 
 export interface AllocationRow {
@@ -229,6 +244,8 @@ export interface AcbTax {
   by_ticker?: { years: number[]; tickers: string[]; realized: (number | null)[][]; dividends: (number | null)[][] };
   positions: AcbPosition[];
   dividends_reinvested?: boolean;
+  /** Last session covered by the reconstruction (last year is often a partial calendar year). */
+  as_of?: string | null;
 }
 
 export interface PortfolioSummaryFailed {
@@ -484,6 +501,16 @@ export interface PortfolioConfig {
   global_ma_reference_ticker?: string;
   collect_dividends_as_cash?: boolean;
   idle_cash_earns_treasury_yield?: boolean;
+  /** Withdraw Canadian tax (CG + dividends) from the portfolio each tax season. */
+  use_canadian_tax?: boolean;
+  /** Capital-gains inclusion rate, percent (default 50). */
+  canadian_tax_inclusion_rate?: number;
+  /** Marginal tax rate on taxable CG, percent (default 53). */
+  canadian_tax_marginal_rate?: number;
+  /** Effective tax rate on dividends, percent (default 38). */
+  canadian_tax_dividend_rate?: number;
+  canadian_tax_payment_month?: number;
+  canadian_tax_payment_day?: number;
   ma_multiplier?: number;
   use_targeted_rebalancing?: boolean;
   targeted_rebalancing_settings?: Record<string, TargetedSetting>;

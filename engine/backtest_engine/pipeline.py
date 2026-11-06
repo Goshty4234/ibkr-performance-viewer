@@ -287,9 +287,10 @@ def history_key(prep: PreparedRun, index: int) -> str | None:
         wanted = set(cfg["fusion_portfolio"].get("selected_portfolios", []))
         group += [c for c in prep.configs if not is_fusion(c) and (not wanted or c.get("name") in wanted)]
     sim = prep.simulation_index
+    from .analytics.canadian_tax import strip_tax_identity
     return result_cache.task_key({
         "kind": "history",
-        "configs": [{k: v for k, v in c.items() if k not in _NOT_IDENTITY_CFG} for c in group],
+        "configs": [strip_tax_identity({k: v for k, v in c.items() if k not in _NOT_IDENTITY_CFG}) for c in group],
         "options": {k: v for k, v in prep.options.to_dict().items() if k not in _NOT_IDENTITY},
         "start": str(sim[0]) if len(sim) else None,
         "display_start": str(prep.display_start),

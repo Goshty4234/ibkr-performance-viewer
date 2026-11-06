@@ -138,6 +138,21 @@ export default function OverviewTab({
     () => portfolios.some((p) => (p.stats['Total Money Added'] ?? 0) > (p.config.initial_value ?? 0) + 1e-6),
     [portfolios],
   );
+  const taxMarkers = useMemo(() => {
+    const byDate = new Map<string, number>();
+    for (const p of portfolios) {
+      for (const ev of p.tax_events ?? []) {
+        if (!ev?.date) continue;
+        byDate.set(ev.date, (byDate.get(ev.date) ?? 0) + (Number(ev.amount) || 0));
+      }
+    }
+    return [...byDate.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([date, amount]) => ({
+        date,
+        label: amount > 0 ? `Impôt $${Math.round(amount).toLocaleString('en-US')}` : 'Impôt',
+      }));
+  }, [portfolios]);
   const charts = pct.data?.charts;
 
   return (
@@ -170,8 +185,15 @@ export default function OverviewTab({
           data={withAdd.data.charts.valueData}
           series={withAdd.data.charts.defs}
           hidden={hidden}
+          taxMarkers={taxMarkers}
           title={hasAdditions ? 'Valeur du portefeuille (avec ajouts)' : 'Valeur du portefeuille'}
-          subtitle={hasAdditions ? 'Série « with_additions » : capital initial + versements périodiques' : 'Capital initial, sans versements'}
+          subtitle={
+            taxMarkers.length
+              ? `${hasAdditions ? 'Avec ajouts' : 'Capital initial'} · barres rouges = saison fiscale (impôt retiré du portefeuille)`
+              : hasAdditions
+                ? 'Série « with_additions » : capital initial + versements périodiques'
+                : 'Capital initial, sans versements'
+          }
         />
       )}
       {overview.data && (

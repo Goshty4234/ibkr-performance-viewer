@@ -9183,9 +9183,8 @@ def fusion_portfolio_backtest(fusion_portfolio_config, all_portfolio_configs, si
         print(f"   - Running {portfolio_name}: {individual_freq} (INDEPENDENT, fusion sleeve {w*100:.2f}% → init ${cfg_run['initial_value']:,.2f}, add ${cfg_run['added_amount']:,.2f})")
         
         # Run individual portfolio - this is completely separate from fusion
-        total_series, total_series_no_additions, historical_allocations, historical_metrics = single_backtest(
-            cfg_run, sim_index, reindexed_data
-        )
+        _sb = single_backtest(cfg_run, sim_index, reindexed_data)
+        total_series, total_series_no_additions, historical_allocations, historical_metrics = _sb[:4]
         
         if total_series is not None and not total_series.empty:
             portfolio_results[portfolio_name] = {
