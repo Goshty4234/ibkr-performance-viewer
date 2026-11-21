@@ -235,6 +235,8 @@ def normalize_one(cfg: dict) -> dict:
         "exclude_before_sp500_entry": parse_bool(cfg.get("exclude_before_sp500_entry", False)),
         "use_min_market_cap_filter": parse_bool(cfg.get("use_min_market_cap_filter", False)),
         "min_market_cap_billions": min_cap,
+        "use_sma_slot_hold": parse_bool(cfg.get("use_sma_slot_hold", False)),
+        "sma_slot_count": _stock_count(cfg.get("sma_slot_count"), 10),
         "fusion_portfolio": copy.deepcopy(
             cfg.get("fusion_portfolio", {"enabled": False, "selected_portfolios": [], "allocations": {}})
         ),
@@ -242,7 +244,36 @@ def normalize_one(cfg: dict) -> dict:
     for extra in ("auto_adjust_momentum_start",):
         if extra in cfg:
             out[extra] = cfg[extra]
-    return apply_page_defaults(out)
+    return apply_page_defaults(_finalize_option_gates(out))
+
+
+# Ranking / concentration knobs only matter inside calculate_momentum_weights.
+_MOMENTUM_ONLY_FLAGS = (
+    "use_equal_weight",
+    "use_limit_to_top_n",
+    "use_sector_concentration_limit",
+    "use_industry_concentration_limit",
+)
+
+
+def _finalize_option_gates(cfg: dict) -> dict:
+    """Clear contradictory flags so silent no-ops cannot survive normalize."""
+    if not cfg.get("use_momentum"):
+        for k in _MOMENTUM_ONLY_FLAGS:
+            cfg[k] = False
+        cfg["use_sma_slot_hold"] = False
+    if cfg.get("use_sma_slot_hold"):
+        # Sticky slots need momentum scoring + MA filter; N slots replaces top-N reshuffle.
+        cfg["use_momentum"] = True
+        cfg["use_sma_filter"] = True
+        cfg["use_limit_to_top_n"] = False
+        cfg["use_equal_weight"] = False
+        cfg["use_targeted_rebalancing"] = False
+        cfg["sma_slot_count"] = _stock_count(cfg.get("sma_slot_count"), 10)
+    if not cfg.get("use_sma_filter"):
+        cfg["use_sma_slot_hold"] = False
+        cfg["ma_cross_rebalance"] = False
+    return cfg
 
 
 def apply_page_defaults(portfolio: dict) -> dict:
@@ -263,6 +294,8 @@ def apply_page_defaults(portfolio: dict) -> dict:
         "use_global_ma_reference": False,
         "global_ma_reference_ticker": "",
         "idle_cash_earns_treasury_yield": False,
+        "use_sma_slot_hold": False,
+        "sma_slot_count": 10,
     }
     for k, v in defaults.items():
         portfolio.setdefault(k, v)

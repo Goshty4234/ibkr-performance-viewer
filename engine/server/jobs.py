@@ -27,6 +27,26 @@ from .worker import worker_main
 
 FINISHED = ("done", "error", "cancelled")
 MIN_FREE_RAM_GB = 1.0
+# memory_score = tickers × sim_days. Above this, only one portfolio of the job at a time.
+_HEAVY_MEMORY_SCORE = 200 * 8_000  # ~200 names × ~22y calendar, or ~500 × ~3k trading-ish days
+
+
+def _parallel_for_memory(info: dict) -> int:
+    """How many portfolio tasks of one job may run at once given prepare()'s size hint."""
+    try:
+        score = int(info.get("memory_score") or 0)
+    except (TypeError, ValueError):
+        score = 0
+    if score <= 0:
+        try:
+            score = int(info.get("tickers") or 0) * int(info.get("sim_days") or 0)
+        except (TypeError, ValueError):
+            score = 0
+    if score >= _HEAVY_MEMORY_SCORE:
+        return 1
+    if score >= _HEAVY_MEMORY_SCORE // 2:
+        return 2
+    return 12
 
 
 @dataclass
@@ -69,6 +89,8 @@ class Job:
     failed: int = 0
     reused: int = 0
     prices: dict | None = None
+    # Max portfolio tasks of this job allowed in flight at once (1 for huge S&P calendars).
+    max_parallel: int = 12
 
     def next_task(self) -> tuple[str, int] | None:
         if self.status != "running":
@@ -79,6 +101,8 @@ class Job:
             self.dispatched_single = True
             return (self.phase, -1)
         if self.phase == "portfolios" and self.pending:
+            if len(self.running) >= max(1, self.max_parallel):
+                return None
             i = self.pending.popleft()
             self.running.add(i)
             return ("portfolio", i)
@@ -348,6 +372,7 @@ class JobManager:
             job.total = len(order)
             job.pending = deque(order)
             job.dispatched_single = False
+            job.max_parallel = _parallel_for_memory(info)
             job.phase = "portfolios" if order else "assemble"
             (job.dir / "request.json").unlink(missing_ok=True)
         elif kind == "portfolio":

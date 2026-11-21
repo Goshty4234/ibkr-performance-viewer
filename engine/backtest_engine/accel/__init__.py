@@ -179,22 +179,29 @@ class _Day:
 
 def accel_day_readers(acc: dict, reindexed_data: dict, tickers: list, sim_index: pd.DatetimeIndex,
                       parse_ticker_parameters: Any) -> dict:
+    """Positional day-loop reads.
+
+    Keep contiguous float64/bool arrays (not ``list(arr)``). Indexing ``arr[i]`` still
+    yields a numpy scalar like the old boxed lists, but an S&P-sized universe no longer
+    materializes ~25k Python objects per column per ticker (that alone OOMed normal runs).
+    """
     out: dict[str, _Day] = {}
     for t in tickers:
         df = reindexed_data.get(t)
         if not _aligned(df, sim_index) or "Close" not in df.columns or "Price_change" not in df.columns:
             continue
-        close = df["Close"].to_numpy()
-        pchg = df["Price_change"].to_numpy()
+        close = df["Close"].to_numpy(dtype=np.float64, copy=False)
+        pchg = df["Price_change"].to_numpy(dtype=np.float64, copy=False)
         if close.dtype != np.float64 or pchg.dtype != np.float64:
             continue  # unusual frame: keep the legacy lookups for this ticker
         d = _Day()
-        # Lists of numpy float64 scalars: the very objects .loc returned (not Python floats: built-in
-        # sum() adds exact Python floats with compensated summation, numpy scalars plainly).
-        d.close = list(close)
-        d.pchg = list(pchg)
-        # Legacy daily-allocation test: reindexed_data[t].loc[date] is the row, its first value tested with pd.isna.
-        d.first_ok = (~pd.isna(df.iloc[:, 0].to_numpy())).tolist() if df.shape[1] > 0 else [False] * len(df)
+        d.close = close
+        d.pchg = pchg
+        # Legacy daily-allocation test: first column of the reindexed row, pd.isna.
+        if df.shape[1] > 0:
+            d.first_ok = np.isfinite(df.iloc[:, 0].to_numpy(dtype=np.float64, copy=False))
+        else:
+            d.first_ok = np.zeros(len(df), dtype=bool)
         if "?L=" in t or "?E=" in t:
             d.leveraged = True
             base_ticker, _lev, _er = parse_ticker_parameters(t)
@@ -202,20 +209,20 @@ def accel_day_readers(acc: dict, reindexed_data: dict, tickers: list, sim_index:
                 base_df = reindexed_data[base_ticker]
                 if not _aligned(base_df, sim_index) or "Close" not in base_df.columns:
                     continue  # unusual base frame: keep the legacy lookups for this ticker
-                bc = base_df["Close"].to_numpy()
+                bc = base_df["Close"].to_numpy(dtype=np.float64, copy=False)
                 if bc.dtype != np.float64:
                     continue
-                d.base_close = list(bc)
+                d.base_close = bc
                 if "Dividends" in base_df.columns:
-                    bd = base_df["Dividends"].to_numpy()
+                    bd = base_df["Dividends"].to_numpy(dtype=np.float64, copy=False)
                     if bd.dtype != np.float64:
                         continue
-                    d.div = list(bd)
+                    d.div = bd
         elif "Dividends" in df.columns:
-            dv = df["Dividends"].to_numpy()
+            dv = df["Dividends"].to_numpy(dtype=np.float64, copy=False)
             if dv.dtype != np.float64:
                 continue
-            d.div = list(dv)
+            d.div = dv
         out[t] = d
     return out
 

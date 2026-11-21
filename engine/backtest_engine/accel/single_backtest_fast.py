@@ -3,6 +3,13 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
     # (see backtest_engine/accel). Every formula and branch is kept; only how values are read changes.
     from backtest_engine.config import min_available_blocks
     from backtest_engine.analytics.canadian_tax import TaxLedger, apply_tax_day, tax_enabled as _tax_on
+    from backtest_engine.analytics.sma_slots import (
+        above_ma as _slot_above_ma,
+        max_weight_cap as _slot_max_cap,
+        slot_count as _slot_count,
+        slot_hold_enabled as _slot_hold_on,
+        sticky_rebalance as _sticky_rebalance,
+    )
     
     stocks_list = config['stocks']
     tickers = [s['ticker'] for s in stocks_list if s['ticker']]
@@ -1185,6 +1192,14 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
     tax_ledger = TaxLedger.from_config(config) if _tax_on(config) else None
     tax_events = []
     _last_i = len(sim_index) - 1
+    # Sticky SMA slots: membership changes only on rebalance days.
+    _sticky_on = _slot_hold_on(config)
+    _sticky_n = _slot_count(config) if _sticky_on else 0
+    _sticky_cap = _slot_max_cap(config) if _sticky_on else None
+    _sticky_held: list = []
+    if _sticky_on:
+        # Seed from whatever the init path already put in values[0].
+        _sticky_held = [t for t in tickers if values[t][0] > 0.01]
 
     def _tax_prices_at(i_day, d_day):
         out = {}
@@ -1488,19 +1503,15 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
         if not should_rebalance:
             total_cash = unallocated_cash[-1] + unreinvested_cash[-1]
             if total_cash > 0:
-                # Distribute cash proportionally to current holdings
+                # Sticky mode: membership only changes on rebalance days — deploy to current holdings.
                 current_total_value = sum(values[t][-1] for t in tickers)
                 if current_total_value > 0:
-                    # Calculate current proportions
                     current_proportions = {t: values[t][-1] / current_total_value for t in tickers}
-                    
-                    # Distribute cash proportionally
                     for t in tickers:
                         values[t][-1] += total_cash * current_proportions.get(t, 0)
-                    
-                    # Clear cash
                     unallocated_cash[-1] = 0
                     unreinvested_cash[-1] = 0
+                # else: leave cash until a rebalance can open sticky slots
         
         if should_rebalance:
             if use_momentum:
@@ -1511,6 +1522,8 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
                         values[t][-1] = 0
                     unallocated_cash[-1] = current_total
                     unreinvested_cash[-1] = 0
+                    if _sticky_on:
+                        _sticky_held = []
                     _tax_sync(i, date)
                     continue
                 assets_to_calculate = set(assets_to_calculate)
@@ -1525,6 +1538,8 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
                             values[t][-1] = 0
                         unallocated_cash[-1] = current_total
                         unreinvested_cash[-1] = 0
+                        if _sticky_on:
+                            _sticky_held = []
                         _tax_sync(i, date)
                         # Skip rest of rebalancing logic
                         continue
@@ -1535,7 +1550,51 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
                     print(f"[MA FILTER] Assets after MA filter at {date}: {filtered_assets}, excluded: {excluded_assets}")
                 
                 returns, valid_assets = calculate_momentum(date, assets_to_calculate, momentum_windows, config['stocks'])
-                if valid_assets:
+                if _sticky_on:
+                    # Sticky SMA slots: sell only below-MA holdings; fill free slots with best outsiders.
+                    scores = {t: float(returns[t]) for t in (valid_assets or []) if t in returns and not pd.isna(returns.get(t))}
+                    # Also score currently held names that may have fallen below MA (still in returns if filtered out).
+                    for t in _sticky_held:
+                        if t not in scores and t in returns and not pd.isna(returns.get(t)):
+                            scores[t] = float(returns[t])
+                    cur_vals = {t: float(values[t][-1]) for t in tickers}
+                    force_init = not _sticky_held and sum(cur_vals.values()) < 0.01
+                    # Recompute held from live values (tax/drip may have changed dollars).
+                    live_held = [t for t in (_sticky_held or tickers) if cur_vals.get(t, 0.0) > 0.01]
+                    if not live_held and not force_init:
+                        live_held = [t for t in tickers if cur_vals.get(t, 0.0) > 0.01]
+                        force_init = not live_held
+
+                    def _keep(t, _d=date):
+                        return _slot_above_ma(t, _d, ma_filter_data)
+
+                    def _enter(t, _d=date):
+                        return _keep(t) and t in scores
+
+                    new_held, new_vals, new_cash, _ur = _sticky_rebalance(
+                        held=live_held if not force_init else [],
+                        values=cur_vals,
+                        unallocated_cash=float(unallocated_cash[-1]),
+                        unreinvested_cash=float(unreinvested_cash[-1]),
+                        n_slots=_sticky_n,
+                        scores=scores,
+                        keep_fn=_keep,
+                        enter_fn=_enter,
+                        cap=_sticky_cap,
+                        force_init=force_init,
+                    )
+                    for t in tickers:
+                        values[t][-1] = float(new_vals.get(t, 0.0))
+                    unallocated_cash[-1] = float(new_cash)
+                    unreinvested_cash[-1] = 0.0
+                    _sticky_held = list(new_held)
+                    # Metrics snapshot for UI (momentum of scored universe).
+                    hist = {}
+                    for t, s in scores.items():
+                        hist[t] = {'Momentum': s, 'Calculated_Weight': (values[t][-1] / max(current_total, 1e-12)) if t in _sticky_held else 0.0}
+                    hist['CASH'] = {'Calculated_Weight': unallocated_cash[-1] / max(current_total, 1e-12)}
+                    historical_metrics[date] = hist
+                elif valid_assets:
                     weights, metrics_on_rebal = calculate_momentum_weights(
                         returns, valid_assets, date=date,
                         momentum_strategy=config.get('momentum_strategy', 'Classic'),

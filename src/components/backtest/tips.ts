@@ -64,15 +64,21 @@ export const TIPS = {
   maCross: 'Rebalance immédiatement, sans attendre la prochaine date prévue, quand un titre franchit sa moyenne mobile.',
   maTolerance: 'Bande autour de la moyenne : le croisement ne compte que si le prix la dépasse de plus de ce pourcentage (évite les faux signaux).',
   maConfirmation: 'Nombre de jours consécutifs où le croisement doit tenir avant de rebalancer.',
+  smaSlotHold:
+    'Hold jusqu’à cassure SMA (slots) : tu gardes N titres, tu ne vends que ceux sous leur moyenne mobile le jour de rebalance, '
+    + 'et tu remplis le trou avec le meilleur momentum encore hors portefeuille et au-dessus de sa MA. '
+    + 'Les survivants ne sont pas reshufflés ni réégalés (drift OK). Active momentum + filtre MA. '
+    + '« Limiter aux N meilleurs » / poids égaux globaux sont désactivés : ce mode remplace leur rôle.',
+  smaSlotCount: 'Nombre de places dans le portefeuille (défaut 10). Un nouvel entrant n’arrive que si un slot se libère.',
 
   // Rebalancement ciblé
   targeted: 'Au lieu de rebalancer à chaque date prévue, rebalance seulement si un titre sort de sa bande min / max.',
 
   // Options avancées
-  equalWeight: 'Garde les N titres les mieux classés et leur donne le même poids (1/N).',
-  limitTopN: 'Garde les N titres les mieux classés, avec des poids proportionnels à leur score (remis à 100 %).',
-  sectorCap: 'Nombre maximum de titres retenus dans un même secteur (données Yahoo). Clique sur le « i » pour la différence secteur / industrie.',
-  industryCap: 'Nombre maximum de titres retenus dans une même industrie (données Yahoo), plus fine que le secteur.',
+  equalWeight: 'Nécessite le momentum. Garde les N titres les mieux classés et leur donne le même poids (1/N). Incompatible avec « Hold jusqu’à cassure SMA ».',
+  limitTopN: 'Nécessite le momentum. Garde les N titres les mieux classés, poids proportionnels au score. Attention : un titre encore au-dessus de sa SMA peut être vendu s’il sort du top N — ce n’est pas un hold sticky.',
+  sectorCap: 'Nécessite le momentum. Nombre maximum de titres retenus dans un même secteur (données Yahoo). Clique sur le « i » pour la différence secteur / industrie.',
+  industryCap: 'Nécessite le momentum. Nombre maximum de titres retenus dans une même industrie (données Yahoo), plus fine que le secteur.',
   minCap:
     'Exclut les titres dont la capitalisation estimée à chaque date est sous ce seuil. '
     + 'Estimation : capitalisation actuelle × (prix de la date ÷ prix actuel). Titre sans donnée = exclu.',

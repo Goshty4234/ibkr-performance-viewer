@@ -12,7 +12,7 @@ variables change:
     ENGINE_ALLOWED_ORIGINS  comma list of extra origins, or "*"
     ENGINE_ORIGINS_URL      list of site origins re-read at start (default: allowed_origins.txt on GitHub; empty = off)
     ENGINE_ORIGIN_REGEX     regex of allowed origins         (default: localhost only)
-    ENGINE_WORKERS          pooled worker processes          (default: CPU count - 1 locally, CPU count in cloud; capped by free RAM and 12)
+    ENGINE_WORKERS          pooled worker processes          (default: CPU count - 1 locally, CPU count in cloud; capped by free RAM ~2.5 GB/worker and 12)
     ENGINE_MAX_JOBS         jobs progressing concurrently    (default: 4 locally, 2 in cloud)
     ENGINE_WORKER_IDLE_S    idle seconds before a worker exits (default: 600; one warm worker is kept)
     ENGINE_MAX_QUEUE        queued jobs per user             (default: 20)
@@ -94,12 +94,18 @@ def _available_ram_gb() -> float | None:
 
 
 def _default_workers(mode: str) -> int:
-    """CPU-bound pool sized by cores, capped so each worker keeps ~0.6 GB of headroom."""
+    """CPU-bound pool sized by cores, capped for S&P-sized portfolios.
+
+    A full-calendar S&P momentum sleeve can need multiple GB peak (reindexed
+    frames + day loop). The old 0.6 GB/worker budget let 10+ workers start and
+    then die on tiny follow-up allocations. ~2.5 GB/worker keeps normal multi
+    variant S&P runs alive.
+    """
     cpus = os.cpu_count() or 2
     n = cpus if mode == "cloud" else max(1, cpus - 1)
     ram = _available_ram_gb()
     if ram is not None:
-        n = min(n, max(1, int(ram / 0.6)))
+        n = min(n, max(1, int(ram / 2.5)))
     return max(1, min(n, 12))
 
 

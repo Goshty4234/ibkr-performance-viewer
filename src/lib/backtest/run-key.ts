@@ -19,15 +19,26 @@ const TAX_OFF_KEYS = [
   'canadian_tax_payment_day',
 ] as const;
 
+const SLOT_OFF_KEYS = ['use_sma_slot_hold', 'sma_slot_count'] as const;
+
 export function identityPortfolio<T extends {
   use_min_available_stocks?: boolean;
   min_available_stocks?: number;
   use_canadian_tax?: boolean;
+  use_sma_slot_hold?: boolean;
+  sma_slot_count?: number;
 }>(p: T): T {
   const { use_min_available_stocks: _flag, min_available_stocks: _count, ...rest0 } = p;
   let rest: Record<string, unknown> = { ...rest0 };
   if (p.use_canadian_tax !== true) {
     for (const k of TAX_OFF_KEYS) delete rest[k];
+  }
+  if (p.use_sma_slot_hold !== true) {
+    for (const k of SLOT_OFF_KEYS) delete rest[k];
+  } else {
+    const n = Number(p.sma_slot_count);
+    rest.use_sma_slot_hold = true;
+    rest.sma_slot_count = Number.isFinite(n) && n > 0 ? Math.round(n) : 10;
   }
   if (p.use_min_available_stocks !== true) return rest as T;
   const n = Number(p.min_available_stocks);

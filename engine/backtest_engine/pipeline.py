@@ -240,10 +240,16 @@ def task_prepare(job_dir: Path, portfolios: Any, options: Any, progress: Callabl
     prep = prepare(portfolios, options, ctx, download_lock=download_lock(), with_market=True)
     trimmed = write_snapshot(job_dir, prep, keep_raw)
     CACHE.seed(job_dir, trimmed)
+    n_tickers = sum(1 for v in trimmed.values() if not isinstance(v, str))
+    n_days = int(len(prep.simulation_index))
+    # Rough peak-RAM score: long calendar × broad universe. Scheduler uses this
+    # to avoid running several S&P sleeves in parallel on the same machine.
     return {
         "order": prep.execution_order(),
         "names": [c["name"] for c in prep.configs],
-        "tickers": sum(1 for v in trimmed.values() if not isinstance(v, str)),
+        "tickers": n_tickers,
+        "sim_days": n_days,
+        "memory_score": int(n_tickers) * max(1, n_days),
         "prices": ctx.price_report,
     }
 
@@ -288,9 +294,13 @@ def history_key(prep: PreparedRun, index: int) -> str | None:
         group += [c for c in prep.configs if not is_fusion(c) and (not wanted or c.get("name") in wanted)]
     sim = prep.simulation_index
     from .analytics.canadian_tax import strip_tax_identity
+    from .analytics.sma_slots import strip_slot_identity
     return result_cache.task_key({
         "kind": "history",
-        "configs": [strip_tax_identity({k: v for k, v in c.items() if k not in _NOT_IDENTITY_CFG}) for c in group],
+        "configs": [
+            strip_slot_identity(strip_tax_identity({k: v for k, v in c.items() if k not in _NOT_IDENTITY_CFG}))
+            for c in group
+        ],
         "options": {k: v for k, v in prep.options.to_dict().items() if k not in _NOT_IDENTITY},
         "start": str(sim[0]) if len(sim) else None,
         "display_start": str(prep.display_start),
@@ -366,7 +376,22 @@ def task_portfolio(job_dir: Path, index: int) -> dict[str, Any]:
     if entry.keep_raw:
         (job_dir / "raw").mkdir(exist_ok=True)
         _dump(outcome, job_dir / "raw" / f"{index}.pkl")
-    return {"ok": bool(outcome["success"]), "name": outcome["name"], "seconds": round(time.perf_counter() - t0, 3)}
+    ok = bool(outcome.get("success"))
+    name = outcome.get("name", cfg.get("name", f"Portfolio {index}"))
+    # Drop peak working set before the next portfolio on this worker (S&P runs).
+    del outcome, s_extra, d_extra, raw, reindexed
+    if len(keys) > 80:
+        wanted = set(keys)
+        bench = cfg.get("benchmark_ticker")
+        if bench:
+            wanted.add(bench)
+        for k in list(entry.reindexed.keys()):
+            if k not in wanted:
+                del entry.reindexed[k]
+                entry.raw.pop(k, None)
+        import gc
+        gc.collect()
+    return {"ok": ok, "name": name, "seconds": round(time.perf_counter() - t0, 3)}
 
 
 def task_assemble(job_dir: Path) -> dict[str, Any]:

@@ -611,6 +611,35 @@ function MaSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
             </>
           )}
         </div>
+        <div className={styles.grid2}>
+          <Check
+            checked={Boolean(p.use_sma_slot_hold)}
+            onChange={(v) => set(v
+              ? {
+                  use_sma_slot_hold: true,
+                  use_momentum: true,
+                  use_sma_filter: true,
+                  use_limit_to_top_n: undefined,
+                  use_equal_weight: undefined,
+                  use_targeted_rebalancing: false,
+                  sma_slot_count: p.sma_slot_count && p.sma_slot_count > 0 ? p.sma_slot_count : 10,
+                }
+              : { use_sma_slot_hold: undefined, sma_slot_count: undefined })}
+            title={TIPS.smaSlotHold}
+          >
+            Hold jusqu&apos;à cassure SMA (slots)
+          </Check>
+          {p.use_sma_slot_hold && (
+            <NumField
+              label="Nombre de slots"
+              value={p.sma_slot_count ?? 10}
+              min={1}
+              step={1}
+              title={TIPS.smaSlotCount}
+              onChange={(v) => set({ sma_slot_count: Math.max(1, Math.round(v)) })}
+            />
+          )}
+        </div>
       </div>
     </section>
   );
@@ -636,37 +665,46 @@ function SectorIndustryInfo() {
 function AdvancedSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
   const b = (k: string) => Boolean(p[k]);
   const n = (k: string) => (typeof p[k] === 'number' ? (p[k] as number) : undefined);
+  const mom = Boolean(p.use_momentum);
+  const sticky = Boolean(p.use_sma_slot_hold);
   return (
     <section className={`card ${styles.section}`}>
       <div className={styles.sectionHead}>
         <span className={styles.sectionTitle}>Options avancées (univers, secteurs, capitalisation)</span>
+        <span className={styles.sectionSub}>
+          {mom
+            ? (sticky ? 'Slots SMA actifs : top N / poids égaux globaux désactivés' : 'Classement momentum')
+            : 'Top N, poids égaux et secteurs nécessitent le momentum'}
+        </span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-        <div className={styles.grid2}>
-          <div className={styles.field}>
-            <Check checked={b('use_equal_weight')} onChange={(v) => set({ use_equal_weight: v })} title={TIPS.equalWeight}>Poids égaux sur les N meilleurs</Check>
-            {b('use_equal_weight') && <NumInput value={n('equal_weight_n_tickers')} min={1} title="Nombre de titres gardés" onChange={(v) => set({ equal_weight_n_tickers: Math.round(v) })} />}
+        <div className={mom && !sticky ? undefined : styles.disabledBlock}>
+          <div className={styles.grid2}>
+            <div className={styles.field}>
+              <Check checked={b('use_equal_weight')} onChange={(v) => set({ use_equal_weight: v })} title={TIPS.equalWeight} disabled={!mom || sticky}>Poids égaux sur les N meilleurs</Check>
+              {b('use_equal_weight') && mom && !sticky && <NumInput value={n('equal_weight_n_tickers')} min={1} title="Nombre de titres gardés" onChange={(v) => set({ equal_weight_n_tickers: Math.round(v) })} />}
+            </div>
+            <div className={styles.field}>
+              <Check checked={b('use_limit_to_top_n')} onChange={(v) => set({ use_limit_to_top_n: v })} title={TIPS.limitTopN} disabled={!mom || sticky}>Limiter aux N meilleurs</Check>
+              {b('use_limit_to_top_n') && mom && !sticky && <NumInput value={n('limit_to_top_n_tickers')} min={1} title="Nombre de titres gardés" onChange={(v) => set({ limit_to_top_n_tickers: Math.round(v) })} />}
+            </div>
           </div>
-          <div className={styles.field}>
-            <Check checked={b('use_limit_to_top_n')} onChange={(v) => set({ use_limit_to_top_n: v })} title={TIPS.limitTopN}>Limiter aux N meilleurs</Check>
-            {b('use_limit_to_top_n') && <NumInput value={n('limit_to_top_n_tickers')} min={1} title="Nombre de titres gardés" onChange={(v) => set({ limit_to_top_n_tickers: Math.round(v) })} />}
-          </div>
-        </div>
-        <div className={styles.grid2}>
-          <div className={styles.field}>
-            <span className={styles.labelWithInfo}>
-              <Check checked={b('use_sector_concentration_limit')} onChange={(v) => set({ use_sector_concentration_limit: v })} title={TIPS.sectorCap}>
-                Max tickers par secteur
+          <div className={styles.grid2} style={{ marginTop: '0.85rem' }}>
+            <div className={styles.field}>
+              <span className={styles.labelWithInfo}>
+                <Check checked={b('use_sector_concentration_limit')} onChange={(v) => set({ use_sector_concentration_limit: v })} title={TIPS.sectorCap} disabled={!mom}>
+                  Max tickers par secteur
+                </Check>
+                <SectorIndustryInfo />
+              </span>
+              {b('use_sector_concentration_limit') && mom && <NumInput value={n('max_tickers_per_sector')} min={1} title="Titres maximum dans un même secteur" onChange={(v) => set({ max_tickers_per_sector: Math.round(v) })} />}
+            </div>
+            <div className={styles.field}>
+              <Check checked={b('use_industry_concentration_limit')} onChange={(v) => set({ use_industry_concentration_limit: v })} title={TIPS.industryCap} disabled={!mom}>
+                Max tickers par industrie
               </Check>
-              <SectorIndustryInfo />
-            </span>
-            {b('use_sector_concentration_limit') && <NumInput value={n('max_tickers_per_sector')} min={1} title="Titres maximum dans un même secteur" onChange={(v) => set({ max_tickers_per_sector: Math.round(v) })} />}
-          </div>
-          <div className={styles.field}>
-            <Check checked={b('use_industry_concentration_limit')} onChange={(v) => set({ use_industry_concentration_limit: v })} title={TIPS.industryCap}>
-              Max tickers par industrie
-            </Check>
-            {b('use_industry_concentration_limit') && <NumInput value={n('max_tickers_per_industry')} min={1} title="Titres maximum dans une même industrie" onChange={(v) => set({ max_tickers_per_industry: Math.round(v) })} />}
+              {b('use_industry_concentration_limit') && mom && <NumInput value={n('max_tickers_per_industry')} min={1} title="Titres maximum dans une même industrie" onChange={(v) => set({ max_tickers_per_industry: Math.round(v) })} />}
+            </div>
           </div>
         </div>
         <div className={styles.grid2}>

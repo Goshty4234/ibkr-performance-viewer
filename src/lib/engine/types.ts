@@ -499,6 +499,12 @@ export interface PortfolioConfig {
   ma_confirmation_days?: number;
   use_global_ma_reference?: boolean;
   global_ma_reference_ticker?: string;
+  /**
+   * Hold N equal slots until each name breaks its MA on a rebalance day; replace
+   * only leavers with best outsider momentum still above its MA (no top-N reshuffle).
+   */
+  use_sma_slot_hold?: boolean;
+  sma_slot_count?: number;
   collect_dividends_as_cash?: boolean;
   idle_cash_earns_treasury_yield?: boolean;
   /** Withdraw Canadian tax (CG + dividends) from the portfolio each tax season. */
