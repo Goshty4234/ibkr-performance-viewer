@@ -156,6 +156,7 @@ export default function ResultsView() {
 
   const sim = payload.simulation;
   const toggle = (id: string) => setHidden((prev) => toggleSeriesVisibility(prev, id));
+  const setHiddenDirect = (next: Set<string>) => setHidden(next);
   const hiddenCount = pfs.filter((p) => hidden.has(portfolioSeriesId(p.index))).length;
 
   return (
@@ -251,13 +252,14 @@ export default function ResultsView() {
               portfolios={pfs}
               hidden={hidden}
               onToggle={toggle}
+              onHiddenChange={setHiddenDirect}
               benchmarks={benchmarks}
               selected={selected}
               onSelect={setSelected}
             />
           </TabPane>
           <TabPane active={tab === 'focused'} visited={visited.has('focused')}>
-            <FocusedTab result={result} portfolios={pfs} hidden={hidden} onToggle={toggle} benchmarks={benchmarks} />
+            <FocusedTab result={result} portfolios={pfs} hidden={hidden} onToggle={toggle} onHiddenChange={setHiddenDirect} benchmarks={benchmarks} />
           </TabPane>
           <TabPane active={tab === 'periods'} visited={visited.has('periods')}>
             <PeriodsTab result={result} hidden={hidden} />

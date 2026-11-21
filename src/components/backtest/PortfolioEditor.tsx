@@ -449,7 +449,14 @@ function MomentumSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
     <section className={`card ${styles.section}`}>
       <div className={styles.sectionHead}>
         <span className={styles.sectionTitle}>
-          <Toggle on={p.use_momentum} onChange={(v) => set({ use_momentum: v })} label="Activer le momentum" title={TIPS.momentum} />
+          <Toggle
+            on={p.use_momentum}
+            onChange={(v) => set(v
+              ? { use_momentum: true }
+              : { use_momentum: false, use_sma_slot_hold: undefined, sma_slot_count: undefined })}
+            label="Activer le momentum"
+            title={TIPS.momentum}
+          />
           <span title={TIPS.momentum}>Momentum</span>
         </span>
         <span className={styles.sectionSub}>Les allocations deviennent dynamiques selon le momentum</span>
@@ -562,7 +569,14 @@ function MaSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
     <section className={`card ${styles.section}`}>
       <div className={styles.sectionHead}>
         <span className={styles.sectionTitle}>
-          <Toggle on={Boolean(p.use_sma_filter)} onChange={(v) => set({ use_sma_filter: v })} label="Activer le filtre MA" title={TIPS.ma} />
+          <Toggle
+            on={Boolean(p.use_sma_filter)}
+            onChange={(v) => set(v
+              ? { use_sma_filter: true }
+              : { use_sma_filter: false, use_sma_slot_hold: undefined, sma_slot_count: undefined })}
+            label="Activer le filtre MA"
+            title={TIPS.ma}
+          />
           <span title={TIPS.ma}>Filtre moyenne mobile</span>
         </span>
         <span className={styles.sectionSub}>Exclut les actifs sous leur moyenne mobile</span>
@@ -586,7 +600,7 @@ function MaSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
             onChange={(v) => set({ ma_multiplier: v })}
           />
         </div>
-        <div className={styles.grid2}>
+        <div className={styles.checkStack}>
           <Check checked={Boolean(p.use_global_ma_reference)} onChange={(v) => set({ use_global_ma_reference: v })} title={TIPS.maGlobalRef}>
             Référence MA commune
           </Check>
@@ -599,19 +613,15 @@ function MaSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
               onChange={(v) => set({ global_ma_reference_ticker: v.toUpperCase().replace(/,/g, '.') })}
             />
           )}
-        </div>
-        <div className={styles.grid2}>
           <Check checked={Boolean(p.ma_cross_rebalance)} onChange={(v) => set({ ma_cross_rebalance: v })} title={TIPS.maCross}>
             Rebalancer au croisement de la MA
           </Check>
           {p.ma_cross_rebalance && (
-            <>
+            <div className={styles.grid2}>
               <NumField label="Tolérance" value={p.ma_tolerance_percent} suffix="%" step={0.5} min={0} title={TIPS.maTolerance} onChange={(v) => set({ ma_tolerance_percent: v })} />
               <NumField label="Jours de confirmation" value={p.ma_confirmation_days} min={0} title={TIPS.maConfirmation} onChange={(v) => set({ ma_confirmation_days: Math.round(v) })} />
-            </>
+            </div>
           )}
-        </div>
-        <div className={styles.grid2}>
           <Check
             checked={Boolean(p.use_sma_slot_hold)}
             onChange={(v) => set(v
@@ -630,14 +640,19 @@ function MaSection({ p, set }: { p: EditablePortfolio; set: SetFn }) {
             Hold jusqu&apos;à cassure SMA (slots)
           </Check>
           {p.use_sma_slot_hold && (
-            <NumField
-              label="Nombre de slots"
-              value={p.sma_slot_count ?? 10}
-              min={1}
-              step={1}
-              title={TIPS.smaSlotCount}
-              onChange={(v) => set({ sma_slot_count: Math.max(1, Math.round(v)) })}
-            />
+            <>
+              <NumField
+                label="Nombre de slots"
+                value={p.sma_slot_count ?? 10}
+                min={1}
+                step={1}
+                title={TIPS.smaSlotCount}
+                onChange={(v) => set({ sma_slot_count: Math.max(1, Math.round(v)) })}
+              />
+              <p className={styles.slotHint}>
+                Agit seulement les jours de rebalance ; les survivants au-dessus de leur SMA ne sont pas reshufflés.
+              </p>
+            </>
           )}
         </div>
       </div>

@@ -258,18 +258,17 @@ _MOMENTUM_ONLY_FLAGS = (
 
 def _finalize_option_gates(cfg: dict) -> dict:
     """Clear contradictory flags so silent no-ops cannot survive normalize."""
-    if not cfg.get("use_momentum"):
-        for k in _MOMENTUM_ONLY_FLAGS:
-            cfg[k] = False
-        cfg["use_sma_slot_hold"] = False
+    # Sticky first: it owns momentum + MA, so it must not be wiped by the !momentum gate.
     if cfg.get("use_sma_slot_hold"):
-        # Sticky slots need momentum scoring + MA filter; N slots replaces top-N reshuffle.
         cfg["use_momentum"] = True
         cfg["use_sma_filter"] = True
         cfg["use_limit_to_top_n"] = False
         cfg["use_equal_weight"] = False
         cfg["use_targeted_rebalancing"] = False
         cfg["sma_slot_count"] = _stock_count(cfg.get("sma_slot_count"), 10)
+    if not cfg.get("use_momentum"):
+        for k in _MOMENTUM_ONLY_FLAGS:
+            cfg[k] = False
     if not cfg.get("use_sma_filter"):
         cfg["use_sma_slot_hold"] = False
         cfg["ma_cross_rebalance"] = False

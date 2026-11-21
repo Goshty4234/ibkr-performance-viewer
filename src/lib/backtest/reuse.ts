@@ -1,6 +1,6 @@
 import type { BacktestRunRow } from './history';
 import type { LoadedResult } from './result-data';
-import { barFinalAt, marketToday, requestHasCrypto, type RunRequest } from './run-key';
+import { barFinalAt, latestFinalDay, requestHasCrypto, type RunRequest } from './run-key';
 import type { PortfolioDetail, PortfolioSummary, ResultSummary, RunOptions, RunPlan } from '@/lib/engine/types';
 
 /** A saved run already holding this exact portfolio result (only the end date may differ). */
@@ -34,19 +34,21 @@ export interface ReuseDecision {
   compute: number[];
 }
 
-/** Day a fresh run should reach: today, unless the request already stops sooner. */
+/** Day a fresh run should reach: last settled bar (not calendar Sat/Sun), unless the request stops sooner. */
 export function freshEnd(request: RunRequest, now = new Date()): string {
-  const today = marketToday(now);
+  const reachable = latestFinalDay(requestHasCrypto(request), now);
   const asked = (request.options.end_date || '').slice(0, 10);
-  return asked ? minDay(asked, today) : today;
+  return asked ? minDay(asked, reachable) : reachable;
 }
 
 export function buildOffer(request: RunRequest, plan: RunPlan, rows: BacktestRunRow[], now = new Date(), configKeys?: string[]): ReuseOffer | null {
-  // The plan's end is only the prices already on disk. A fresh run is aimed at today
-  // (or at the requested end date, when that date is sooner).
+  // The plan's end is only the prices already on disk. A fresh run is aimed at the latest
+  // settled session (or at the requested end date, when that date is sooner).
   if (!plan.simulation.end || plan.portfolios.length !== request.portfolios.length) return null;
+  const asked = (request.options.end_date || '').slice(0, 10);
   const targetEnd = freshEnd(request, now);
-  const untilToday = targetEnd === marketToday(now);
+  // "Until today" means the user did not pin an end date — even on a weekend, targetEnd is Friday.
+  const untilToday = !asked;
   const crypto = requestHasCrypto(request);
   const items = request.portfolios.map((p, position): PortfolioReuse => {
     const key = plan.portfolios[position].history_key;

@@ -37,6 +37,8 @@ interface Props {
   data: MultiSeriesChartPoint[];
   hidden: Set<string>;
   onToggleSeries: (seriesId: string) => void;
+  /** Double-clic légende : remplacer entièrement l’ensemble des courbes masquées. */
+  onHiddenChange?: (hidden: Set<string>) => void;
   brush: ChartBrushSelection | null;
   onBrushChange: (brush: ChartBrushSelection | null) => void;
   loading: boolean;
@@ -163,6 +165,7 @@ export default function PerformanceChart({
   data,
   hidden,
   onToggleSeries,
+  onHiddenChange,
   brush,
   onBrushChange,
   loading,
@@ -468,7 +471,7 @@ export default function PerformanceChart({
             </div>
             <PerformancePointer plotRef={plotRef} length={chartData.length} log={log} shown={shown} chartData={chartData} yWidth={yWidth} />
           </div>
-          <ChartLegend series={series} hidden={hidden} onToggle={onToggleSeries} />
+          <ChartLegend series={series} hidden={hidden} onToggle={onToggleSeries} onHiddenChange={onHiddenChange} />
         </>
       )}
     </div>

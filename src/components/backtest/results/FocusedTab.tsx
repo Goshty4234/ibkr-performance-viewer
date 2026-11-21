@@ -28,12 +28,14 @@ export default function FocusedTab({
   portfolios,
   hidden,
   onToggle,
+  onHiddenChange,
   benchmarks,
 }: {
   result: LoadedResult;
   portfolios: PortfolioSummaryOk[];
   hidden: Set<string>;
   onToggle: (id: string) => void;
+  onHiddenChange: (hidden: Set<string>) => void;
   benchmarks: string[];
 }) {
   const bounds = useMemo(() => {
@@ -199,6 +201,7 @@ export default function FocusedTab({
               data={cd.pctData}
               hidden={hidden}
               onToggleSeries={onToggle}
+              onHiddenChange={onHiddenChange}
               brush={brush}
               onBrushChange={setBrush}
               loading={false}

@@ -534,6 +534,9 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
   const handleToggleSeries = useCallback((seriesId: string) => {
     setHiddenSeries((prev) => toggleSeriesVisibility(prev, seriesId));
   }, []);
+  const handleHiddenChange = useCallback((next: Set<string>) => {
+    setHiddenSeries(next);
+  }, []);
 
   const summaryBenchmark = comparisonBenchmarks[0] ?? 'SPY';
 
@@ -1040,6 +1043,7 @@ export default function AccountWorkspace({ account: initialAccount }: Props) {
             data={multiChartData}
             hidden={hiddenSeries}
             onToggleSeries={handleToggleSeries}
+            onHiddenChange={handleHiddenChange}
             brush={chartBrush}
             onBrushChange={setChartBrush}
             loading={chartLoading}

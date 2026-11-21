@@ -81,8 +81,13 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
             confirmation_days = config.get('ma_confirmation_days', 3)
             ma_crossings_data = precompute_ma_crossings(reindexed_data, ma_window, ma_type, tolerance_percent, confirmation_days)
     
-    # Handle first rebalance strategy - replace first rebalance date if needed
-    first_rebalance_strategy = st.session_state.get('multi_backtest_first_rebalance_strategy', 'momentum_window_complete')
+    # Handle first rebalance strategy - replace first rebalance date if needed.
+    # Prefer portfolio config (site / API); fall back to Streamlit session for the legacy page.
+    first_rebalance_strategy = (
+        config.get("first_rebalance_strategy")
+        or st.session_state.get("multi_backtest_first_rebalance_strategy")
+        or "momentum_window_complete"
+    )
     if first_rebalance_strategy == "momentum_window_complete" and use_momentum and momentum_windows:
         try:
             # Calculate when momentum window completes
@@ -1590,9 +1595,10 @@ def single_backtest_fast(config, sim_index, reindexed_data, _cache_version="v2_d
                     _sticky_held = list(new_held)
                     # Metrics snapshot for UI (momentum of scored universe).
                     hist = {}
+                    post_total = sum(values[t][-1] for t in tickers) + unallocated_cash[-1] + unreinvested_cash[-1]
                     for t, s in scores.items():
-                        hist[t] = {'Momentum': s, 'Calculated_Weight': (values[t][-1] / max(current_total, 1e-12)) if t in _sticky_held else 0.0}
-                    hist['CASH'] = {'Calculated_Weight': unallocated_cash[-1] / max(current_total, 1e-12)}
+                        hist[t] = {'Momentum': s, 'Calculated_Weight': (values[t][-1] / max(post_total, 1e-12)) if t in _sticky_held else 0.0}
+                    hist['CASH'] = {'Calculated_Weight': (unallocated_cash[-1] + unreinvested_cash[-1]) / max(post_total, 1e-12)}
                     historical_metrics[date] = hist
                 elif valid_assets:
                     weights, metrics_on_rebal = calculate_momentum_weights(

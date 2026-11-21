@@ -189,6 +189,20 @@ export function toggleSeriesVisibility(
   return next;
 }
 
+/** Double-click isolate: keep only `focusId` visible; double-click again when already solo → show all. */
+export function isolateSeriesVisibility(
+  seriesIds: readonly string[],
+  focusId: string,
+  hidden: Set<string>,
+): Set<string> {
+  const solo =
+    !hidden.has(focusId)
+    && seriesIds.length > 1
+    && seriesIds.every((id) => id === focusId || hidden.has(id));
+  if (solo) return new Set();
+  return new Set(seriesIds.filter((id) => id !== focusId));
+}
+
 export function visibleSeries(
   series: ChartSeriesDef[],
   hidden: Set<string>,

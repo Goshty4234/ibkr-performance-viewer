@@ -51,6 +51,22 @@ def test_normalize_slot_hold_forces_momentum_and_sma():
     assert out["sma_slot_count"] == 7
 
 
+def test_normalize_slot_hold_wins_over_momentum_off():
+    """Sticky must force momentum on even if the client left momentum unchecked."""
+    out = normalize_one({
+        "name": "P",
+        "stocks": [{"ticker": "A", "allocation": 1}],
+        "use_momentum": False,
+        "use_sma_filter": False,
+        "use_sma_slot_hold": True,
+        "sma_slot_count": 4,
+    })
+    assert out["use_sma_slot_hold"] is True
+    assert out["use_momentum"] is True
+    assert out["use_sma_filter"] is True
+    assert out["sma_slot_count"] == 4
+
+
 def test_strip_slot_identity_when_off():
     off = normalize_one({"name": "P", "stocks": [{"ticker": "A", "allocation": 1}]})
     stripped = strip_slot_identity(off)
@@ -218,6 +234,102 @@ def test_loop_survivor_not_replaced_by_stronger_outsider():
     last = allocs[sorted(allocs.keys())[-1]]
     names = [t for t, w in last.items() if t != "CASH" and w and w > 0.01]
     assert len(names) <= 2
+
+
+def test_sticky_first_invested_day_is_equal_weight():
+    """Init must split cash equally across N slots (not classic momentum-proportional)."""
+    idx = pd.bdate_range("2018-01-02", periods=320)
+    rng = np.random.default_rng(1)
+    tickers = [f"T{i}" for i in range(8)]
+    data = {}
+    for i, t in enumerate(tickers):
+        rets = rng.normal(0.0003 * (i + 1), 0.012, len(idx))
+        close = 50 * np.cumprod(1 + rets)
+        data[t] = _frame(idx, close)
+    data["^GSPC"] = _frame(idx, np.linspace(100, 140, len(idx)))
+    cfg = normalize_one({
+        "name": "Eq",
+        "stocks": [{"ticker": t, "allocation": 1 / len(tickers), "include_dividends": False} for t in tickers],
+        "benchmark_ticker": "^GSPC",
+        "initial_value": 10000,
+        "added_amount": 0,
+        "added_frequency": "Never",
+        "rebalancing_frequency": "Monthly",
+        "use_momentum": True,
+        "use_sma_filter": True,
+        "sma_window": 40,
+        "ma_multiplier": 1.0,
+        "use_sma_slot_hold": True,
+        "sma_slot_count": 4,
+        "use_max_allocation": True,
+        "max_allocation_percent": 40,
+        "momentum_windows": [{"lookback": 60, "exclude": 5, "weight": 1.0}],
+        "first_rebalance_strategy": "rebalancing_date",
+    })
+    allocs = L.single_backtest(cfg, idx, data)[2]
+    for d in sorted(allocs):
+        names = {t: w for t, w in allocs[d].items() if t != "CASH" and w and w > 1e-6}
+        if not names:
+            continue
+        assert len(names) <= 4
+        ws = list(names.values())
+        assert max(ws) - min(ws) < 1e-6, f"expected equal slots on first invest {d}: {names}"
+        assert abs(sum(ws) - 1.0) < 1e-6
+        break
+    else:
+        raise AssertionError("sticky run never invested")
+
+
+def test_first_rebalance_strategy_honors_config():
+    """Portfolio config must drive the first-rebalance gate (not only Streamlit session)."""
+    idx = pd.bdate_range("2019-01-02", periods=280)
+    close = np.linspace(100, 130, len(idx))
+    data = {
+        "AAA": _frame(idx, close * np.linspace(1.0, 1.3, len(idx))),
+        "BBB": _frame(idx, close * np.linspace(1.0, 1.1, len(idx))),
+        "CCC": _frame(idx, close),
+        "^GSPC": _frame(idx, close),
+    }
+    stocks = [{"ticker": t, "allocation": 1 / 3, "include_dividends": False} for t in ("AAA", "BBB", "CCC")]
+    base = {
+        "name": "P",
+        "stocks": stocks,
+        "benchmark_ticker": "^GSPC",
+        "initial_value": 9000,
+        "added_amount": 0,
+        "added_frequency": "Never",
+        "rebalancing_frequency": "Monthly",
+        "use_momentum": True,
+        "use_sma_filter": True,
+        "sma_window": 30,
+        "ma_multiplier": 1.0,
+        "use_sma_slot_hold": True,
+        "sma_slot_count": 2,
+        # Short score window so "rebalancing_date" can invest on the first month,
+        # while "momentum_window_complete" still waits for the (longer) calendar gate below.
+        "momentum_windows": [{"lookback": 15, "exclude": 0, "weight": 1.0}],
+    }
+
+    def first_invested(strat: str, lookback: int):
+        allocs = L.single_backtest(
+            normalize_one({
+                **base,
+                "first_rebalance_strategy": strat,
+                "momentum_windows": [{"lookback": lookback, "exclude": 0, "weight": 1.0}],
+            }),
+            idx,
+            data,
+        )[2]
+        for d in sorted(allocs):
+            names = [t for t, w in allocs[d].items() if t != "CASH" and w and w > 1e-6]
+            if names:
+                return pd.Timestamp(d)
+        return None
+
+    early = first_invested("rebalancing_date", lookback=15)
+    late = first_invested("momentum_window_complete", lookback=120)
+    assert early is not None and late is not None
+    assert late > early, f"window-complete should invest later ({late} vs {early})"
 
 
 def test_flag_off_matches_baseline_path():

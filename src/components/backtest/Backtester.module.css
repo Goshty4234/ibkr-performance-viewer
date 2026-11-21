@@ -104,7 +104,23 @@
   user-select: none;
 }
 
-.checkRow input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+.checkRow input { width: 16px; height: 16px; flex: none; accent-color: var(--accent); cursor: pointer; }
+
+/* Stack MA option checks so enabling sticky / extra fields never reflows sibling checkbox columns. */
+.checkStack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.65rem;
+}
+
+.slotHint {
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+  max-width: 42rem;
+}
 
 .runSide { display: flex; flex-direction: column; gap: 0.5rem; align-items: stretch; min-width: 240px; }
 

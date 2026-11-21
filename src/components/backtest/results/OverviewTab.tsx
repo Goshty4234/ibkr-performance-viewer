@@ -117,6 +117,7 @@ export default function OverviewTab({
   portfolios,
   hidden,
   onToggle,
+  onHiddenChange,
   benchmarks,
   selected,
   onSelect,
@@ -125,6 +126,7 @@ export default function OverviewTab({
   portfolios: PortfolioSummaryOk[];
   hidden: Set<string>;
   onToggle: (id: string) => void;
+  onHiddenChange: (hidden: Set<string>) => void;
   benchmarks: string[];
   selected: number | null;
   onSelect: (index: number) => void;
@@ -165,6 +167,7 @@ export default function OverviewTab({
             data={charts.pctData}
             hidden={hidden}
             onToggleSeries={onToggle}
+            onHiddenChange={onHiddenChange}
             brush={brush}
             onBrushChange={setBrush}
             loading={false}
