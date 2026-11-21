@@ -1,7 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { daysBetween, decide, type ReuseOffer } from '@/lib/backtest/reuse';
+import { daysBetween, decide, minDay, type ReuseOffer } from '@/lib/backtest/reuse';
+import { latestFinalDay, requestHasCrypto } from '@/lib/backtest/run-key';
 import { useBacktestStore } from '@/lib/backtest/store';
 import styles from './Backtester.module.css';
 
@@ -33,8 +34,13 @@ function Prompt({ offer }: { offer: ReuseOffer }) {
   const resolve = useBacktestStore((s) => s.resolveReuse);
   const available = offer.items.filter((i) => i.sources.length);
   const [checked, setChecked] = useState(() => new Set(available.map((i) => i.position)));
-  const decision = useMemo(() => decide(offer, checked), [offer, checked]);
-  const late = daysBetween(decision.end, offer.targetEnd);
+  // Clamp again here: week-ends / jours fériés ne doivent pas compter comme « retard ».
+  const targetEnd = useMemo(() => {
+    if (!offer.untilToday) return offer.targetEnd;
+    return minDay(offer.targetEnd, latestFinalDay(requestHasCrypto(offer.request)));
+  }, [offer]);
+  const decision = useMemo(() => decide({ ...offer, targetEnd }, checked), [offer, targetEnd, checked]);
+  const late = daysBetween(decision.end, targetEnd);
 
   const toggle = (pos: number) =>
     setChecked((prev) => {
@@ -64,7 +70,7 @@ function Prompt({ offer }: { offer: ReuseOffer }) {
             const best = item.sources[0];
             const on = checked.has(item.position);
             const taken = decision.reuse.has(item.position);
-            const behind = best ? daysBetween(best.end, offer.targetEnd) : 0;
+            const behind = best ? daysBetween(best.end, targetEnd) : 0;
             return (
               <label key={item.position} className={`${styles.reuseRow} ${best ? '' : styles.reuseRowOff}`}>
                 <input type="checkbox" disabled={!best} checked={on} onChange={() => toggle(item.position)} />
@@ -92,7 +98,7 @@ function Prompt({ offer }: { offer: ReuseOffer }) {
 
         {late > 0 && (
           <div className={styles.reuseEnd}>
-            L’historique s’arrête au <strong>{pretty(decision.end)}</strong> ({plural(late, 'jour')} avant {offer.untilToday ? `aujourd’hui, le ${pretty(offer.targetEnd)}` : `le ${pretty(offer.targetEnd)}`}).
+            L’historique s’arrête au <strong>{pretty(decision.end)}</strong> ({plural(late, 'jour')} avant la dernière séance cotée, le {pretty(targetEnd)}).
             Le bouton bleu va jusqu’à cette date et met les prix à jour. « Reprendre » garde le résultat déjà calculé et ne le dépasse pas.
           </div>
         )}
@@ -107,7 +113,7 @@ function Prompt({ offer }: { offer: ReuseOffer }) {
           )}
           {decision.reuse.size > 0 && (
             <button type="button" className={`btn ${late > 0 ? 'btn-primary' : 'btn-secondary'} ${styles.choiceBtn}`} autoFocus={late > 0} onClick={() => resolve({ action: 'fresh' })}>
-              <span>{offer.untilToday ? `↻ Tout recalculer jusqu’à aujourd’hui · ${pretty(offer.targetEnd)}` : `↻ Tout recalculer jusqu’au ${pretty(offer.targetEnd)}`}</span>
+              <span>{offer.untilToday ? `↻ Tout recalculer jusqu’à la dernière séance · ${pretty(targetEnd)}` : `↻ Tout recalculer jusqu’au ${pretty(targetEnd)}`}</span>
               <small>{late > 0 ? 'dépasse l’historique · prix à jour · recalcul complet' : 'même résultat · recalcul complet, plus lent'}</small>
             </button>
           )}
