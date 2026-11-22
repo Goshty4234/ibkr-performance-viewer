@@ -1,8 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { daysBetween, decide, minDay, type ReuseOffer } from '@/lib/backtest/reuse';
-import { latestFinalDay, requestHasCrypto } from '@/lib/backtest/run-key';
+import { clampOfferToSession, daysBetween, decide, type ReuseOffer } from '@/lib/backtest/reuse';
 import { useBacktestStore } from '@/lib/backtest/store';
 import styles from './Backtester.module.css';
 
@@ -34,12 +33,10 @@ function Prompt({ offer }: { offer: ReuseOffer }) {
   const resolve = useBacktestStore((s) => s.resolveReuse);
   const available = offer.items.filter((i) => i.sources.length);
   const [checked, setChecked] = useState(() => new Set(available.map((i) => i.position)));
-  // Clamp again here: week-ends / jours fériés ne doivent pas compter comme « retard ».
-  const targetEnd = useMemo(() => {
-    if (!offer.untilToday) return offer.targetEnd;
-    return minDay(offer.targetEnd, latestFinalDay(requestHasCrypto(offer.request)));
-  }, [offer]);
-  const decision = useMemo(() => decide({ ...offer, targetEnd }, checked), [offer, targetEnd, checked]);
+  // Defensive clamp in the UI: week-end calendar days are not trading sessions.
+  const live = useMemo(() => clampOfferToSession(offer), [offer]);
+  const targetEnd = live.targetEnd;
+  const decision = useMemo(() => decide(live, checked), [live, checked]);
   const late = daysBetween(decision.end, targetEnd);
 
   const toggle = (pos: number) =>
@@ -98,7 +95,7 @@ function Prompt({ offer }: { offer: ReuseOffer }) {
 
         {late > 0 && (
           <div className={styles.reuseEnd}>
-            L’historique s’arrête au <strong>{pretty(decision.end)}</strong> ({plural(late, 'jour')} avant la dernière séance cotée, le {pretty(targetEnd)}).
+            L’historique s’arrête au <strong>{pretty(decision.end)}</strong> ({plural(late, 'jour')} avant la dernière séance de bourse, le {pretty(targetEnd)} — le week-end ne compte pas).
             Le bouton bleu va jusqu’à cette date et met les prix à jour. « Reprendre » garde le résultat déjà calculé et ne le dépasse pas.
           </div>
         )}
@@ -113,16 +110,16 @@ function Prompt({ offer }: { offer: ReuseOffer }) {
           )}
           {decision.reuse.size > 0 && (
             <button type="button" className={`btn ${late > 0 ? 'btn-primary' : 'btn-secondary'} ${styles.choiceBtn}`} autoFocus={late > 0} onClick={() => resolve({ action: 'fresh' })}>
-              <span>{offer.untilToday ? `↻ Tout recalculer jusqu’à la dernière séance · ${pretty(targetEnd)}` : `↻ Tout recalculer jusqu’au ${pretty(targetEnd)}`}</span>
+              <span>{`↻ Tout recalculer jusqu’à la dernière séance de bourse · ${pretty(targetEnd)}`}</span>
               <small>{late > 0 ? 'dépasse l’historique · prix à jour · recalcul complet' : 'même résultat · recalcul complet, plus lent'}</small>
             </button>
           )}
           {late === 0 && (
             <button type="button" className={`btn btn-primary ${styles.choiceBtn}`} autoFocus onClick={accept}>
-              <span>{decision.reuse.size ? `♻ Reprendre · fin au ${pretty(decision.end)}` : `Lancer jusqu’au ${pretty(decision.end)}`}</span>
+              <span>{decision.reuse.size ? `♻ Reprendre · à jour jusqu’au ${pretty(decision.end)}` : `Lancer jusqu’au ${pretty(decision.end)}`}</span>
               <small>
                 {!decision.compute.length
-                  ? 'à jour · instantané'
+                  ? 'dernière séance de bourse · instantané'
                   : `${decision.reuse.size} repris · ${decision.compute.length} à calculer`}
               </small>
             </button>

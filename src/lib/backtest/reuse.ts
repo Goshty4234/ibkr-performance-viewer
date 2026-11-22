@@ -34,11 +34,24 @@ export interface ReuseDecision {
   compute: number[];
 }
 
+/** Last session a run can legally reach right now (never Sat/Sun for equities). */
+export function reachableSessionEnd(request: RunRequest, now = new Date()): string {
+  return latestFinalDay(requestHasCrypto(request), now);
+}
+
 /** Day a fresh run should reach: last settled bar (not calendar Sat/Sun), unless the request stops sooner. */
 export function freshEnd(request: RunRequest, now = new Date()): string {
-  const reachable = latestFinalDay(requestHasCrypto(request), now);
+  const reachable = reachableSessionEnd(request, now);
   const asked = (request.options.end_date || '').slice(0, 10);
+  // A pinned end date on a week-end must still stop at the last settled bar.
   return asked ? minDay(asked, reachable) : reachable;
+}
+
+/** Clamp any offer target to a real market session (UI + store must both use this). */
+export function clampOfferToSession(offer: ReuseOffer, now = new Date()): ReuseOffer {
+  const session = reachableSessionEnd(offer.request, now);
+  const targetEnd = minDay(offer.targetEnd, session);
+  return targetEnd === offer.targetEnd ? offer : { ...offer, targetEnd };
 }
 
 export function buildOffer(request: RunRequest, plan: RunPlan, rows: BacktestRunRow[], now = new Date(), configKeys?: string[]): ReuseOffer | null {

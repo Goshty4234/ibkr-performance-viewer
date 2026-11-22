@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { latestFinalDay } from '@/lib/backtest/run-key';
 import { isActive, useBacktestStore } from '@/lib/backtest/store';
 import { engineOutdated } from '@/lib/engine/client';
 import { useEngineStore } from '@/lib/engine/store';
@@ -64,7 +65,7 @@ export default function RunBar() {
               onChange={(e) =>
                 setOptions(
                   e.target.checked
-                    ? { start_date: '2010-01-01', end_date: new Date().toISOString().slice(0, 10) }
+                    ? { start_date: '2010-01-01', end_date: latestFinalDay(false) }
                     : { start_date: null, end_date: null },
                 )
               }

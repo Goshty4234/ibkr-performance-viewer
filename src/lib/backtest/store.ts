@@ -16,7 +16,7 @@ import type { EngineJob, PortfolioConfig, ResultSummary, RunOptions, StockConfig
 import { alignToCycle, allocationOptions, allocationWindow, needsCycleAnchor } from './allocation-window';
 import { type BacktestRunRow, findRunsByConfigKeys, findRunsByKey, loadRun, type RunKind, saveRun } from './history';
 import type { LoadedResult } from './result-data';
-import { buildOffer, decide, minDay, type MergePart, mergeResults, type ReuseDecision, type ReuseOffer } from './reuse';
+import { buildOffer, clampOfferToSession, decide, type MergePart, mergeResults, type ReuseDecision, type ReuseOffer } from './reuse';
 import { configKeys, latestFinalDay, marketToday, requestHasCrypto, requestKey, type RunRequest, sameMarketData, sameNyDay } from './run-key';
 
 const SP500_DAY = 'mbt-sp500-wiki-day';
@@ -341,11 +341,8 @@ export const useBacktestStore = create<BacktestState>()(
 
       function askReuse(offer: ReuseOffer): Promise<ReuseChoice> {
         reuseResolver?.({ action: 'cancel' });
-        // Never treat a closed market day (week-end) as a missing session.
-        const targetEnd = offer.untilToday
-          ? minDay(offer.targetEnd, latestFinalDay(requestHasCrypto(offer.request)))
-          : offer.targetEnd;
-        const clamped = targetEnd === offer.targetEnd ? offer : { ...offer, targetEnd };
+        // Always clamp: a pinned calendar Sat/Sun must not count as a missing session.
+        const clamped = clampOfferToSession(offer);
         return new Promise((resolve) => {
           reuseResolver = resolve;
           set({ reuseOffer: clamped });
@@ -859,13 +856,14 @@ export const useBacktestStore = create<BacktestState>()(
           const keys = await configKeys(request).catch(() => [] as string[]);
           const offer = opts?.force ? null : await findOffer(engine, request, keys);
           if (offer) {
-            const choice: ReuseChoice = await askReuse(offer);
+            const clampedOffer = clampOfferToSession(offer);
+            const choice: ReuseChoice = await askReuse(clampedOffer);
             if (choice.action === 'cancel') return null;
             if (choice.action === 'reuse') {
-              const decision = decide(offer, choice.accepted);
+              const decision = decide(clampedOffer, choice.accepted);
               if (decision.reuse.size) {
                 try {
-                  return await launchWithReuse(engine, offer, decision, label, keys);
+                  return await launchWithReuse(engine, clampedOffer, decision, label, keys);
                 } catch (e) {
                   set({ launchError: `Reprise impossible (${e instanceof Error ? e.message : String(e)}) : calcul complet.` });
                 }
